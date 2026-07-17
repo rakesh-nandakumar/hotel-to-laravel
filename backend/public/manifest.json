@@ -1,0 +1,53 @@
+{
+    "name": "Vellix Point",
+    "short_name": "Vellix Point",
+    "description": "Vellix Point - Sales Order Management System",
+    "start_url": "/isms/sales-orders/create",
+    "display": "standalone",
+    "background_color": "#ffffff",
+    "theme_color": "#ffffff",
+    "orientation": "portrait-primary",
+    "scope": "/",
+    "lang": "en",
+    "icons": [
+        {
+            "src": "/images/vellix-point-logo.png",
+            "sizes": "any",
+            "type": "image/png",
+            "purpose": "maskable"
+        },
+        {
+            "src": "/images/vellix-point-logo.png",
+            "sizes": "any",
+            "type": "image/png",
+            "purpose": "any"
+        }
+    ],
+    "categories": ["business", "productivity"],
+    "shortcuts": [
+        {
+            "name": "New Sales Order",
+            "short_name": "New Order",
+            "description": "Create a new sales order",
+            "url": "/isms/sales-orders/create",
+            "icons": [
+                {
+                    "src": "/images/vellix-point-logo.png",
+                    "sizes": "any"
+                }
+            ]
+        },
+        {
+            "name": "Sales Orders",
+            "short_name": "Orders",
+            "description": "View all sales orders",
+            "url": "/isms/sales-orders",
+            "icons": [
+                {
+                    "src": "/images/vellix-point-logo.png",
+                    "sizes": "any"
+                }
+            ]
+        }
+    ]
+}
