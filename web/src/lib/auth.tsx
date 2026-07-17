@@ -44,6 +44,8 @@ type AuthCtx = {
   loading: boolean;
   /** True if the user holds this permission (module_key.action), or is a Full Administrator. */
   can: (permission: string) => boolean;
+  /** True if the user holds *any* of these permissions, or is a Full Administrator. */
+  canAny: (permissions: string[]) => boolean;
   refresh: () => Promise<Me | null>;
   login: (email: string, password: string, remember?: boolean) => Promise<LoginOutcome>;
   completeTwoFactor: (payload: { code?: string; recovery_code?: string }) => Promise<Me | null>;
@@ -61,6 +63,16 @@ export function getPinUser(): PinUser | null {
 
 const Ctx = createContext<AuthCtx>(null as never);
 export const useAuth = () => useContext(Ctx);
+
+/**
+ * Permission-only view of the auth context — `const { can, canAny } = usePermissions()`.
+ * Server-side `CheckPermission` (`can_do`) is always the real gate; this just
+ * hides/disables UI the current user can't action.
+ */
+export function usePermissions(): { can: AuthCtx["can"]; canAny: AuthCtx["canAny"] } {
+  const { can, canAny } = useAuth();
+  return { can, canAny };
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [me, setMe] = useState<Me | null>(null);
@@ -104,6 +116,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         me,
         loading,
         can: (permission) => !!me && (me.is_full_admin || me.permissions.includes(permission)),
+        canAny: (permissions) => !!me && (me.is_full_admin || permissions.some((p) => me.permissions.includes(p))),
         refresh,
         login: async (email, password, remember) => {
           const r = await post<{ home?: string; challenge?: Challenge }>("/login", { email, password, remember });

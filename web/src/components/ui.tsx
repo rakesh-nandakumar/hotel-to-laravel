@@ -89,6 +89,7 @@ export const statusColor = (s: string): string =>
     INQUIRY: "amber", COMPLETED: "green", DONE: "green", IN_PROGRESS: "amber", RESOLVED: "green",
     QUEUED: "amber", SENT: "green", FAILED: "red",
     DRAFT: "amber", FINALIZED: "green",
+    ACTIVE: "green", SUSPENDED: "amber", INACTIVE: "slate",
   })[s.toUpperCase()] ?? "slate";
 
 export function Modal({ open, onClose, title, children, wide }: { open: boolean; onClose: () => void; title: ReactNode; children: ReactNode; wide?: boolean }) {
@@ -119,6 +120,47 @@ export function Modal({ open, onClose, title, children, wide }: { open: boolean;
         <div className="p-4">{children}</div>
       </div>
     </div>
+  );
+}
+
+/** Confirmation prompt for a destructive or state-changing action. `tone="danger"` reddens the confirm button. */
+export function ConfirmDialog({
+  open, title, message, confirmLabel = "Confirm", tone = "brand", busy, onConfirm, onClose,
+}: {
+  open: boolean; title: ReactNode; message: ReactNode; confirmLabel?: string;
+  tone?: "brand" | "danger"; busy?: boolean; onConfirm: () => void; onClose: () => void;
+}) {
+  if (!open) return null;
+  return (
+    <Modal open onClose={onClose} title={title}>
+      <div className="text-sm leading-relaxed text-slate-600">{message}</div>
+      <div className="mt-5 flex justify-end gap-2">
+        <button className="btn-secondary" onClick={onClose} disabled={busy}>Cancel</button>
+        <button className={tone === "danger" ? "btn-danger" : "btn-primary"} onClick={onConfirm} disabled={busy}>
+          {busy ? "Working…" : confirmLabel}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+/** Initials avatar (brand gradient). Mirrors User::initials() server-side. */
+export function Avatar({ name, size = 36 }: { name: string; size?: number }) {
+  const initials =
+    (name || "?")
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((p) => p[0]!.toUpperCase())
+      .join("") || "?";
+  return (
+    <span
+      className="inline-flex shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-brand-500 to-brand-700 font-bold text-white"
+      style={{ width: size, height: size, fontSize: size * 0.4 }}
+    >
+      {initials}
+    </span>
   );
 }
 

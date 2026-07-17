@@ -40,7 +40,7 @@ class Lookup extends Model
 
     /**
      * @param  Builder<Lookup>  $query
-     */
+     */ ..
     public function scopeType(Builder $query, string $type): void
     {
         $query->where('type', $type);
