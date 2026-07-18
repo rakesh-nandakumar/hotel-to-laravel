@@ -36,7 +36,7 @@ class NotificationController extends Controller
             'channel' => $request->validated('channel'),
             'to' => $request->validated('to'),
             'subject' => 'Mount View HMS — integration test',
-            'body' => 'Test message from Mount View Hotel Management System ('.now()->format('d/m/Y, H:i:s').'). If you received this, the '.$request->validated('channel').' integration works.',
+            'body' => 'Test message from Mount View Hospitality Management System ('.now()->format('d/m/Y, H:i:s').'). If you received this, the '.$request->validated('channel').' integration works.',
         ]);
 
         return response()->json(['notification' => $notification]);

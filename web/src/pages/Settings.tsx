@@ -1,16 +1,17 @@
-import { useMemo, useState } from "react";
-import { Search, Settings as SettingsIcon } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Search, Settings as SettingsIcon, Image as ImageIcon } from "lucide-react";
 import { put } from "../lib/api";
 import { useFetch, fmtDateTime } from "../lib/util";
 import { Empty, ErrorText } from "../components/ui";
 import { useAuth } from "../lib/auth";
+import { useBranding } from "../lib/branding";
 import clsx from "clsx";
 
 type Setting = { key: string; value: string; type: string; category: string; label: string; hint?: string; updated_at?: string };
 type Parsed = Setting & { parsed: unknown };
 
 const CATEGORY_META: Record<string, { label: string; blurb: string }> = {
-  hotel: { label: "Hotel identity", blurb: "Name, address, contacts and tax registration printed on every invoice and receipt." },
+  hotel: { label: "Hotel identity", blurb: "Name, tagline and logo shown across the app (sidebar, login, guest pages) plus the address, contacts and tax registration printed on every invoice and receipt." },
   frontdesk: { label: "Front desk", blurb: "Check-in and check-out times used for early/late surcharges." },
   billing: { label: "Billing & taxes", blurb: "VAT and service charge (always two separate bill lines), surcharges and deposit percentages." },
   currency: { label: "Currency", blurb: "Settlement is always LKR; the USD rate is display-only for foreign guests." },
@@ -32,6 +33,7 @@ function parseValue(raw: string): unknown {
 
 export default function Settings() {
   const { can } = useAuth();
+  const { refresh: refreshBranding } = useBranding();
   const canUpdate = can("hotel_settings.update");
   const { data, reload } = useFetch<{ settings: Setting[] }>("/hotel-settings");
   const [error, setError] = useState("");
@@ -64,6 +66,8 @@ export default function Settings() {
         setSaved(s.key);
         setTimeout(() => setSaved(""), 1500);
         reload();
+        // Identity keys (name/tagline/logo) drive the sidebar & login — refresh live.
+        if (s.key.startsWith("hotel.")) refreshBranding();
       })
       .catch((e) => setError(`${s.label}: ${e.message}`));
   };
@@ -142,6 +146,8 @@ function SettingControl({ s, onSave }: { s: Parsed; onSave: (v: unknown) => void
   if (s.key === "pricing.weekend_days") return <WeekdayPicker value={s.parsed as number[]} onSave={onSave} />;
   if (s.key === "loyalty.redemption_catalog") return <RedemptionCatalog value={s.parsed as { name: string; points: number }[]} onSave={onSave} />;
   if (s.key === "notifications.channels") return <ChannelPicker value={s.parsed as string[]} onSave={onSave} />;
+
+  if (s.type === "image") return <LogoUpload value={String(s.parsed ?? "")} onSave={onSave} />;
 
   if (s.type === "boolean") {
     const on = s.parsed === true;
@@ -302,4 +308,151 @@ function ChannelPicker({ value, onSave }: { value: string[]; onSave: (v: unknown
       ))}
     </div>
   );
+}
+
+/**
+ * Logo picker — drag & drop, paste from clipboard, or browse. The image is
+ * downscaled and stored inline as a data URI in the setting value (no separate
+ * file host needed), so it shows everywhere branding is read: sidebar, login
+ * screen, guest pages and printed documents.
+ */
+function LogoUpload({ value, onSave }: { value: string; onSave: (v: unknown) => void }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [dragOver, setDragOver] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const handleFile = useCallback(
+    async (file: File | null | undefined) => {
+      if (!file) return;
+      if (!file.type.startsWith("image/")) {
+        setErr("Please choose an image file.");
+        return;
+      }
+      setErr("");
+      setBusy(true);
+      try {
+        onSave(await fileToLogoDataUrl(file));
+      } catch {
+        setErr("Could not read that image.");
+      } finally {
+        setBusy(false);
+      }
+    },
+    [onSave],
+  );
+
+  // Paste an image while the drop zone is focused (click it, then Ctrl/⌘+V).
+  useEffect(() => {
+    if (!focused) return;
+    const onPaste = (e: ClipboardEvent) => {
+      const item = Array.from(e.clipboardData?.items ?? []).find((i) => i.type.startsWith("image/"));
+      if (item) {
+        e.preventDefault();
+        void handleFile(item.getAsFile());
+      }
+    };
+    document.addEventListener("paste", onPaste);
+    return () => document.removeEventListener("paste", onPaste);
+  }, [focused, handleFile]);
+
+  return (
+    <div>
+      <div
+        role="button"
+        tabIndex={0}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        onClick={() => inputRef.current?.click()}
+        onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && inputRef.current?.click()}
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDragOver(true);
+        }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragOver(false);
+          void handleFile(e.dataTransfer.files?.[0]);
+        }}
+        className={clsx(
+          "flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed p-4 text-center outline-none transition",
+          dragOver ? "border-brand-500 bg-brand-50" : "border-slate-300 hover:border-brand-400 focus:border-brand-500",
+        )}
+      >
+        {value ? (
+          <img src={value} alt="Logo preview" className="max-h-20 max-w-[160px] object-contain" />
+        ) : (
+          <ImageIcon className="h-8 w-8 text-slate-300" />
+        )}
+        <div className="text-xs text-slate-500">
+          {busy ? (
+            "Processing…"
+          ) : (
+            <>
+              Drag &amp; drop, paste, or <span className="font-semibold text-brand-600">browse</span>
+            </>
+          )}
+        </div>
+      </div>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => {
+          void handleFile(e.target.files?.[0]);
+          e.target.value = ""; // allow re-selecting the same file
+        }}
+      />
+      {value && (
+        <button className="mt-1.5 text-xs font-semibold text-red-500 hover:text-red-600" onClick={() => onSave("")}>
+          Remove logo
+        </button>
+      )}
+      {err && <p className="mt-1 text-xs text-red-500">{err}</p>}
+    </div>
+  );
+}
+
+/**
+ * Turn a chosen file into a small data URI. SVGs are kept as-is (crisp & tiny);
+ * raster images are downscaled to a 320px box and re-encoded as PNG so the
+ * stored value stays small.
+ */
+async function fileToLogoDataUrl(file: File): Promise<string> {
+  const dataUrl = await readAsDataUrl(file);
+  if (file.type === "image/svg+xml") return dataUrl;
+
+  const img = await loadImage(dataUrl);
+  const max = 320;
+  const scale = Math.min(1, max / Math.max(img.width, img.height));
+  const w = Math.max(1, Math.round(img.width * scale));
+  const h = Math.max(1, Math.round(img.height * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return dataUrl;
+  ctx.drawImage(img, 0, 0, w, h);
+  return canvas.toDataURL("image/png");
+}
+
+function readAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error("read failed"));
+    reader.readAsDataURL(file);
+  });
+}
+
+function loadImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("load failed"));
+    img.src = src;
+  });
 }

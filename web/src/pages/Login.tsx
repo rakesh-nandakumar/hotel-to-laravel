@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth, getPinUser, Me } from "../lib/auth";
+import { useBranding } from "../lib/branding";
 import { api, ApiFail } from "../lib/api";
 import { landingPath } from "../lib/landing";
 import { resetSocket } from "../lib/socket";
 import { ErrorText } from "../components/ui";
-import { Delete, KeyRound } from "lucide-react";
+import { Delete, KeyRound, Building2 } from "lucide-react";
 
 type Screen = "password" | "pin" | "two-factor" | "otp";
 
@@ -22,6 +23,7 @@ type Screen = "password" | "pin" | "two-factor" | "otp";
  */
 export default function Login() {
   const { login, pinLogin, completeTwoFactor, completeOtp } = useAuth();
+  const { branding } = useBranding();
   const nav = useNavigate();
   const [pinUser, setPinUser] = useState(() => getPinUser());
   const [screen, setScreen] = useState<Screen>(pinUser ? "pin" : "password");
@@ -79,118 +81,218 @@ export default function Login() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-brand-900 via-brand-700 to-brand-900 p-4">
-      <div className="w-full max-w-sm">
-        <div className="mb-6 text-center">
-          <h1 className="text-3xl font-black text-white">Mount View Hotel</h1>
-          <p className="text-sm font-medium uppercase tracking-widest text-brand-100/70">Badulla · Management System</p>
+    <div className="flex min-h-screen flex-col lg:flex-row">
+      {/* Branding panel — navy chrome ported from leolanka-inertia's auth split layout */}
+      <aside
+        aria-label="Branding"
+        className="relative flex flex-col items-center justify-center gap-8 overflow-hidden bg-gradient-to-b from-sidebar to-sidebar-deep px-8 py-12 text-white lg:min-h-screen lg:w-[460px]"
+      >
+        {/* Subtle data-grid dot texture instead of generic blurred blobs */}
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 opacity-[0.06]"
+          style={{
+            backgroundImage:
+              "radial-gradient(circle, rgba(255,255,255,0.9) 1px, transparent 1px)",
+            backgroundSize: "22px 22px",
+          }}
+        />
+        <div className="relative z-10 flex flex-col items-center gap-5 text-center">
+          <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-2xl bg-white/10 shadow-2xl ring-1 ring-white/10">
+            {branding.logo ? (
+              <img src={branding.logo} alt={branding.name} className="h-full w-full object-contain p-2" />
+            ) : (
+              <Building2 className="h-10 w-10 text-white" />
+            )}
+          </div>
+          <div>
+            <h1 className="text-3xl font-black tracking-tight">{branding.name}</h1>
+            {branding.tagline && (
+              <p className="mx-auto mt-2 max-w-[240px] text-sm font-medium uppercase tracking-widest text-brand-100/70">
+                {branding.tagline}
+              </p>
+            )}
+          </div>
         </div>
-        <div className="card modal-panel p-5">
-          {pinUser && (screen === "pin" || screen === "password") && (
-            <div className="mb-4 flex gap-1 rounded-xl bg-slate-200/70 p-1">
-              {(["pin", "password"] as const).map((m) => (
-                <button
-                  key={m}
-                  className={`flex-1 rounded-lg px-3 py-1.5 text-sm font-semibold ${screen === m ? "bg-white shadow-sm" : "text-slate-500"}`}
-                  onClick={() => {
-                    setScreen(m);
-                    setError("");
-                  }}
-                >
-                  {m === "pin" ? "Quick PIN" : "Email login"}
-                </button>
-              ))}
-            </div>
-          )}
-          <ErrorText error={error} />
+        <p className="absolute bottom-8 z-10 hidden text-xs text-brand-100/50 lg:block">
+          A proud product of Vellix Global
+        </p>
+      </aside>
 
-          {screen === "password" && (
-            <form onSubmit={submitPassword} className="mt-3 space-y-3">
-              <input className="input" type="email" placeholder="email@mountview.lk" value={email} onChange={(e) => setEmail(e.target.value)} required autoFocus />
-              <input className="input" type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} required />
-              <button className="btn-primary w-full !py-3" disabled={busy}>
-                {busy ? "Signing in…" : "Sign in"}
-              </button>
-              {!pinUser && (
-                <p className="flex items-center gap-1.5 pt-1 text-[11px] text-slate-400">
-                  <KeyRound size={12} /> After you sign in once, quick PIN unlock becomes available on this device — for your account only.
-                </p>
-              )}
-            </form>
-          )}
-
-          {screen === "pin" && pinUser && (
-            <div className="mt-1">
-              <div className="mb-1 text-center">
-                <div className="text-base font-extrabold">{pinUser.name}</div>
-                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{pinUser.roleName}</div>
-              </div>
-              <div className="my-4 flex justify-center gap-3">
-                {[0, 1, 2, 3].map((i) => (
-                  <div key={i} className={`h-3.5 w-3.5 rounded-full transition ${i < pin.length ? "bg-brand-600" : "bg-slate-200"}`} />
+      {/* Form panel */}
+      <main className="flex flex-1 flex-col items-center justify-center bg-slate-50 px-6 py-12">
+        <div className="w-full max-w-sm">
+          <div className="card modal-panel p-5">
+            {pinUser && (screen === "pin" || screen === "password") && (
+              <div className="mb-4 flex gap-1 rounded-xl bg-slate-200/70 p-1">
+                {(["pin", "password"] as const).map((m) => (
+                  <button
+                    key={m}
+                    className={`flex-1 rounded-lg px-3 py-1.5 text-sm font-semibold ${screen === m ? "bg-white shadow-sm" : "text-slate-500"}`}
+                    onClick={() => {
+                      setScreen(m);
+                      setError("");
+                    }}
+                  >
+                    {m === "pin" ? "Quick PIN" : "Email login"}
+                  </button>
                 ))}
               </div>
-              <div className="grid grid-cols-3 gap-2">
-                {["1", "2", "3", "4", "5", "6", "7", "8", "9", "", "0", "⌫"].map((k, i) =>
-                  k === "" ? (
-                    <div key={i} />
-                  ) : k === "⌫" ? (
-                    <button key={i} className="btn-secondary !py-3" onClick={() => setPin(pin.slice(0, -1))}>
-                      <Delete size={18} />
-                    </button>
-                  ) : (
-                    <button key={i} className="btn-secondary !py-3 text-lg font-bold" onClick={() => press(k)}>
-                      {k}
-                    </button>
-                  )
+            )}
+            <ErrorText error={error} />
+
+            {screen === "password" && (
+              <form onSubmit={submitPassword} className="mt-3 space-y-3">
+                <input
+                  className="input"
+                  type="email"
+                  placeholder="you@email.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                  autoFocus
+                />
+                <input
+                  className="input"
+                  type="password"
+                  placeholder="Password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                />
+                <button className="btn-primary w-full !py-3" disabled={busy}>
+                  {busy ? "Signing in…" : "Sign in"}
+                </button>
+                {!pinUser && (
+                  <p className="flex items-center gap-1.5 pt-1 text-[11px] text-slate-400">
+                    <KeyRound size={12} /> After you sign in once, quick PIN
+                    unlock becomes available on this device — for your account
+                    only.
+                  </p>
                 )}
+              </form>
+            )}
+
+            {screen === "pin" && pinUser && (
+              <div className="mt-1">
+                <div className="mb-1 text-center">
+                  <div className="text-base font-extrabold">{pinUser.name}</div>
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                    {pinUser.roleName}
+                  </div>
+                </div>
+                <div className="my-4 flex justify-center gap-3">
+                  {[0, 1, 2, 3].map((i) => (
+                    <div
+                      key={i}
+                      className={`h-3.5 w-3.5 rounded-full transition ${i < pin.length ? "bg-brand-600" : "bg-slate-200"}`}
+                    />
+                  ))}
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    "1",
+                    "2",
+                    "3",
+                    "4",
+                    "5",
+                    "6",
+                    "7",
+                    "8",
+                    "9",
+                    "",
+                    "0",
+                    "⌫",
+                  ].map((k, i) =>
+                    k === "" ? (
+                      <div key={i} />
+                    ) : k === "⌫" ? (
+                      <button
+                        key={i}
+                        className="btn-secondary !py-3"
+                        onClick={() => setPin(pin.slice(0, -1))}
+                      >
+                        <Delete size={18} />
+                      </button>
+                    ) : (
+                      <button
+                        key={i}
+                        className="btn-secondary !py-3 text-lg font-bold"
+                        onClick={() => press(k)}
+                      >
+                        {k}
+                      </button>
+                    ),
+                  )}
+                </div>
+                <p className="mt-3 text-center text-[11px] text-slate-400">
+                  Not {pinUser.name.split(" ")[0]}? Use{" "}
+                  <button
+                    className="font-bold text-brand-600 underline"
+                    onClick={() => setScreen("password")}
+                  >
+                    email login
+                  </button>{" "}
+                  — signing in as someone else moves the PIN unlock to their
+                  account.
+                </p>
               </div>
-              <p className="mt-3 text-center text-[11px] text-slate-400">
-                Not {pinUser.name.split(" ")[0]}? Use <button className="font-bold text-brand-600 underline" onClick={() => setScreen("password")}>email login</button> — signing in as someone else moves the PIN unlock to their account.
-              </p>
-            </div>
-          )}
+            )}
 
-          {screen === "two-factor" && (
-            <TwoFactorForm
-              busy={busy}
-              onSubmit={async (payload) => {
-                setBusy(true);
-                setError("");
-                try {
-                  go(await completeTwoFactor(payload));
-                } catch (err) {
-                  setError((err as Error).message);
-                } finally {
-                  setBusy(false);
-                }
-              }}
-              onBack={() => setScreen("password")}
-            />
-          )}
+            {screen === "two-factor" && (
+              <TwoFactorForm
+                busy={busy}
+                onSubmit={async (payload) => {
+                  setBusy(true);
+                  setError("");
+                  try {
+                    go(await completeTwoFactor(payload));
+                  } catch (err) {
+                    setError((err as Error).message);
+                  } finally {
+                    setBusy(false);
+                  }
+                }}
+                onBack={() => setScreen("password")}
+              />
+            )}
 
-          {screen === "otp" && (
-            <OtpForm
-              busy={busy}
-              onSubmit={async (payload) => {
-                setBusy(true);
-                setError("");
-                try {
-                  go(await completeOtp(payload));
-                } catch (err) {
-                  setError((err as Error).message);
-                } finally {
-                  setBusy(false);
-                }
-              }}
-              onBack={() => setScreen("password")}
-            />
-          )}
+            {screen === "otp" && (
+              <OtpForm
+                busy={busy}
+                onSubmit={async (payload) => {
+                  setBusy(true);
+                  setError("");
+                  try {
+                    go(await completeOtp(payload));
+                  } catch (err) {
+                    setError((err as Error).message);
+                  } finally {
+                    setBusy(false);
+                  }
+                }}
+                onBack={() => setScreen("password")}
+              />
+            )}
+          </div>
+          <p className="mt-4 text-center text-xs text-slate-400">
+            Guests:{" "}
+            <a
+              href="/pre-checkin"
+              className="font-semibold text-brand-600 underline"
+            >
+              online pre-check-in
+            </a>{" "}
+            ·{" "}
+            <a
+              href="/venue-inquiry"
+              className="font-semibold text-brand-600 underline"
+            >
+              venue inquiry
+            </a>
+          </p>
         </div>
-        <p className="mt-4 text-center text-xs text-brand-100/60">
-          Guests: <a href="/pre-checkin" className="underline">online pre-check-in</a> · <a href="/venue-inquiry" className="underline">venue inquiry</a>
-        </p>
-      </div>
+      </main>
     </div>
   );
 }

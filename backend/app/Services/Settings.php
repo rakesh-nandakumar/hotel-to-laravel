@@ -117,6 +117,9 @@ class Settings
             SettingType::BOOLEAN => ! is_bool($value)
                 ? 'Value must be true or false.'
                 : null,
+            SettingType::IMAGE => ! is_string($value)
+                ? 'Value must be an image.'
+                : null,
             default => null,
         };
 

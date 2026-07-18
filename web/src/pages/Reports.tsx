@@ -7,6 +7,7 @@ import { post, openPdf } from "../lib/api";
 import { useFetch, usePagedFetch, lkr, todayStr, fmtDate } from "../lib/util";
 import { Badge, Card, Empty, ErrorText, Tabs, Pagination } from "../components/ui";
 import { useAuth } from "../lib/auth";
+import { useBranding } from "../lib/branding";
 import clsx from "clsx";
 
 type Daily = {
@@ -122,13 +123,14 @@ const METHOD_COLOR: Record<string, string> = {
 };
 
 function DailyView({ d, prev, pdfUrl }: { d: Daily; prev?: Daily | null; pdfUrl?: string }) {
+  const { branding } = useBranding();
   const revMax = Math.max(1, ...Object.values(d.revenue_by_source), d.walkin_pos_revenue);
   const payMax = Math.max(1, ...Object.values(d.payments.by_method));
   const catMax = Math.max(1, ...Object.values(d.pos.by_category));
 
   const exportCsv = () => {
     const rows: (string | number)[][] = [
-      ["Mount View Hotel — Daily Report", d.date],
+      [`${branding.name} — Daily Report`, d.date],
       [],
       ["Occupancy", `${d.occupancy.pct}%`, `${d.occupancy.occupied_rooms}/${d.occupancy.total_rooms} rooms`],
       ["Charges posted (LKR)", (d.total_charges_posted / 100).toFixed(2)],
@@ -311,6 +313,7 @@ const RANGE_PRESETS = [
 ];
 
 function PosTab() {
+  const { branding } = useBranding();
   const [from, setFrom] = useState(todayStr(-6));
   const [to, setTo] = useState(todayStr());
   const { data } = useFetch<PosReport>(`/reports/pos?from=${from}&to=${to}`, [from, to]);
@@ -321,7 +324,7 @@ function PosTab() {
   const exportCsv = () => {
     if (!data) return;
     downloadCsv(`pos-report-${data.from}-to-${data.to}.csv`, [
-      ["Mount View Hotel — POS report", `${data.from} to ${data.to}`],
+      [`${branding.name} — POS report`, `${data.from} to ${data.to}`],
       [],
       ["Category", "Amount (LKR)"],
       ...Object.entries(data.by_category).map(([k, v]) => [k, (v / 100).toFixed(2)]),

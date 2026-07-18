@@ -4,7 +4,7 @@
  * idempotency key (clientKey / idempotencyKey) so replays can never
  * double-post an order or a payment.
  */
-import { ensureCsrfCookie, xsrfHeader } from "./api";
+import { ensureCsrfCookie, xsrfHeader, API_ORIGIN } from "./api";
 
 const DB_NAME = "mountview-pos";
 const STORE = "queue";
@@ -72,7 +72,7 @@ function notifyListeners() {
 export async function posRequest<T = unknown>(path: string, body: unknown, method = "POST"): Promise<T | { queued: true }> {
   try {
     await ensureCsrfCookie();
-    const res = await fetch(`/api${path}`, {
+    const res = await fetch(`${API_ORIGIN}/api${path}`, {
       method,
       credentials: "include",
       headers: { Accept: "application/json", "Content-Type": "application/json", ...xsrfHeader() },
@@ -104,7 +104,7 @@ export async function flushQueue(): Promise<number> {
     for (const item of items) {
       try {
         await ensureCsrfCookie();
-        const res = await fetch(`/api${item.path}`, {
+        const res = await fetch(`${API_ORIGIN}/api${item.path}`, {
           method: item.method,
           credentials: "include",
           headers: { Accept: "application/json", "Content-Type": "application/json", ...xsrfHeader() },

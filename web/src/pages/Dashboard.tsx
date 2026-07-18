@@ -8,6 +8,7 @@ import {
 import { useFetch, lkr, usd, useSettings, fmtDate, fmtDateTime } from "../lib/util";
 import { Card, Badge, statusColor, Empty } from "../components/ui";
 import { useAuth } from "../lib/auth";
+import { useBranding } from "../lib/branding";
 import { getSocket } from "../lib/socket";
 import clsx from "clsx";
 
@@ -96,6 +97,7 @@ function QuickSearch() {
 
 export default function Dashboard() {
   const { me } = useAuth();
+  const { branding } = useBranding();
   const { data, reload } = useFetch<Dash>("/reports/dashboard");
   const { data: monthly } = useFetch<Monthly>("/reports/monthly");
   const { data: notifsData } = useFetch<{ notifications: Notif[] }>("/notifications");
@@ -152,7 +154,7 @@ export default function Dashboard() {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-extrabold">{greeting}{firstName ? `, ${firstName}` : ""} 👋</h1>
-          <p className="text-sm text-slate-500">Here's what's happening at Mount View today, {fmtDate(new Date())}</p>
+          <p className="text-sm text-slate-500">Here's what's happening at {branding.name} today, {fmtDate(new Date())}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <QuickSearch />

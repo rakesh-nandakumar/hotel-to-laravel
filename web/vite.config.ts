@@ -8,8 +8,16 @@ export default defineConfig({
     proxy: {
       // Laravel API — same-origin from the browser's perspective, so Sanctum's
       // SPA cookie session + CSRF cookie need no CORS/cross-site handling.
-      "/api": { target: "http://localhost:8888", changeOrigin: true },
-      "/sanctum": { target: "http://localhost:8888", changeOrigin: true },
+      // "/api": { target: "http://localhost:8888", changeOrigin: true },
+      // "/sanctum": { target: "http://localhost:8888", changeOrigin: true },
+      "/api": {
+        target: "https://api.demo.hms.vellixglobal.com/",
+        changeOrigin: true,
+      },
+      "/sanctum": {
+        target: "https://api.demo.hms.vellixglobal.com/",
+        changeOrigin: true,
+      },
       // Reverb (realtime) is connected to directly by the browser — see lib/socket.ts.
     },
   },

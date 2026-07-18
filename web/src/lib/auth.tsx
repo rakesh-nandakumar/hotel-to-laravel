@@ -80,7 +80,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refresh = useCallback(async (): Promise<Me | null> => {
     try {
-      const data = await api<Me>("/me");
+      // silent401: a logged-out probe is expected — let the router show /login
+      // client-side rather than triggering api()'s hard redirect (full reload).
+      const data = await api<Me>("/me", { silent401: true });
       setMe(data);
       return data;
     } catch {

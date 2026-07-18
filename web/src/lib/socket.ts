@@ -1,50 +1,54 @@
-import Echo from "laravel-echo";
-import Pusher from "pusher-js";
-
 /**
- * Realtime channel — Laravel Reverb (Pusher protocol), single public "hotel"
- * channel, four event streams: "kot" (kitchen queue), "rooms" (live room
- * status), "orders", "menu" (sold-out changes). Mirrors the Node app's
- * Socket.IO events 1:1 — see App\Events\Hotel\RealtimeUpdate on the backend.
+ * Realtime refresh — POLLING implementation (no websocket server required).
  *
- * Exposes the same on/off surface the old socket.io client did, so page code
- * didn't need to change — only this file talks to Echo directly.
+ * The app is hosted on shared cPanel, which can't run a persistent websocket
+ * server (Laravel Reverb) or expose a ws port. So instead of *pushing* changes
+ * from the server, we re-emit the same four "something changed, refetch"
+ * signals ("kot"/"rooms"/"orders"/"menu") on a short interval on the client.
+ *
+ * Page code is unchanged: it still calls getSocket().on(event, fn) and off(...).
+ * The only difference is `fn` now runs on a timer and refetches, instead of
+ * running when a websocket message arrives. Listeners are invoked with an EMPTY
+ * payload ({}), so payload-gated cross-page popups (GlobalRealtimeNotifications)
+ * stay quiet and only genuine data refreshes happen.
+ *
+ * To switch back to true push later (e.g. a managed Pusher/Ably account or a
+ * Reverb box), this is the only file that needs to change — the on/off/reset
+ * surface stays identical.
  */
 const EVENTS = ["kot", "rooms", "orders", "menu"] as const;
 type RealtimeEvent = (typeof EVENTS)[number];
 type Listener = (payload: unknown) => void;
 
-let echo: Echo<"reverb"> | null = null;
+/** How often subscribed pages refetch. Modest so shared hosting isn't hammered. */
+const POLL_MS = 10_000;
+
 const listeners = new Map<RealtimeEvent, Set<Listener>>();
+let timer: ReturnType<typeof setInterval> | null = null;
 
-function connect(): Echo<"reverb"> {
-  (window as unknown as { Pusher: typeof Pusher }).Pusher = Pusher;
-
-  const port = Number(import.meta.env.VITE_REVERB_PORT ?? 8080);
-  const instance = new Echo<"reverb">({
-    broadcaster: "reverb",
-    key: import.meta.env.VITE_REVERB_APP_KEY,
-    wsHost: import.meta.env.VITE_REVERB_HOST,
-    wsPort: port,
-    wssPort: port,
-    forceTLS: (import.meta.env.VITE_REVERB_SCHEME ?? "http") === "https",
-    enabledTransports: ["ws", "wss"],
-  });
-
-  const channel = instance.channel("hotel");
-  for (const event of EVENTS) {
-    channel.listen(`.${event}`, (payload: unknown) => {
-      listeners.get(event)?.forEach((fn) => fn(payload));
-    });
+function tick() {
+  // Don't poll a backgrounded tab or while offline — saves the host needless load.
+  if (document.hidden || !navigator.onLine) return;
+  for (const set of listeners.values()) {
+    set.forEach((fn) => fn({}));
   }
+}
 
-  return instance;
+/** Refetch immediately when the operator returns to the tab. */
+function onVisible() {
+  if (!document.hidden) tick();
+}
+
+function start() {
+  if (timer) return;
+  timer = setInterval(tick, POLL_MS);
+  document.addEventListener("visibilitychange", onVisible);
 }
 
 type SocketHandle = { on: (event: RealtimeEvent, fn: Listener) => void; off: (event: RealtimeEvent, fn: Listener) => void };
 
 export function getSocket(): SocketHandle {
-  echo ??= connect();
+  start();
   return {
     on(event, fn) {
       if (!listeners.has(event)) listeners.set(event, new Set());
@@ -57,7 +61,8 @@ export function getSocket(): SocketHandle {
 }
 
 export function resetSocket() {
-  echo?.disconnect();
-  echo = null;
+  if (timer) clearInterval(timer);
+  timer = null;
+  document.removeEventListener("visibilitychange", onVisible);
   listeners.clear();
 }

@@ -18,7 +18,13 @@ return [
 
     'allowed_methods' => ['*'],
 
-    'allowed_origins' => array_filter(explode(',', env('FRONTEND_URL', 'http://localhost:5173'))),
+    // Must be the SPA's exact origin(s), never '*': the browser rejects a
+    // wildcard Access-Control-Allow-Origin on credentialed (cookie) requests.
+    // Comma-separate FRONTEND_URL to allow more than one (e.g. prod + preview).
+    'allowed_origins' => array_values(array_filter(array_map(
+        'trim',
+        explode(',', (string) env('FRONTEND_URL', 'http://localhost:5173')),
+    ))),
 
     'allowed_origins_patterns' => [],
 

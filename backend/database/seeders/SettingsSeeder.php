@@ -36,13 +36,14 @@ class SettingsSeeder extends Seeder
     {
         return [
             // ── Hotel identity ───────────────────────────────────────────────
-            ['key' => 'hotel.name', 'value' => 'Mount View Hotel', 'type' => SettingType::TEXT, 'category' => 'hotel', 'label' => 'Hotel Name'],
+            ['key' => 'hotel.name', 'value' => 'Mount View Hotel', 'type' => SettingType::TEXT, 'category' => 'hotel', 'label' => 'Hotel Name', 'hint' => 'Shown in the sidebar, login screen, printed documents and guest pages.'],
+            ['key' => 'hotel.tagline', 'value' => 'Hospitality Management System', 'type' => SettingType::TEXT, 'category' => 'hotel', 'label' => 'Tagline / Short Description', 'hint' => 'The small line shown under the hotel name on the login screen and sidebar.'],
             ['key' => 'hotel.address', 'value' => '⚠ confirm with owner', 'type' => SettingType::TEXT, 'category' => 'hotel', 'label' => 'Address'],
             ['key' => 'hotel.phone', 'value' => '⚠ confirm with owner', 'type' => SettingType::TEXT, 'category' => 'hotel', 'label' => 'Phone'],
             ['key' => 'hotel.email', 'value' => '⚠ confirm with owner', 'type' => SettingType::TEXT, 'category' => 'hotel', 'label' => 'Email', 'hint' => 'Also receives low-stock/venue-inquiry alerts.'],
             ['key' => 'hotel.tax_reg_no', 'value' => '⚠ confirm with owner', 'type' => SettingType::TEXT, 'category' => 'hotel', 'label' => 'Tax Registration No.'],
             ['key' => 'hotel.website', 'value' => '', 'type' => SettingType::TEXT, 'category' => 'hotel', 'label' => 'Website'],
-            ['key' => 'hotel.logo_url', 'value' => '', 'type' => SettingType::TEXT, 'category' => 'hotel', 'label' => 'Logo URL'],
+            ['key' => 'hotel.logo_url', 'value' => '', 'type' => SettingType::IMAGE, 'category' => 'hotel', 'label' => 'Logo', 'hint' => 'Shown in the sidebar, on the login screen and printed documents. Drag & drop, paste, or choose an image.'],
 
             // ── Front desk ───────────────────────────────────────────────────
             ['key' => 'frontdesk.check_in_time', 'value' => '14:00', 'type' => SettingType::TIME, 'category' => 'frontdesk', 'label' => 'Check-in Time'],

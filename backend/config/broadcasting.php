@@ -15,7 +15,11 @@ return [
     |
     */
 
-    'default' => env('BROADCAST_CONNECTION', 'null'),
+    // `?: 'null'` (not the 2nd arg of env) because Laravel converts the literal
+    // env value "null" to PHP null; this guarantees an unset/null/misconfigured
+    // BROADCAST_CONNECTION resolves to the no-op "null" driver instead of
+    // throwing "Broadcast connection [] is not defined." and 500-ing the request.
+    'default' => env('BROADCAST_CONNECTION') ?: 'null',
 
     /*
     |--------------------------------------------------------------------------

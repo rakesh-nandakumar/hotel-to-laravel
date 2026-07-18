@@ -3,7 +3,7 @@
  * POS keeps loading during an internet outage. Write operations are queued in
  * IndexedDB by the app (src/lib/offline.ts) and replayed with idempotency keys.
  */
-const CACHE = "mountview-shell-v1";
+const CACHE = "mountview-shell-v2";
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(["/"])));
@@ -20,6 +20,9 @@ self.addEventListener("activate", (e) => {
 self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== "GET" || url.origin !== location.origin) return;
+  // Auth/CSRF and broadcasting must ALWAYS hit the network — never intercept or
+  // cache them (a cached 404/CSRF cookie breaks login on the deployed server).
+  if (url.pathname.startsWith("/sanctum") || url.pathname.startsWith("/broadcasting")) return;
   // Never cache API responses except menu/board reads used by the offline POS UI
   const isApi = url.pathname.startsWith("/api");
   const cacheableApi = ["/api/menu/full", "/api/rooms/board", "/api/settings"].some((p) => url.pathname === p);

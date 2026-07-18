@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Traits\HasUserstamps;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 
 /**
@@ -40,7 +41,7 @@ class Lookup extends Model
 
     /**
      * @param  Builder<Lookup>  $query
-     */ ..
+     */
     public function scopeType(Builder $query, string $type): void
     {
         $query->where('type', $type);
@@ -72,9 +73,9 @@ class Lookup extends Model
     /**
      * Every active row for a type, ordered for select/dropdown display.
      *
-     * @return \Illuminate\Support\Collection<int, Lookup>
+     * @return Collection<int, Lookup>
      */
-    public static function options(string $type): \Illuminate\Support\Collection
+    public static function options(string $type): Collection
     {
         return static::query()->type($type)->active()->orderBy('sort_order')->get();
     }

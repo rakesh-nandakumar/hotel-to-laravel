@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Clock4, Download } from "lucide-react";
-import { post } from "../lib/api";
+import { post, API_ORIGIN } from "../lib/api";
 import { useFetch, usePagedFetch, fmtDateTime } from "../lib/util";
 import { Badge, Card, Empty, ErrorText, Pagination } from "../components/ui";
 import { useAuth } from "../lib/auth";
@@ -41,7 +41,7 @@ export default function Attendance() {
       .catch((e) => setError(e.message));
 
   const exportCsv = async () => {
-    const res = await fetch(`/api/attendance/export?month=${month}`, { credentials: "include", headers: { Accept: "text/csv" } });
+    const res = await fetch(`${API_ORIGIN}/api/attendance/export?month=${month}`, { credentials: "include", headers: { Accept: "text/csv" } });
     const blob = await res.blob();
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);

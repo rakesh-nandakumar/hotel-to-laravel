@@ -1,20 +1,15 @@
-import { useEffect, useState } from "react";
-import { api, post } from "../lib/api";
+import { useState } from "react";
+import { post } from "../lib/api";
+import { useBranding } from "../lib/branding";
 import { ErrorText, Field } from "../components/ui";
-
-type Branding = { name: string; check_in_time: string };
 
 /** Public online pre-check-in — guest submits details before arrival (§4.1). */
 export default function PreCheckIn() {
-  const [brand, setBrand] = useState<Branding | null>(null);
+  const { branding } = useBranding();
   const [f, setF] = useState({ code: "", full_name: "", id_number: "", phone: "", email: "", nationality: "", eta: "", notes: "" });
   const [done, setDone] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    api<Branding>("/public/branding").then(setBrand).catch(() => {});
-  }, []);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -36,8 +31,11 @@ export default function PreCheckIn() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-brand-900 p-4">
       <div className="card w-full max-w-lg p-6">
-        <h1 className="text-xl font-black">{brand?.name ?? "Mount View Hotel"}</h1>
-        <p className="mb-4 text-sm text-slate-500">Online pre-check-in — save time at the front desk. Check-in from {brand?.check_in_time ?? "14:00"}.</p>
+        <div className="mb-1 flex items-center gap-3">
+          {branding.logo && <img src={branding.logo} alt="" className="h-10 w-10 shrink-0 rounded-lg object-contain" />}
+          <h1 className="text-xl font-black">{branding.name}</h1>
+        </div>
+        <p className="mb-4 text-sm text-slate-500">Online pre-check-in — save time at the front desk. Check-in from {branding.check_in_time}.</p>
         {done ? (
           <div className="rounded-xl bg-emerald-50 p-6 text-center">
             <div className="text-3xl">✅</div>

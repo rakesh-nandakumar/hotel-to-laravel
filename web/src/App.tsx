@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { ReactNode } from "react";
 import { AuthProvider, useAuth } from "./lib/auth";
+import { BrandingProvider } from "./lib/branding";
 import { landingPath } from "./lib/landing";
 import { ToastProvider } from "./lib/toast";
 import Layout from "./components/Layout";
@@ -34,6 +35,9 @@ import Payroll from "./pages/Payroll";
 import AuditLog from "./pages/AuditLog";
 import PreCheckIn from "./pages/PreCheckIn";
 import VenueInquiry from "./pages/VenueInquiry";
+import AccountProfile from "./pages/account/Profile";
+import AccountPassword from "./pages/account/Password";
+import AccountTwoFactor from "./pages/account/TwoFactor";
 
 /**
  * Gate a route on a `module_key.action` permission (or any-of an array) —
@@ -52,6 +56,7 @@ function Guard({ children, permission, fullAdminOnly }: { children: ReactNode; p
 export default function App() {
   return (
     <AuthProvider>
+      <BrandingProvider>
       <ToastProvider>
         <BrowserRouter>
           <Routes>
@@ -84,6 +89,10 @@ export default function App() {
           <Route path="/staff/users/:id" element={<Guard permission="user_management_users.view"><UserDetail /></Guard>} />
           <Route path="/roles" element={<Guard permission="user_management_roles.access"><Roles /></Guard>} />
           <Route path="/settings" element={<Guard permission="hotel_settings.access"><Settings /></Guard>} />
+          {/* Personal account settings — any authenticated user manages their own. */}
+          <Route path="/account" element={<Guard><AccountProfile /></Guard>} />
+          <Route path="/account/password" element={<Guard><AccountPassword /></Guard>} />
+          <Route path="/account/two-factor" element={<Guard><AccountTwoFactor /></Guard>} />
           <Route path="/integrations" element={<Guard fullAdminOnly><Integrations /></Guard>} />
           <Route path="/payroll" element={<Guard permission="hotel_payroll.view"><Payroll /></Guard>} />
           <Route path="/audit-log" element={<Guard permission="audit_logs.access"><AuditLog /></Guard>} />
@@ -91,6 +100,7 @@ export default function App() {
           </Routes>
         </BrowserRouter>
       </ToastProvider>
+      </BrandingProvider>
     </AuthProvider>
   );
 }

@@ -22,4 +22,6 @@ class SettingType
     public const JSON = 'json';
 
     public const TIME = 'time';
+
+    public const IMAGE = 'image';
 }
