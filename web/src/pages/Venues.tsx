@@ -5,6 +5,7 @@ import { useFetch, usePagedFetch, lkr, toCents, centsToRupees, fmtDate, todayStr
 import { Badge, Card, Empty, ErrorText, Field, Modal, statusColor, Tabs, Pagination } from "../components/ui";
 import { SplitPay, ReasonModal } from "./POS";
 import { useToast } from "../lib/toast";
+import { useAuth } from "../lib/auth";
 
 type Lookup = { id: number; code: string; name: string };
 type Venue = { id: number; name: string; max_capacity: number; facilities: string[]; hourly_rate: number; half_day_rate: number; full_day_rate: number };
@@ -18,23 +19,21 @@ type Booking = {
 };
 
 export default function Venues() {
-  const [tab, setTab] = useState<"bookings" | "calendar" | "venues">("bookings");
+  const { can } = useAuth();
+  const canBookings = can("hotel_venue_bookings.access");
+  const [tab, setTab] = useState<"bookings" | "calendar" | "venues">(canBookings ? "bookings" : "venues");
+  const tabs = [
+    ...(canBookings ? [{ id: "bookings" as const, label: "Bookings" }, { id: "calendar" as const, label: "Calendar" }] : []),
+    { id: "venues" as const, label: "Venues & pricing" },
+  ];
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-xl font-extrabold">Wedding Halls & Rooftop</h1>
-        <Tabs
-          tabs={[
-            { id: "bookings" as const, label: "Bookings" },
-            { id: "calendar" as const, label: "Calendar" },
-            { id: "venues" as const, label: "Venues & pricing" },
-          ]}
-          active={tab}
-          onChange={setTab}
-        />
+        <Tabs tabs={tabs} active={tab} onChange={setTab} />
       </div>
-      {tab === "bookings" && <Bookings />}
-      {tab === "calendar" && <VenueCalendar />}
+      {tab === "bookings" && canBookings && <Bookings />}
+      {tab === "calendar" && canBookings && <VenueCalendar />}
       {tab === "venues" && <VenueList />}
     </div>
   );
@@ -42,6 +41,8 @@ export default function Venues() {
 
 /** Month calendar of all venue events — spot free dates at a glance. */
 function VenueCalendar() {
+  const { can } = useAuth();
+  const canView = can("hotel_venue_bookings.view");
   const [month, setMonth] = useState(() => new Date().toISOString().slice(0, 7));
   const { data } = useFetch<{ bookings: Booking[] }>("/venues/bookings/list");
   const bookings = data?.bookings;
@@ -96,7 +97,7 @@ function VenueCalendar() {
                   {todays.map((b) => (
                     <button
                       key={b.id}
-                      onClick={() => setSelected(b)}
+                      onClick={canView ? () => setSelected(b) : undefined}
                       className={`block w-full truncate rounded px-1 py-0.5 text-left text-[9px] font-bold leading-tight ${venueColor(b.venue.name)} ${b.status.code === "inquiry" ? "opacity-50" : ""}`}
                       title={`${b.code} · ${b.venue.name} · ${b.client_name} (${b.status.code.toUpperCase()})`}
                     >
@@ -115,6 +116,8 @@ function VenueCalendar() {
 }
 
 function VenueList() {
+  const { can } = useAuth();
+  const canEdit = can("hotel_venues.edit");
   const { data, reload } = useFetch<{ venues: Venue[] }>("/venues");
   const venues = data?.venues;
   const [error, setError] = useState("");
@@ -129,6 +132,7 @@ function VenueList() {
                 <span className="w-20 text-xs text-slate-500">{k === "hourly_rate" ? "Hourly" : k === "half_day_rate" ? "Half-day" : "Full-day"}</span>
                 <input
                   className="input"
+                  disabled={!canEdit}
                   defaultValue={centsToRupees(v[k])}
                   onBlur={(e) => put(`/venues/${v.id}`, { [k]: toCents(e.target.value) }).then(reload).catch((err) => setError(err.message))}
                 />
@@ -138,6 +142,7 @@ function VenueList() {
               <span className="label">Facilities (comma-separated)</span>
               <input
                 className="input"
+                disabled={!canEdit}
                 defaultValue={(v.facilities ?? []).join(", ")}
                 onBlur={(e) => put(`/venues/${v.id}`, { facilities: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) }).catch((err) => setError(err.message))}
               />
@@ -151,6 +156,8 @@ function VenueList() {
 }
 
 function Bookings() {
+  const { can } = useAuth();
+  const canView = can("hotel_venue_bookings.view");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const { data, reload, error } = usePagedFetch<Booking>(`/venues/bookings/list?page=${page}&page_size=${pageSize}`, "bookings", [page, pageSize]);
@@ -161,7 +168,7 @@ function Bookings() {
   return (
     <div className="space-y-3">
       <div className="flex justify-end">
-        <button className="btn-primary" onClick={() => setOpenNew(true)}><Plus size={16} /> New venue booking</button>
+        {can("hotel_venue_bookings.create") && <button className="btn-primary" onClick={() => setOpenNew(true)}><Plus size={16} /> New venue booking</button>}
       </div>
       <ErrorText error={error} />
       <div className="card overflow-x-auto">
@@ -171,7 +178,7 @@ function Bookings() {
           </thead>
           <tbody className="divide-y divide-slate-50">
             {(bookings ?? []).map((b) => (
-              <tr key={b.id} className="cursor-pointer hover:bg-slate-50" onClick={() => setSelected(b)}>
+              <tr key={b.id} className={canView ? "cursor-pointer hover:bg-slate-50" : ""} onClick={canView ? () => setSelected(b) : undefined}>
                 <td className="td font-bold">{b.code}</td>
                 <td className="td">{b.venue.name}</td>
                 <td className="td">{b.client_name}</td>
@@ -309,6 +316,7 @@ function NewBooking({ onClose, onDone }: { onClose: () => void; onDone: () => vo
 
 function BookingModal({ b, onClose }: { b: Booking; onClose: () => void }) {
   const toast = useToast();
+  const { can } = useAuth();
   const [error, setError] = useState("");
   const [payOpen, setPayOpen] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
@@ -342,17 +350,17 @@ function BookingModal({ b, onClose }: { b: Booking; onClose: () => void }) {
       </div>
       <ErrorText error={error} />
       <div className="mt-4 flex flex-wrap gap-2">
-        {state.status.code === "inquiry" && (
+        {state.status.code === "inquiry" && can("hotel_venue_bookings.confirm") && (
           <button className="btn-primary" onClick={() => act(() => post(`/venues/bookings/${state.id}/confirm`), "Venue booking confirmed")}>Confirm booking</button>
         )}
         {(state.status.code === "inquiry" || state.status.code === "confirmed") && state.folio && (
           <>
-            <button className="btn-primary" onClick={() => setPayOpen(true)}>Take payment / deposit</button>
-            <button className="btn-secondary" onClick={() => act(() => post(`/venues/bookings/${state.id}/complete`), "Event completed — invoice generated")}>Complete event → invoice</button>
-            <button className="btn-danger" onClick={() => setCancelOpen(true)}>Cancel</button>
+            {can("hotel_folios.payment") && <button className="btn-primary" onClick={() => setPayOpen(true)}>Take payment / deposit</button>}
+            {can("hotel_venue_bookings.complete") && <button className="btn-secondary" onClick={() => act(() => post(`/venues/bookings/${state.id}/complete`), "Event completed — invoice generated")}>Complete event → invoice</button>}
+            {can("hotel_venue_bookings.cancel") && <button className="btn-danger" onClick={() => setCancelOpen(true)}>Cancel</button>}
           </>
         )}
-        {state.folio && (
+        {state.folio && can("hotel_folios.invoice") && (
           <button className="btn-secondary" onClick={() => openPdf(`/folios/${state.folio!.id}/invoice?format=a4`)}>
             <Printer size={15} /> Invoice {state.folio.invoice_no ?? "(proforma)"}
           </button>

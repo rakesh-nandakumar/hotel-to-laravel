@@ -17,7 +17,10 @@ type ItemsPage = { menu_items: { data: Item[]; current_page: number; per_page: n
 
 export default function MenuAdmin() {
   const { can } = useAuth();
-  const canEdit = can("hotel_menu_items.edit"); // chef: sold-out toggle only (hotel_menu_items.sold_out)
+  const canCreate = can("hotel_menu_items.create");
+  const canEdit = can("hotel_menu_items.edit");
+  const canDelete = can("hotel_menu_items.delete");
+  const canSoldOut = can("hotel_menu_items.sold_out"); // chef: may hold this alone
   const [q, setQ] = useState("");
   const [catFilter, setCatFilter] = useState("");
   const [showArchived, setShowArchived] = useState(false);
@@ -50,7 +53,7 @@ export default function MenuAdmin() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="flex items-center gap-2 text-xl font-extrabold"><ClipboardList /> Menu</h1>
-        {canEdit && <button className="btn-primary" onClick={() => setEdit("new")}><Plus size={16} /> New item</button>}
+        {canCreate && <button className="btn-primary" onClick={() => setEdit("new")}><Plus size={16} /> New item</button>}
       </div>
 
       {/* Stats */}
@@ -90,7 +93,15 @@ export default function MenuAdmin() {
             {c.name} <span className="opacity-50">{c.items_count}</span>
           </button>
         ))}
-        {canEdit && <CategoryManager cats={cats ?? []} onChanged={() => { reloadCats(); reload(); }} />}
+        {can("hotel_menu_categories.access") && (
+          <CategoryManager
+            cats={cats ?? []}
+            canCreate={can("hotel_menu_categories.create")}
+            canEdit={can("hotel_menu_categories.edit")}
+            canDelete={can("hotel_menu_categories.delete")}
+            onChanged={() => { reloadCats(); reload(); }}
+          />
+        )}
         <button
           onClick={() => { setShowArchived(!showArchived); setPage(1); }}
           className={clsx("ml-auto rounded-full px-3.5 py-1.5 text-xs font-semibold", showArchived ? "bg-slate-700 text-white" : "bg-white text-slate-500 shadow-sm")}
@@ -118,12 +129,16 @@ export default function MenuAdmin() {
             </div>
             <span className="text-sm font-extrabold text-brand-700">{lkr(i.price)}</span>
             {i.active ? (
-              <button
-                className={clsx("rounded-full px-2.5 py-1 text-xs font-bold transition", i.sold_out ? "bg-red-100 text-red-700 hover:bg-red-200" : "bg-emerald-100 text-emerald-700 hover:bg-emerald-200")}
-                onClick={() => toggleSoldOut(i)}
-              >
-                {i.sold_out ? "SOLD OUT" : "Available"}
-              </button>
+              canSoldOut ? (
+                <button
+                  className={clsx("rounded-full px-2.5 py-1 text-xs font-bold transition", i.sold_out ? "bg-red-100 text-red-700 hover:bg-red-200" : "bg-emerald-100 text-emerald-700 hover:bg-emerald-200")}
+                  onClick={() => toggleSoldOut(i)}
+                >
+                  {i.sold_out ? "SOLD OUT" : "Available"}
+                </button>
+              ) : (
+                <Badge color={i.sold_out ? "red" : "green"}>{i.sold_out ? "SOLD OUT" : "Available"}</Badge>
+              )
             ) : (
               canEdit && (
                 <button
@@ -134,12 +149,14 @@ export default function MenuAdmin() {
                 </button>
               )
             )}
-            {canEdit && i.active && (
+            {i.active && (
               <>
-                <button className="btn-ghost !py-1 text-xs" onClick={() => setEdit(i)}>Edit</button>
-                <button className="btn-ghost !p-1.5 text-red-400 hover:!bg-red-50 hover:text-red-600" title="Remove item" onClick={() => setRemoving(i)}>
-                  <Trash2 size={15} />
-                </button>
+                {canEdit && <button className="btn-ghost !py-1 text-xs" onClick={() => setEdit(i)}>Edit</button>}
+                {canDelete && (
+                  <button className="btn-ghost !p-1.5 text-red-400 hover:!bg-red-50 hover:text-red-600" title="Remove item" onClick={() => setRemoving(i)}>
+                    <Trash2 size={15} />
+                  </button>
+                )}
               </>
             )}
           </div>
@@ -179,7 +196,7 @@ export default function MenuAdmin() {
 }
 
 // ── Category chips manager (add / rename / delete-empty) ─────────────────────
-function CategoryManager({ cats, onChanged }: { cats: Cat[]; onChanged: () => void }) {
+function CategoryManager({ cats, canCreate, canEdit, canDelete, onChanged }: { cats: Cat[]; canCreate: boolean; canEdit: boolean; canDelete: boolean; onChanged: () => void }) {
   const [open, setOpen] = useState(false);
   const [newCat, setNewCat] = useState("");
   const [error, setError] = useState("");
@@ -196,30 +213,35 @@ function CategoryManager({ cats, onChanged }: { cats: Cat[]; onChanged: () => vo
                 <input
                   className="input !py-1.5"
                   defaultValue={c.name}
+                  disabled={!canEdit}
                   onBlur={(e) => e.target.value.trim() && e.target.value !== c.name && put(`/menu/categories/${c.id}`, { name: e.target.value.trim() }).then(onChanged).catch((err) => setError(err.message))}
                 />
                 <Badge>{c.items_count} items</Badge>
                 {c.is_minibar && <Badge color="purple">minibar</Badge>}
-                <button
-                  className={clsx("btn-ghost !p-1.5", c.items_count > 0 ? "cursor-not-allowed text-slate-200" : "text-red-400 hover:text-red-600")}
-                  title={c.items_count > 0 ? "Move or remove its items first" : "Delete category"}
-                  disabled={c.items_count > 0}
-                  onClick={() => api(`/menu/categories/${c.id}`, { method: "DELETE" }).then(onChanged).catch((e) => setError(e.message))}
-                >
-                  <Trash2 size={14} />
-                </button>
+                {canDelete && (
+                  <button
+                    className={clsx("btn-ghost !p-1.5", c.items_count > 0 ? "cursor-not-allowed text-slate-200" : "text-red-400 hover:text-red-600")}
+                    title={c.items_count > 0 ? "Move or remove its items first" : "Delete category"}
+                    disabled={c.items_count > 0}
+                    onClick={() => api(`/menu/categories/${c.id}`, { method: "DELETE" }).then(onChanged).catch((e) => setError(e.message))}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                )}
               </div>
             ))}
-            <div className="flex gap-2 border-t border-slate-100 pt-3">
-              <input className="input" placeholder="New category name" value={newCat} onChange={(e) => setNewCat(e.target.value)} />
-              <button
-                className="btn-secondary"
-                disabled={!newCat.trim()}
-                onClick={() => post("/menu/categories", { name: newCat.trim(), sort_order: cats.length + 1 }).then(() => { setNewCat(""); onChanged(); }).catch((e) => setError(e.message))}
-              >
-                Add
-              </button>
-            </div>
+            {canCreate && (
+              <div className="flex gap-2 border-t border-slate-100 pt-3">
+                <input className="input" placeholder="New category name" value={newCat} onChange={(e) => setNewCat(e.target.value)} />
+                <button
+                  className="btn-secondary"
+                  disabled={!newCat.trim()}
+                  onClick={() => post("/menu/categories", { name: newCat.trim(), sort_order: cats.length + 1 }).then(() => { setNewCat(""); onChanged(); }).catch((e) => setError(e.message))}
+                >
+                  Add
+                </button>
+              </div>
+            )}
             <ErrorText error={error} />
           </div>
         </Modal>

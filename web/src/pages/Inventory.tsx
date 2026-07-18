@@ -20,6 +20,9 @@ type Filter = "ALL" | "LOW" | "EXPIRING" | "UNTRACKED";
 export default function Inventory() {
   const { can } = useAuth();
   const canDelete = can("hotel_ingredients.delete");
+  const canCreate = can("hotel_ingredients.create");
+  const canAdjust = can("hotel_ingredients.adjust_stock");
+  const canWriteOff = can("hotel_ingredients.write_off");
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<Filter>("ALL");
   const [page, setPage] = useState(1);
@@ -60,7 +63,7 @@ export default function Inventory() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="flex items-center gap-2 text-xl font-extrabold"><Package /> Kitchen Inventory</h1>
-        <button className="btn-primary" onClick={() => setOpenNew(true)}><Plus size={16} /> New ingredient</button>
+        {canCreate && <button className="btn-primary" onClick={() => setOpenNew(true)}><Plus size={16} /> New ingredient</button>}
       </div>
 
       {/* Stats */}
@@ -96,9 +99,11 @@ export default function Inventory() {
                 <span className="font-bold">{b.ingredient.name}</span>
                 <span>{b.qty.toLocaleString()} {b.ingredient.unit}</span>
                 <span className="hidden text-xs text-slate-500 sm:inline">expiry {fmtDate(b.expiry_date)} · received {fmtDate(b.received_at)}</span>
-                <button className="btn-danger ml-auto !py-1 text-xs" onClick={() => setWritingOff(b)}>
-                  <Trash2 size={13} /> Write off
-                </button>
+                {canWriteOff && (
+                  <button className="btn-danger ml-auto !py-1 text-xs" onClick={() => setWritingOff(b)}>
+                    <Trash2 size={13} /> Write off
+                  </button>
+                )}
               </div>
             ))}
           </div>
@@ -159,7 +164,7 @@ export default function Inventory() {
                   {r.low && <Badge color="red">LOW</Badge>}
                   {r.has_expired && <Badge color="red">EXPIRED</Badge>}
                   {!r.low && !r.has_expired && <Badge color="green">OK</Badge>}
-                  <button className="btn-secondary !py-1.5 text-xs" onClick={() => setAdjusting(r)}>Adjust</button>
+                  {(canAdjust || canDelete) && <button className="btn-secondary !py-1.5 text-xs" onClick={() => setAdjusting(r)}>{canAdjust ? "Adjust" : "Manage"}</button>}
                 </div>
               </div>
               {isOpen && (
@@ -192,7 +197,7 @@ export default function Inventory() {
         {data && <Pagination page={data.page} pageSize={data.page_size} total={data.total} onPage={setPage} onPageSize={(n) => { setPageSize(n); setPage(1); }} />}
       </div>
 
-      {adjusting && <AdjustModal ing={adjusting} canDelete={canDelete} onClose={() => { setAdjusting(null); refresh(); }} />}
+      {adjusting && <AdjustModal ing={adjusting} canAdjust={canAdjust} canDelete={canDelete} onClose={() => { setAdjusting(null); refresh(); }} />}
       {openNew && <NewIngredient onClose={() => { setOpenNew(false); refresh(); }} />}
       {writingOff && (
         <ReasonModal
@@ -216,7 +221,7 @@ export default function Inventory() {
 }
 
 // ── Adjust modal: receive / write-down / remove ───────────────────────────────
-function AdjustModal({ ing, canDelete, onClose }: { ing: Ingredient; canDelete: boolean; onClose: () => void }) {
+function AdjustModal({ ing, canAdjust, canDelete, onClose }: { ing: Ingredient; canAdjust: boolean; canDelete: boolean; onClose: () => void }) {
   const [mode, setMode] = useState<"IN" | "OUT">("IN");
   const [amount, setAmount] = useState("");
   const [reason, setReason] = useState("");
@@ -259,6 +264,7 @@ function AdjustModal({ ing, canDelete, onClose }: { ing: Ingredient; canDelete: 
 
   return (
     <Modal open onClose={onClose} title={`${ing.name} — ${ing.stock_qty.toLocaleString()} ${ing.unit} in stock`}>
+      {canAdjust && (<>
       <div className="mb-3 flex gap-1 rounded-xl bg-slate-100 p-1">
         <button className={clsx("flex-1 rounded-lg px-2 py-2 text-sm font-semibold", mode === "IN" ? "bg-white shadow-sm" : "text-slate-500")} onClick={() => setMode("IN")}>
           <ArrowDownToLine size={14} className="mr-1 inline" /> Receive stock
@@ -285,6 +291,7 @@ function AdjustModal({ ing, canDelete, onClose }: { ing: Ingredient; canDelete: 
           {mode === "IN" ? `Receive +${n || 0} ${ing.unit}` : `Write down −${n || 0} ${ing.unit}`}
         </button>
       </div>
+      </>)}
 
       {canDelete && (
         <div className="mt-5 rounded-xl border border-red-100 bg-red-50/50 p-3">

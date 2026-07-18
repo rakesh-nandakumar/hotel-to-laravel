@@ -27,6 +27,7 @@ import Reports from "./pages/Reports";
 import Notifications from "./pages/Notifications";
 import Staff from "./pages/Staff";
 import UserDetail from "./pages/UserDetail";
+import Roles from "./pages/Roles";
 import Settings from "./pages/Settings";
 import Integrations from "./pages/Integrations";
 import Payroll from "./pages/Payroll";
@@ -81,6 +82,7 @@ export default function App() {
           <Route path="/notifications" element={<Guard permission="hotel_notifications.access"><Notifications /></Guard>} />
           <Route path="/staff" element={<Guard permission={["user_management_users.access", "hotel_staff.set_pin"]}><Staff /></Guard>} />
           <Route path="/staff/users/:id" element={<Guard permission="user_management_users.view"><UserDetail /></Guard>} />
+          <Route path="/roles" element={<Guard permission="user_management_roles.access"><Roles /></Guard>} />
           <Route path="/settings" element={<Guard permission="hotel_settings.access"><Settings /></Guard>} />
           <Route path="/integrations" element={<Guard fullAdminOnly><Integrations /></Guard>} />
           <Route path="/payroll" element={<Guard permission="hotel_payroll.view"><Payroll /></Guard>} />

@@ -18,6 +18,8 @@ export default function Laundry() {
   const toast = useToast();
   const { can } = useAuth();
   const canEditPrices = can("hotel_laundry.edit");
+  const canCharge = can("hotel_laundry.charge");
+  const canCreate = can("hotel_laundry.create");
   const { data: itemsData, reload } = useFetch<{ items: LaundryItem[] }>("/laundry/items");
   const { data: roomsData } = useFetch<{ rooms: BoardRoom[] }>("/rooms");
   const items = itemsData?.items;
@@ -100,9 +102,11 @@ export default function Laundry() {
           </div>
           <ErrorText error={error} />
           {okMsg && <div className="mt-2 rounded-lg bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800">{okMsg}</div>}
-          <button className="btn-primary mt-3 w-full !py-3" disabled={busy || !roomId || pieces === 0} onClick={charge}>
-            <Send size={15} /> Charge {lkr(total)} to room folio
-          </button>
+          {canCharge && (
+            <button className="btn-primary mt-3 w-full !py-3" disabled={busy || !roomId || pieces === 0} onClick={charge}>
+              <Send size={15} /> Charge {lkr(total)} to room folio
+            </button>
+          )}
         </Card>
 
         <Card title={`Price list ${canEditPrices ? "(edit & click away to save)" : ""}`}>
@@ -133,7 +137,7 @@ export default function Laundry() {
               </div>
             ))}
           </div>
-          {canEditPrices && <NewLaundryItem onDone={reload} />}
+          {canCreate && <NewLaundryItem onDone={reload} />}
           <p className="mt-2 text-[11px] text-slate-400">⚠ Seeded prices are placeholders — confirm with the owner.</p>
         </Card>
       </div>

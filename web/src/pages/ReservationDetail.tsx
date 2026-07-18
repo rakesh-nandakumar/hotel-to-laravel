@@ -6,6 +6,7 @@ import { useFetch, lkr, usd, fmtDate, fmtDateTime, toCents, useSettings } from "
 import { Badge, Card, Empty, ErrorText, Field, Modal, statusColor } from "../components/ui";
 import { SplitPay, ReasonModal } from "./POS";
 import { useToast } from "../lib/toast";
+import { useAuth } from "../lib/auth";
 import clsx from "clsx";
 
 /** Every status/channel/etc. lookup relation serializes as this shape (see App\Models\Lookup). */
@@ -50,6 +51,7 @@ type CheckoutQuote = {
 export default function ReservationDetail() {
   const { id } = useParams<{ id: string }>();
   const { data, reload, error } = useFetch<{ reservation: Detail; folio: FolioT | null }>(`/reservations/${id}`);
+  const { can } = useAuth();
   const { num } = useSettings();
   const usdRate = num("currency.usd_rate", 0);
   const toast = useToast();
@@ -82,14 +84,14 @@ export default function ReservationDetail() {
         <div className="flex flex-wrap gap-2">
           {(r.status.code === "confirmed" || r.status.code === "pending") && (
             <>
-              <button className="btn-primary" onClick={() => setCheckinOpen(true)}><LogIn size={16} /> Check in</button>
-              <button className="btn-danger" onClick={() => setCancelOpen(true)}><Ban size={16} /> Cancel</button>
+              {can("hotel_reservations.check_in") && <button className="btn-primary" onClick={() => setCheckinOpen(true)}><LogIn size={16} /> Check in</button>}
+              {can("hotel_reservations.cancel") && <button className="btn-danger" onClick={() => setCancelOpen(true)}><Ban size={16} /> Cancel</button>}
             </>
           )}
-          {r.status.code === "checked_in" && (
+          {r.status.code === "checked_in" && can("hotel_reservations.checkout") && (
             <button className="btn-primary" onClick={() => setCheckoutOpen(true)}><LogOut size={16} /> Check out</button>
           )}
-          {f && (
+          {f && can("hotel_folios.invoice") && (
             <div className="flex">
               <button className="btn-secondary !rounded-r-none" onClick={() => openPdf(`/folios/${f.id}/invoice?format=a4`)}>
                 <Printer size={16} /> Invoice {f.invoice_no ?? "(proforma)"}
@@ -109,7 +111,7 @@ export default function ReservationDetail() {
       <ErrorText error={actErr} />
 
       <div className="grid gap-4 lg:grid-cols-3">
-        <Card title="Guest" actions={<button className="btn-ghost !py-1 text-xs" onClick={() => setEditGuestOpen(true)}><Pencil size={12} /> Edit</button>}>
+        <Card title="Guest" actions={can("hotel_guests.edit") ? <button className="btn-ghost !py-1 text-xs" onClick={() => setEditGuestOpen(true)}><Pencil size={12} /> Edit</button> : undefined}>
           <div className="space-y-1 text-sm">
             <div className="text-base font-bold">{r.guest.name} {r.guest.loyalty_points > 0 && <Badge color="brand">★ {r.guest.loyalty_points} pts</Badge>}</div>
             <div>📞 {r.guest.phone ? <a className="text-brand-600 hover:underline" href={`tel:${r.guest.phone}`}>{r.guest.phone}</a> : "—"}</div>
@@ -120,7 +122,7 @@ export default function ReservationDetail() {
             <Link className="block pt-1 text-xs font-bold text-brand-600" to="/guests">Guest profile →</Link>
           </div>
         </Card>
-        <Card title="Stay" actions={<button className="btn-ghost !py-1 text-xs" onClick={() => setEditStayOpen(true)}><Pencil size={12} /> Edit</button>}>
+        <Card title="Stay" actions={can("hotel_reservations.edit") ? <button className="btn-ghost !py-1 text-xs" onClick={() => setEditStayOpen(true)}><Pencil size={12} /> Edit</button> : undefined}>
           <div className="space-y-1 text-sm">
             <div><b>{fmtDate(r.check_in)}</b> → <b>{fmtDate(r.check_out)}</b></div>
             <div>{r.adults} adult(s), {r.children} child(ren) · via {r.channel.code.toUpperCase()}</div>
@@ -155,9 +157,9 @@ export default function ReservationDetail() {
           actions={
             f.status.code === "open" && (
               <>
-                <button className="btn-secondary !py-1" onClick={() => setAddLineOpen(true)}><Plus size={14} /> Add charge</button>
-                {f.balance > 0 && <button className="btn-secondary !py-1" onClick={() => setPayOpen(true)}>Take payment</button>}
-                {f.paid - f.refunded > 0 && <button className="btn-ghost !py-1 text-red-600" onClick={() => setRefundOpen(true)}>Refund…</button>}
+                {can("hotel_folios.add_line") && <button className="btn-secondary !py-1" onClick={() => setAddLineOpen(true)}><Plus size={14} /> Add charge</button>}
+                {f.balance > 0 && can("hotel_folios.payment") && <button className="btn-secondary !py-1" onClick={() => setPayOpen(true)}>Take payment</button>}
+                {f.paid - f.refunded > 0 && can("hotel_folios.refund") && <button className="btn-ghost !py-1 text-red-600" onClick={() => setRefundOpen(true)}>Refund…</button>}
               </>
             )
           }
@@ -173,7 +175,7 @@ export default function ReservationDetail() {
                     <td className="td text-xs text-slate-400">{l.staff.name}</td>
                     <td className="td text-right font-semibold">{lkr(l.amount)}</td>
                     <td className="td text-right">
-                      {f.status.code === "open" && (
+                      {f.status.code === "open" && can("hotel_folios.void_line") && (
                         <button className="btn-ghost !p-1.5 text-red-400 hover:!bg-red-50 hover:text-red-600" title="Remove charge" onClick={() => setVoidingLine(l)}>
                           <Trash2 size={13} />
                         </button>

@@ -5,6 +5,7 @@ import dayjs from "dayjs";
 import { useFetch } from "../lib/util";
 import { Badge, Empty, Tabs } from "../components/ui";
 import { NewBooking } from "./Reservations";
+import { useAuth } from "../lib/auth";
 import clsx from "clsx";
 
 type Room = { id: number; number: string; room_type: { name: string } };
@@ -94,6 +95,8 @@ function TapeChart({ daysShown, start, rooms }: { daysShown: number; start: dayj
   const { data: calResp, reload } = useFetch<{ reservations: CalRes[] }>(`/reservations/calendar?from=${from}&to=${to}`, [from, to]);
   const reservations = calResp?.reservations;
   const nav = useNavigate();
+  const { can } = useAuth();
+  const canCreate = can("hotel_reservations.create");
   const [sel, setSel] = useState<{ roomId: number; startDay: string; endDay: string } | null>(null);
   const [bookingOpen, setBookingOpen] = useState(false);
 
@@ -137,6 +140,7 @@ function TapeChart({ daysShown, start, rooms }: { daysShown: number; start: dayj
   };
 
   const clickEmpty = (roomId: number, day: dayjs.Dayjs) => {
+    if (!canCreate) return; // no create permission → the book-a-stay flow is disabled
     const dstr = day.format("YYYY-MM-DD");
     if (sel && sel.roomId === roomId) {
       const s = dayjs(sel.startDay);

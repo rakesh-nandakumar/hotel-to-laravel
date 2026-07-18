@@ -4,6 +4,7 @@ import { post, put } from "../lib/api";
 import { useFetch, usePagedFetch, lkr, toCents, centsToRupees, fmtDate } from "../lib/util";
 import { Badge, Card, Empty, ErrorText, Field, Modal, Pagination } from "../components/ui";
 import { useToast } from "../lib/toast";
+import { useAuth } from "../lib/auth";
 
 type Acc = {
   id: number; company_name: string; contact_name: string | null; phone: string | null; email: string | null;
@@ -19,6 +20,7 @@ type Statement = {
 };
 
 export default function Corporate() {
+  const { can } = useAuth();
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const { data, reload } = usePagedFetch<Acc>(`/corporate?page=${page}&page_size=${pageSize}`, "corporate_accounts", [page, pageSize]);
@@ -30,7 +32,7 @@ export default function Corporate() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-xl font-extrabold">Corporate / Travel-Agent Accounts</h1>
-        <button className="btn-primary" onClick={() => setEdit("new")}><Plus size={16} /> New account</button>
+        {can("hotel_corporate.create") && <button className="btn-primary" onClick={() => setEdit("new")}><Plus size={16} /> New account</button>}
       </div>
       <p className="text-xs text-slate-500">Negotiated rates apply automatically to bookings; stays can be charged to CORPORATE_CREDIT and settled month-end.</p>
       <div className="grid gap-3 md:grid-cols-2">
@@ -41,7 +43,7 @@ export default function Corporate() {
             actions={
               <>
                 <button className="btn-secondary !py-1 text-xs" onClick={() => setStatementFor(a)}>Statement</button>
-                <button className="btn-ghost !py-1 text-xs" onClick={() => setEdit(a)}>Edit</button>
+                {can("hotel_corporate.edit") && <button className="btn-ghost !py-1 text-xs" onClick={() => setEdit(a)}>Edit</button>}
               </>
             }
           >
@@ -103,6 +105,7 @@ function AccEditor({ acc, onClose }: { acc: Acc | null; onClose: () => void }) {
 
 function StatementModal({ acc, onClose }: { acc: Acc; onClose: () => void }) {
   const toast = useToast();
+  const { can } = useAuth();
   const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
   const { data: st, reload } = useFetch<Statement>(`/corporate/${acc.id}/statement?month=${month}`, [month]);
   const [settle, setSettle] = useState({ amount: "", method: "bank_transfer", reference: "" });
@@ -133,7 +136,7 @@ function StatementModal({ acc, onClose }: { acc: Acc; onClose: () => void }) {
               <span>Account outstanding (all time)</span><span>{lkr(acc.outstanding)}</span>
             </div>
           </Card>
-          <Card title="Record settlement payment" className="mt-3">
+          {can("hotel_corporate.edit") && <Card title="Record settlement payment" className="mt-3">
             <div className="flex flex-wrap gap-2">
               <input className="input !w-36" placeholder="Amount LKR" value={settle.amount} onChange={(e) => setSettle({ ...settle, amount: e.target.value })} />
               <select className="input !w-44" value={settle.method} onChange={(e) => setSettle({ ...settle, method: e.target.value })}>
@@ -162,7 +165,7 @@ function StatementModal({ acc, onClose }: { acc: Acc; onClose: () => void }) {
               </button>
             </div>
             <ErrorText error={error} />
-          </Card>
+          </Card>}
         </>
       )}
     </Modal>

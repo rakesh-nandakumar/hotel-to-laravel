@@ -5,6 +5,7 @@ import { post } from "../lib/api";
 import { useFetch, usePagedFetch, lkr, todayStr, fmtDate, toCents, useSettings } from "../lib/util";
 import { Badge, Card, Empty, ErrorText, Field, Modal, Pagination, statusColor, Tabs } from "../components/ui";
 import { useToast } from "../lib/toast";
+import { useAuth } from "../lib/auth";
 
 /** Every status/channel/etc. lookup relation serializes as this shape (see App\Models\Lookup). */
 type Lookup = { id: number; code: string; name: string };
@@ -84,6 +85,8 @@ export default function Reservations() {
 }
 
 function ReservationsList() {
+  const { can } = useAuth();
+  const canView = can("hotel_reservations.view");
   const [q, setQ] = useState("");
   const [status, setStatus] = useState("");
   const [page, setPage] = useState(1);
@@ -100,9 +103,11 @@ function ReservationsList() {
   return (
     <div className="space-y-4">
       <div className="flex justify-end">
-        <button className="btn-primary" onClick={() => setOpenNew(true)}>
-          <Plus size={16} /> New booking
-        </button>
+        {can("hotel_reservations.create") && (
+          <button className="btn-primary" onClick={() => setOpenNew(true)}>
+            <Plus size={16} /> New booking
+          </button>
+        )}
       </div>
       <div className="flex flex-wrap gap-2">
         <div className="relative flex-1 min-w-52">
@@ -127,7 +132,7 @@ function ReservationsList() {
           </thead>
           <tbody className="divide-y divide-slate-50">
             {(rows ?? []).map((r) => (
-              <tr key={r.id} className="cursor-pointer hover:bg-slate-50" onClick={() => nav(`/reservations/${r.id}`)}>
+              <tr key={r.id} className={canView ? "cursor-pointer hover:bg-slate-50" : ""} onClick={canView ? () => nav(`/reservations/${r.id}`) : undefined}>
                 <td className="td font-bold">{r.code}</td>
                 <td className="td">
                   {r.guest.name}

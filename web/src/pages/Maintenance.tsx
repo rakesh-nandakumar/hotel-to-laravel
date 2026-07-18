@@ -4,6 +4,7 @@ import { post, put } from "../lib/api";
 import { useFetch, usePagedFetch, fmtDateTime } from "../lib/util";
 import { Badge, Empty, ErrorText, Field, Modal, statusColor, Pagination } from "../components/ui";
 import { useToast } from "../lib/toast";
+import { useAuth } from "../lib/auth";
 
 type Lookup = { id: number; code: string; name: string };
 type Issue = {
@@ -16,6 +17,7 @@ type RoomLite = { id: number; number: string };
 type VenueLite = { id: number; name: string };
 
 export default function Maintenance() {
+  const { can } = useAuth();
   const [showAll, setShowAll] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -30,7 +32,7 @@ export default function Maintenance() {
         <h1 className="text-xl font-extrabold">Maintenance</h1>
         <div className="flex gap-2">
           <button className="btn-secondary" onClick={() => { setShowAll(!showAll); setPage(1); }}>{showAll ? "Open only" : "Show resolved"}</button>
-          <button className="btn-primary" onClick={() => setOpenNew(true)}><Plus size={16} /> Log issue</button>
+          {can("hotel_maintenance.create") && <button className="btn-primary" onClick={() => setOpenNew(true)}><Plus size={16} /> Log issue</button>}
         </div>
       </div>
       <ErrorText error={error} />
@@ -41,7 +43,7 @@ export default function Maintenance() {
             <span className="font-bold">{i.room ? `Room ${i.room.number}` : i.venue ? i.venue.name : "—"}</span>
             <span className="min-w-0 flex-1 text-sm">{i.description}</span>
             <span className="text-xs text-slate-400">by {i.logged_by.name} · {fmtDateTime(i.created_at)}</span>
-            {i.status.code !== "resolved" && (
+            {i.status.code !== "resolved" && can("hotel_maintenance.edit") && (
               <div className="flex gap-1.5">
                 {i.status.code === "open" && (
                   <button className="btn-secondary !py-1 text-xs" onClick={() => put(`/maintenance/${i.id}`, { status: "in_progress" }).then(reload)}>Start</button>

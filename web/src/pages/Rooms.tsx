@@ -5,6 +5,7 @@ import { api, post, put } from "../lib/api";
 import { useFetch, lkr, toCents, centsToRupees, fmtDate } from "../lib/util";
 import { Badge, Card, Empty, ErrorText, Field, Modal, statusColor, Tabs } from "../components/ui";
 import { getSocket } from "../lib/socket";
+import { useAuth } from "../lib/auth";
 import clsx from "clsx";
 
 type BoardRoom = {
@@ -25,24 +26,22 @@ type RoomType = {
 type Pkg = { id: number; code: string; name: string; description: string; price_per_person_per_night: number; meal_inclusions: string[]; active: boolean };
 
 export default function Rooms() {
+  const { can } = useAuth();
   const [tab, setTab] = useState<"board" | "types" | "packages">("board");
+  const tabs = [
+    { id: "board" as const, label: "Live board" },
+    ...(can("hotel_room_types.access") ? [{ id: "types" as const, label: "Room types & rates" }] : []),
+    ...(can("hotel_packages.access") ? [{ id: "packages" as const, label: "Packages" }] : []),
+  ];
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-xl font-extrabold">Rooms</h1>
-        <Tabs
-          tabs={[
-            { id: "board" as const, label: "Live board" },
-            { id: "types" as const, label: "Room types & rates" },
-            { id: "packages" as const, label: "Packages" },
-          ]}
-          active={tab}
-          onChange={setTab}
-        />
+        <Tabs tabs={tabs} active={tab} onChange={setTab} />
       </div>
       {tab === "board" && <Board />}
-      {tab === "types" && <Types />}
-      {tab === "packages" && <Packages />}
+      {tab === "types" && can("hotel_room_types.access") && <Types />}
+      {tab === "packages" && can("hotel_packages.access") && <Packages />}
     </div>
   );
 }
@@ -59,6 +58,7 @@ function nextStatuses(current: string): string[] {
 }
 
 function Board() {
+  const { can } = useAuth();
   const { data: roomsData, reload } = useFetch<{ rooms: BoardRoom[] }>("/rooms");
   const { data: typesData } = useFetch<{ room_types: RoomType[] }>("/rooms/types");
   const rooms = roomsData?.rooms;
@@ -108,7 +108,7 @@ function Board() {
   return (
     <div className="space-y-3">
       <div className="flex justify-end">
-        <button className="btn-primary" onClick={() => setEdit("new")}><Plus size={16} /> New room</button>
+        {can("hotel_rooms.create") && <button className="btn-primary" onClick={() => setEdit("new")}><Plus size={16} /> New room</button>}
       </div>
       <ErrorText error={error} />
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
@@ -156,9 +156,11 @@ function Board() {
               <div className="text-2xl font-black">{r.number}</div>
               <div className="flex items-center gap-1">
                 <Badge color={statusColor(r.status.code)}>{r.status.code.toUpperCase()}</Badge>
-                <button className="btn-ghost !p-1 text-slate-400 hover:text-brand-600" title="Edit room" onClick={() => setEdit(r)}>
-                  <Pencil size={13} />
-                </button>
+                {can("hotel_rooms.edit") && (
+                  <button className="btn-ghost !p-1 text-slate-400 hover:text-brand-600" title="Edit room" onClick={() => setEdit(r)}>
+                    <Pencil size={13} />
+                  </button>
+                )}
               </div>
             </div>
             <div className="mt-0.5 truncate text-xs text-slate-500">{r.room_type.name}{r.floor && ` · floor ${r.floor}`}</div>
@@ -189,7 +191,7 @@ function Board() {
                 {r.status.code === "dirty" && (
                   <span className="truncate text-[11px] font-semibold text-amber-700">Awaiting cleaning{r.pending_housekeeping ? "" : " (no task!)"}</span>
                 )}
-                {nextStatuses(r.status.code).length > 0 && (
+                {nextStatuses(r.status.code).length > 0 && can("hotel_rooms.edit_status") && (
                   <div className="relative ml-auto shrink-0">
                     <select
                       className="input !h-7 !w-32 !py-0 !pl-2 !pr-6 !text-[11px]"
@@ -281,6 +283,7 @@ function RoomEditor({ room, types, onClose }: { room: BoardRoom | null; types: R
 }
 
 function Types() {
+  const { can } = useAuth();
   const { data: typesData, reload } = useFetch<{ room_types: RoomType[] }>("/rooms/types");
   const [edit, setEdit] = useState<RoomType | "new" | null>(null);
   const all = typesData?.room_types ?? [];
@@ -291,7 +294,7 @@ function Types() {
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs text-slate-500">⚠ Rates, occupancy, bed config and amenities are placeholders pending owner confirmation — edit them here (no developer needed).</p>
-        <button className="btn-primary shrink-0" onClick={() => setEdit("new")}><Plus size={16} /> New room type</button>
+        {can("hotel_room_types.create") && <button className="btn-primary shrink-0" onClick={() => setEdit("new")}><Plus size={16} /> New room type</button>}
       </div>
       <div className="grid grid-cols-3 gap-3">
         <div className="card p-4">
@@ -316,7 +319,7 @@ function Types() {
                 {t.name} <Badge>{t.rooms.length} room{t.rooms.length === 1 ? "" : "s"}</Badge>
               </span>
             }
-            actions={<button className="btn-secondary !py-1" onClick={() => setEdit(t)}>Edit</button>}
+            actions={can("hotel_room_types.edit") ? <button className="btn-secondary !py-1" onClick={() => setEdit(t)}>Edit</button> : undefined}
           >
             <div className="grid grid-cols-2 gap-2 text-sm">
               <div className="rounded-lg bg-slate-50 px-3 py-2">
@@ -461,6 +464,8 @@ function TypeEditor({ type, onClose }: { type: RoomType | null; onClose: () => v
 }
 
 function Packages() {
+  const { can } = useAuth();
+  const canEdit = can("hotel_packages.edit");
   const { data: pkgsData, reload } = useFetch<{ packages: Pkg[] }>("/rooms/packages");
   const pkgs = pkgsData?.packages;
   const [error, setError] = useState("");
@@ -480,17 +485,22 @@ function Packages() {
             </span>
           }
           actions={
-            <button
-              className={clsx("rounded-full px-2.5 py-1 text-xs font-bold", p.active ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-400")}
-              onClick={() => save(p.id, { active: !p.active })}
-            >
-              {p.active ? "Active" : "Inactive"}
-            </button>
+            canEdit ? (
+              <button
+                className={clsx("rounded-full px-2.5 py-1 text-xs font-bold", p.active ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-400")}
+                onClick={() => save(p.id, { active: !p.active })}
+              >
+                {p.active ? "Active" : "Inactive"}
+              </button>
+            ) : (
+              <Badge color={p.active ? "green" : "slate"}>{p.active ? "Active" : "Inactive"}</Badge>
+            )
           }
         >
           <Field label="Price per person per night (LKR)">
             <input
               className="input"
+              disabled={!canEdit}
               defaultValue={centsToRupees(p.price_per_person_per_night)}
               onBlur={(e) => toCents(e.target.value) !== p.price_per_person_per_night && save(p.id, { price_per_person_per_night: toCents(e.target.value) })}
             />
@@ -499,6 +509,7 @@ function Packages() {
             <span className="label">Meal inclusions (comma-separated)</span>
             <input
               className="input"
+              disabled={!canEdit}
               defaultValue={(p.meal_inclusions ?? []).join(", ")}
               onBlur={(e) => save(p.id, { meal_inclusions: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) })}
             />
@@ -510,7 +521,7 @@ function Packages() {
           </div>
           <div className="mt-2">
             <span className="label">Description</span>
-            <input className="input" defaultValue={p.description} placeholder="Shown to staff when picking a package" onBlur={(e) => e.target.value !== p.description && save(p.id, { description: e.target.value })} />
+            <input className="input" disabled={!canEdit} defaultValue={p.description} placeholder="Shown to staff when picking a package" onBlur={(e) => e.target.value !== p.description && save(p.id, { description: e.target.value })} />
           </div>
           <p className="mt-2 text-[11px] text-slate-400">Children under the free-age policy are not charged. Edit and click away to save.</p>
         </Card>

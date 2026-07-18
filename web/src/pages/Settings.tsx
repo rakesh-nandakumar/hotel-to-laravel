@@ -3,6 +3,7 @@ import { Search, Settings as SettingsIcon } from "lucide-react";
 import { put } from "../lib/api";
 import { useFetch, fmtDateTime } from "../lib/util";
 import { Empty, ErrorText } from "../components/ui";
+import { useAuth } from "../lib/auth";
 import clsx from "clsx";
 
 type Setting = { key: string; value: string; type: string; category: string; label: string; hint?: string; updated_at?: string };
@@ -30,6 +31,8 @@ function parseValue(raw: string): unknown {
 }
 
 export default function Settings() {
+  const { can } = useAuth();
+  const canUpdate = can("hotel_settings.update");
   const { data, reload } = useFetch<{ settings: Setting[] }>("/hotel-settings");
   const [error, setError] = useState("");
   const [saved, setSaved] = useState("");
@@ -53,8 +56,9 @@ export default function Settings() {
 
   if (!data) return <Empty text="Loading settings…" />;
 
-  const save = (s: Setting, value: unknown) =>
-    put(`/hotel-settings/${s.key}`, { value })
+  const save = (s: Setting, value: unknown) => {
+    if (!canUpdate) return Promise.resolve(); // read-only viewer — controls are disabled too
+    return put(`/hotel-settings/${s.key}`, { value })
       .then(() => {
         setError("");
         setSaved(s.key);
@@ -62,6 +66,7 @@ export default function Settings() {
         reload();
       })
       .catch((e) => setError(`${s.label}: ${e.message}`));
+  };
 
   return (
     <div className="space-y-4">
@@ -73,6 +78,7 @@ export default function Settings() {
         </div>
       </div>
       <p className="text-xs text-slate-500">Nothing business-specific is hard-coded — every value below takes effect immediately. Items marked ⚠ await owner confirmation. Integration credentials live on the Full Administrator's Integrations page.</p>
+      {!canUpdate && <div className="rounded-lg bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">Read-only — you don't have permission to change settings.</div>}
       <ErrorText error={error} />
 
       <div className="grid gap-4 lg:grid-cols-[220px_1fr]">
@@ -104,6 +110,7 @@ export default function Settings() {
             <p className="rounded-xl bg-white px-4 py-3 text-xs text-slate-500 shadow-sm">{CATEGORY_META[activeCat].blurb}</p>
           )}
           {shown.length === 0 && <Empty text="No settings match" />}
+          <fieldset disabled={!canUpdate} className="contents">
           <div className="grid gap-3 xl:grid-cols-2">
             {shown.map((s) => (
               <div key={s.key} className="card p-4">
@@ -120,6 +127,7 @@ export default function Settings() {
               </div>
             ))}
           </div>
+          </fieldset>
         </div>
       </div>
     </div>

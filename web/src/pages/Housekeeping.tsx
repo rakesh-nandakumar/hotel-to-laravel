@@ -17,6 +17,8 @@ type StaffLite = { id: number; name: string; roles: { name: string }[] };
 export default function Housekeeping() {
   const { can } = useAuth();
   const isManager = can("hotel_housekeeping.assign");
+  const canChecklist = can("hotel_housekeeping.checklist");
+  const canComplete = can("hotel_housekeeping.complete");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const { data, reload, error } = usePagedFetch<Task>(`/housekeeping/tasks?page=${page}&page_size=${pageSize}`, "tasks", [page, pageSize]);
@@ -59,6 +61,8 @@ export default function Housekeeping() {
         <ChecklistModal
           task={open}
           canAssign={isManager}
+          canChecklist={canChecklist}
+          canComplete={canComplete}
           housekeepers={housekeepers}
           onClose={() => {
             setOpen(null);
@@ -70,7 +74,7 @@ export default function Housekeeping() {
   );
 }
 
-function ChecklistModal({ task, canAssign, housekeepers, onClose }: { task: Task; canAssign: boolean; housekeepers: StaffLite[]; onClose: () => void }) {
+function ChecklistModal({ task, canAssign, canChecklist, canComplete, housekeepers, onClose }: { task: Task; canAssign: boolean; canChecklist: boolean; canComplete: boolean; housekeepers: StaffLite[]; onClose: () => void }) {
   const toast = useToast();
   const [items, setItems] = useState(task.checklist);
   const [error, setError] = useState("");
@@ -78,6 +82,7 @@ function ChecklistModal({ task, canAssign, housekeepers, onClose }: { task: Task
   const allDone = items.every((i) => i.done);
 
   const toggle = (i: number) => {
+    if (!canChecklist) return;
     const next = items.map((x, j) => (j === i ? { ...x, done: !x.done } : x));
     setItems(next);
     put(`/housekeeping/tasks/${task.id}/checklist`, { checklist: next }).catch((e) => setError(e.message));
@@ -117,15 +122,17 @@ function ChecklistModal({ task, canAssign, housekeepers, onClose }: { task: Task
       <div className="space-y-1">
         {items.map((c, i) => (
           <label key={i} className={`flex items-start gap-2.5 rounded-lg px-2 py-2 text-sm ${c.done ? "bg-emerald-50 text-emerald-900" : "hover:bg-slate-50"}`}>
-            <input type="checkbox" className="mt-0.5 h-4 w-4" checked={c.done} onChange={() => toggle(i)} />
+            <input type="checkbox" className="mt-0.5 h-4 w-4" checked={c.done} disabled={!canChecklist} onChange={() => toggle(i)} />
             <span className={c.done ? "line-through opacity-70" : "font-medium"}>{c.item}</span>
           </label>
         ))}
       </div>
       <ErrorText error={error} />
-      <button className="btn-primary mt-4 w-full !py-3" disabled={!allDone || busy} onClick={complete}>
-        {allDone ? "Submit checklist — room becomes Clean/Available" : `Complete all ${items.length} items first`}
-      </button>
+      {canComplete && (
+        <button className="btn-primary mt-4 w-full !py-3" disabled={!allDone || busy} onClick={complete}>
+          {allDone ? "Submit checklist — room becomes Clean/Available" : `Complete all ${items.length} items first`}
+        </button>
+      )}
     </Modal>
   );
 }

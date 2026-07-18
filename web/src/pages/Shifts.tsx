@@ -3,6 +3,7 @@ import { post } from "../lib/api";
 import { useFetch, usePagedFetch, lkr, toCents, fmtDateTime } from "../lib/util";
 import { Badge, Card, Empty, ErrorText, Field, Modal, Pagination } from "../components/ui";
 import { useToast } from "../lib/toast";
+import { useAuth } from "../lib/auth";
 
 type CurrentShift = { id: number; opened_at: string; opening_cash: number; cash_in: number; cash_out: number; expected_now: number } | null;
 type Shift = {
@@ -11,6 +12,7 @@ type Shift = {
 };
 
 export default function Shifts() {
+  const { can } = useAuth();
   const { data: currentData, reload: reloadCurrent } = useFetch<{ shift: CurrentShift }>("/shifts/current");
   const current = currentData?.shift ?? null;
   const [page, setPage] = useState(1);
@@ -37,12 +39,12 @@ export default function Shifts() {
             <div className="text-emerald-700">Cash in: <b>{lkr(current.cash_in)}</b></div>
             <div className="text-red-600">Cash refunds: <b>{lkr(current.cash_out)}</b></div>
             <div className="rounded-lg bg-slate-100 px-3 py-1.5">Expected in drawer: <b>{lkr(current.expected_now)}</b></div>
-            <button className="btn-primary" onClick={() => setCloseOpen(true)}>Close shift & count cash</button>
+            {can("hotel_shifts.close") && <button className="btn-primary" onClick={() => setCloseOpen(true)}>Close shift & count cash</button>}
           </div>
         ) : (
           <div className="flex items-center gap-3 text-sm">
             <span>No open shift — open one before taking cash payments.</span>
-            <button className="btn-primary" onClick={() => setOpenOpen(true)}>Open shift</button>
+            {can("hotel_shifts.open") && <button className="btn-primary" onClick={() => setOpenOpen(true)}>Open shift</button>}
           </div>
         )}
       </Card>

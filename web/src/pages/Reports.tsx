@@ -6,6 +6,7 @@ import {
 import { post, openPdf } from "../lib/api";
 import { useFetch, usePagedFetch, lkr, todayStr, fmtDate } from "../lib/util";
 import { Badge, Card, Empty, ErrorText, Tabs, Pagination } from "../components/ui";
+import { useAuth } from "../lib/auth";
 import clsx from "clsx";
 
 type Daily = {
@@ -46,26 +47,24 @@ function downloadCsv(filename: string, rows: (string | number)[][]) {
 }
 
 export default function Reports() {
-  const [tab, setTab] = useState<"daily" | "monthly" | "pos" | "audit">("daily");
+  const { can } = useAuth();
+  const tabs = [
+    ...(can("hotel_reports.daily") ? [{ id: "daily" as const, label: "Daily" }] : []),
+    ...(can("hotel_reports.monthly") ? [{ id: "monthly" as const, label: "Monthly" }] : []),
+    ...(can("hotel_reports.pos") ? [{ id: "pos" as const, label: "POS sales" }] : []),
+    ...(can("hotel_reports.night_audit_view") ? [{ id: "audit" as const, label: "Night audit" }] : []),
+  ];
+  const [tab, setTab] = useState<"daily" | "monthly" | "pos" | "audit">(tabs[0]?.id ?? "daily");
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="flex items-center gap-2 text-xl font-extrabold"><BarChart3 /> Reports & Night Audit</h1>
-        <Tabs
-          tabs={[
-            { id: "daily" as const, label: "Daily" },
-            { id: "monthly" as const, label: "Monthly" },
-            { id: "pos" as const, label: "POS sales" },
-            { id: "audit" as const, label: "Night audit" },
-          ]}
-          active={tab}
-          onChange={setTab}
-        />
+        <Tabs tabs={tabs} active={tab} onChange={setTab} />
       </div>
-      {tab === "daily" && <DailyTab />}
-      {tab === "monthly" && <MonthlyTab />}
-      {tab === "pos" && <PosTab />}
-      {tab === "audit" && <AuditTab />}
+      {tab === "daily" && can("hotel_reports.daily") && <DailyTab />}
+      {tab === "monthly" && can("hotel_reports.monthly") && <MonthlyTab />}
+      {tab === "pos" && can("hotel_reports.pos") && <PosTab />}
+      {tab === "audit" && can("hotel_reports.night_audit_view") && <AuditTab />}
     </div>
   );
 }
@@ -397,6 +396,7 @@ function PosTab() {
 }
 
 function AuditTab() {
+  const { can } = useAuth();
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const { data, reload } = usePagedFetch<Audit>(`/reports/night-audit?page=${page}&page_size=${pageSize}`, "night_audits", [page, pageSize]);
@@ -419,17 +419,19 @@ function AuditTab() {
 
   return (
     <div className="space-y-3">
-      <Card title="Run night audit">
-        <div className="flex flex-wrap items-center gap-2">
-          <Calendar size={15} className="text-slate-400" />
-          <input type="date" className="input !w-44" max={todayStr()} value={runDate} onChange={(e) => setRunDate(e.target.value)} />
-          <button className="btn-primary" disabled={busy} onClick={run}>
-            <Play size={14} /> {busy ? "Running…" : `Run audit for ${fmtDate(runDate)}`}
-          </button>
-          <span className="text-xs text-slate-500">Stores a permanent snapshot: revenue, occupancy, cash collected & drawer variances. Can be re-run for any past date not yet audited.</span>
-        </div>
-        <ErrorText error={error} />
-      </Card>
+      {can("hotel_reports.night_audit_run") && (
+        <Card title="Run night audit">
+          <div className="flex flex-wrap items-center gap-2">
+            <Calendar size={15} className="text-slate-400" />
+            <input type="date" className="input !w-44" max={todayStr()} value={runDate} onChange={(e) => setRunDate(e.target.value)} />
+            <button className="btn-primary" disabled={busy} onClick={run}>
+              <Play size={14} /> {busy ? "Running…" : `Run audit for ${fmtDate(runDate)}`}
+            </button>
+            <span className="text-xs text-slate-500">Stores a permanent snapshot: revenue, occupancy, cash collected & drawer variances. Can be re-run for any past date not yet audited.</span>
+          </div>
+          <ErrorText error={error} />
+        </Card>
+      )}
 
       <div className="card divide-y divide-slate-50">
         {(audits ?? []).map((a) => {

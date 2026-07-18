@@ -16,6 +16,7 @@ type Att = {
 export default function Attendance() {
   const { can } = useAuth();
   const isManager = can("hotel_attendance.view_all");
+  const canClock = can("hotel_attendance.on_duty");
   const { data: mineData, reload: reloadMine } = useFetch<{ attendance: Att[] }>("/attendance/me");
   const mine = mineData?.attendance;
   const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
@@ -56,12 +57,12 @@ export default function Attendance() {
           {open ? (
             <>
               <Badge color="green">CLOCKED IN since {fmtDateTime(open.clock_in)}</Badge>
-              <button className="btn-danger" onClick={() => act("/attendance/clock-out")}><Clock4 size={15} /> Clock out</button>
+              {canClock && <button className="btn-danger" onClick={() => act("/attendance/clock-out")}><Clock4 size={15} /> Clock out</button>}
             </>
           ) : (
             <>
               <Badge>Off the clock</Badge>
-              <button className="btn-primary" onClick={() => act("/attendance/clock-in")}><Clock4 size={15} /> Clock in</button>
+              {canClock && <button className="btn-primary" onClick={() => act("/attendance/clock-in")}><Clock4 size={15} /> Clock in</button>}
             </>
           )}
         </div>
@@ -82,7 +83,7 @@ export default function Attendance() {
           actions={
             <div className="flex gap-2">
               <input type="month" className="input !w-40 !py-1" value={month} onChange={(e) => { setMonth(e.target.value); setPage(1); }} />
-              <button className="btn-secondary !py-1" onClick={exportCsv}><Download size={14} /> CSV</button>
+              {can("hotel_attendance.export") && <button className="btn-secondary !py-1" onClick={exportCsv}><Download size={14} /> CSV</button>}
             </div>
           }
         >

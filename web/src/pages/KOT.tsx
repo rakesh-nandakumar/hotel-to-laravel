@@ -7,6 +7,7 @@ import { api, openPdf } from "../lib/api";
 import { useFetch, fmtDateTime } from "../lib/util";
 import { Empty } from "../components/ui";
 import { getSocket } from "../lib/socket";
+import { useAuth } from "../lib/auth";
 import clsx from "clsx";
 
 type KotOrder = {
@@ -98,6 +99,7 @@ function elapsedMins(iso: string, now: number) {
 
 /** Kitchen Order Ticket screen — a full-screen Kitchen Display System for the shared kitchen monitor. */
 export default function KOT() {
+  const { can } = useAuth();
   const { data: kotData, reload } = useFetch<{ orders: KotOrder[] }>("/orders/kot");
   const { data: todaysData, reload: reloadToday } = useFetch<{ orders: RecentOrder[] }>("/orders?scope=today");
   const orders = kotData?.orders;
@@ -289,15 +291,19 @@ export default function KOT() {
                       </ul>
                       {o.notes && <div className={clsx("mt-2 rounded-lg px-2.5 py-1.5 text-xs font-semibold", T.noteBg)}>Note: {o.notes}</div>}
                       <div className="mt-4 flex gap-2">
-                        <button
-                          className={clsx("flex-1 rounded-xl py-3 text-sm font-black uppercase tracking-wide transition active:scale-[.97]", NEXT[o.kot_status.code].accent)}
-                          onClick={() => api(`/orders/${o.id}/kot`, { method: "PUT", body: { status: NEXT[o.kot_status.code].to } }).then(() => { reload(); reloadToday(); })}
-                        >
-                          {NEXT[o.kot_status.code].label}
-                        </button>
-                        <button className={clsx("rounded-xl px-3 transition", T.neutralBtn)} title="Print KOT ticket" onClick={() => openPdf(`/orders/${o.id}/kot-ticket`)}>
-                          <Printer size={18} />
-                        </button>
+                        {can("hotel_orders.kot") && (
+                          <button
+                            className={clsx("flex-1 rounded-xl py-3 text-sm font-black uppercase tracking-wide transition active:scale-[.97]", NEXT[o.kot_status.code].accent)}
+                            onClick={() => api(`/orders/${o.id}/kot`, { method: "PUT", body: { status: NEXT[o.kot_status.code].to } }).then(() => { reload(); reloadToday(); })}
+                          >
+                            {NEXT[o.kot_status.code].label}
+                          </button>
+                        )}
+                        {can("hotel_orders.kot_ticket") && (
+                          <button className={clsx("rounded-xl px-3 transition", T.neutralBtn)} title="Print KOT ticket" onClick={() => openPdf(`/orders/${o.id}/kot-ticket`)}>
+                            <Printer size={18} />
+                          </button>
+                        )}
                       </div>
                     </div>
                   );

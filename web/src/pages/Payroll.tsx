@@ -4,6 +4,7 @@ import { api, openPdf, post, put } from "../lib/api";
 import { useFetch, usePagedFetch, lkr, toCents, centsToRupees, fmtDate } from "../lib/util";
 import { Badge, Card, Empty, ErrorText, Field, Modal, Tabs, Pagination } from "../components/ui";
 import { useToast } from "../lib/toast";
+import { useAuth } from "../lib/auth";
 
 type Lookup = { id: number; code: string; name: string; color: string | null };
 type StaffPay = { id: number; name: string; base_salary: number; ot_hourly_rate: number; monthly_allowance: number; epf_enabled: boolean; epf_number?: string | null; roles: { id: number; name: string }[] };
@@ -25,19 +26,25 @@ type RunDetail = {
 
 /** Payroll — Owner only (salaries hidden from Managers). Attendance-driven OT, EPF/ETF from Settings. */
 export default function Payroll() {
+  const { can } = useAuth();
+  const canSalaries = can("hotel_payroll.manage_pay");
   const [tab, setTab] = useState<"runs" | "salaries">("runs");
+  const tabs = [
+    { id: "runs" as const, label: "Monthly runs" },
+    ...(canSalaries ? [{ id: "salaries" as const, label: "Salary setup" }] : []),
+  ];
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="flex items-center gap-2 text-xl font-extrabold">
           <Wallet /> Payroll <Badge color="purple">OWNER</Badge>
         </h1>
-        <Tabs tabs={[{ id: "runs" as const, label: "Monthly runs" }, { id: "salaries" as const, label: "Salary setup" }]} active={tab} onChange={setTab} />
+        <Tabs tabs={tabs} active={tab} onChange={setTab} />
       </div>
       <p className="text-xs text-slate-500">
         Worked hours come from staff attendance; hours over the standard month count as overtime. EPF 8% is deducted from pay; employer EPF 12% + ETF 3% are tracked for statutory reporting (percentages editable in Settings → payroll).
       </p>
-      {tab === "salaries" ? <Salaries /> : <Runs />}
+      {tab === "salaries" && canSalaries ? <Salaries /> : <Runs />}
     </div>
   );
 }
@@ -108,6 +115,7 @@ function Salaries() {
 
 function Runs() {
   const toast = useToast();
+  const { can } = useAuth();
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const { data, reload } = usePagedFetch<Run>(`/payroll/runs?page=${page}&page_size=${pageSize}`, "runs", [page, pageSize]);
@@ -121,24 +129,26 @@ function Runs() {
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
         <input type="month" className="input !w-44" value={month} onChange={(e) => setMonth(e.target.value)} />
-        <button
-          className="btn-primary"
-          disabled={busy}
-          onClick={() => {
-            setBusy(true);
-            setError("");
-            post<{ run: { id: number } }>("/payroll/runs", { month })
-              .then((r) => {
-                toast.success(`Payroll generated for ${month}`);
-                reload();
-                setOpenRun(r.run.id);
-              })
-              .catch((e) => setError(e.message))
-              .finally(() => setBusy(false));
-          }}
-        >
-          <Play size={15} /> {busy ? "Generating…" : `Generate payroll for ${month}`}
-        </button>
+        {can("hotel_payroll.generate") && (
+          <button
+            className="btn-primary"
+            disabled={busy}
+            onClick={() => {
+              setBusy(true);
+              setError("");
+              post<{ run: { id: number } }>("/payroll/runs", { month })
+                .then((r) => {
+                  toast.success(`Payroll generated for ${month}`);
+                  reload();
+                  setOpenRun(r.run.id);
+                })
+                .catch((e) => setError(e.message))
+                .finally(() => setBusy(false));
+            }}
+          >
+            <Play size={15} /> {busy ? "Generating…" : `Generate payroll for ${month}`}
+          </button>
+        )}
       </div>
       <ErrorText error={error} />
       <div className="card divide-y divide-slate-50">
@@ -161,6 +171,7 @@ function Runs() {
 
 function RunModal({ runId, onClose }: { runId: number; onClose: () => void }) {
   const toast = useToast();
+  const { can } = useAuth();
   const { data, reload } = useFetch<{ run: RunDetail }>(`/payroll/runs/${runId}`);
   const run = data?.run;
   const [error, setError] = useState("");
@@ -197,17 +208,21 @@ function RunModal({ runId, onClose }: { runId: number; onClose: () => void }) {
       <div className="mb-3 flex flex-wrap gap-2">
         {draft ? (
           <>
-            <button className="btn-primary" onClick={() => act(() => post(`/payroll/runs/${run.id}/finalize`), "Payroll finalized")}>
-              <Lock size={15} /> Finalize (locks lines)
-            </button>
-            <button className="btn-danger" onClick={() => act(() => api(`/payroll/runs/${run.id}`, { method: "DELETE" })).then(onClose)}>
-              <Trash2 size={15} /> Delete draft
-            </button>
+            {can("hotel_payroll.finalize") && (
+              <button className="btn-primary" onClick={() => act(() => post(`/payroll/runs/${run.id}/finalize`), "Payroll finalized")}>
+                <Lock size={15} /> Finalize (locks lines)
+              </button>
+            )}
+            {can("hotel_payroll.delete_run") && (
+              <button className="btn-danger" onClick={() => act(() => api(`/payroll/runs/${run.id}`, { method: "DELETE" })).then(onClose)}>
+                <Trash2 size={15} /> Delete draft
+              </button>
+            )}
           </>
         ) : (
           <Badge color="green">Finalized {run.finalized_at ? fmtDate(run.finalized_at) : ""}</Badge>
         )}
-        <button className="btn-secondary" onClick={exportCsv}><Download size={15} /> CSV</button>
+        {can("hotel_payroll.export") && <button className="btn-secondary" onClick={exportCsv}><Download size={15} /> CSV</button>}
         <span className="ml-auto self-center text-sm font-extrabold">Total net: {lkr(totalNet)}</span>
       </div>
       <ErrorText error={error} />
@@ -241,16 +256,18 @@ function RunModal({ runId, onClose }: { runId: number; onClose: () => void }) {
                 <td className="td text-right text-red-600">{l.deduction > 0 ? `-${lkr(l.deduction)}` : "—"}</td>
                 <td className="td text-right font-extrabold">{lkr(l.net_pay)}</td>
                 <td className="td whitespace-nowrap text-right">
-                  {draft && <button className="btn-ghost !py-1 text-xs" onClick={() => setEditing(l)}>Adjust</button>}
-                  {!draft && !l.paid && (
+                  {draft && can("hotel_payroll.adjust_line") && <button className="btn-ghost !py-1 text-xs" onClick={() => setEditing(l)}>Adjust</button>}
+                  {!draft && !l.paid && can("hotel_payroll.mark_paid") && (
                     <button className="btn-primary !py-1 text-xs" onClick={() => act(() => post(`/payroll/lines/${l.id}/mark-paid`), `${l.user.name} marked paid — ${lkr(l.net_pay)}`)}>
                       <CheckCircle2 size={13} /> Mark paid
                     </button>
                   )}
                   {!draft && l.paid && <Badge color="green">PAID</Badge>}
-                  <button className="btn-ghost !py-1 text-xs" title="Payslip PDF" onClick={() => openPdf(`/payroll/lines/${l.id}/payslip`)}>
-                    <Printer size={13} />
-                  </button>
+                  {can("hotel_payroll.payslip") && (
+                    <button className="btn-ghost !py-1 text-xs" title="Payslip PDF" onClick={() => openPdf(`/payroll/lines/${l.id}/payslip`)}>
+                      <Printer size={13} />
+                    </button>
+                  )}
                 </td>
               </tr>
             ))}

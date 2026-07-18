@@ -4,6 +4,7 @@ import { api, post, put } from "../lib/api";
 import { useFetch, lkr, fmtDate } from "../lib/util";
 import { Badge, Card, Empty, ErrorText, Field, Modal, Pagination, statusColor } from "../components/ui";
 import { useToast } from "../lib/toast";
+import { useAuth } from "../lib/auth";
 
 /** Every status/etc. lookup relation serializes as this shape (see App\Models\Lookup). */
 type Lookup = { id: number; code: string; name: string };
@@ -45,6 +46,8 @@ function downloadCsv(filename: string, rows: (string | number)[][]) {
 }
 
 export default function Guests() {
+  const { can } = useAuth();
+  const canView = can("hotel_guests.view");
   const [q, setQ] = useState("");
   const [sort, setSort] = useState<(typeof SORTS)[number]["id"]>("recent");
   const [page, setPage] = useState(1);
@@ -75,7 +78,7 @@ export default function Guests() {
         <h1 className="text-xl font-extrabold">Guests & Loyalty</h1>
         <div className="flex gap-2">
           <button className="btn-secondary" onClick={exportCsv}><Download size={15} /> Export CSV</button>
-          <button className="btn-primary" onClick={() => setOpenNew(true)}><Plus size={16} /> New guest</button>
+          {can("hotel_guests.create") && <button className="btn-primary" onClick={() => setOpenNew(true)}><Plus size={16} /> New guest</button>}
         </div>
       </div>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
@@ -108,7 +111,7 @@ export default function Guests() {
           </thead>
           <tbody className="divide-y divide-slate-50">
             {(guests ?? []).map((g) => (
-              <tr key={g.id} className="cursor-pointer hover:bg-slate-50" onClick={() => setOpenId(g.id)}>
+              <tr key={g.id} className={canView ? "cursor-pointer hover:bg-slate-50" : ""} onClick={canView ? () => setOpenId(g.id) : undefined}>
                 <td className="td font-semibold">
                   <span className="inline-flex items-center gap-1.5">
                     {g.name}
@@ -142,6 +145,7 @@ export default function Guests() {
 }
 
 function GuestModal({ id, onClose }: { id: number; onClose: () => void }) {
+  const { can } = useAuth();
   const { data, reload } = useFetch<{ guest: GuestDetail; total_stays: number }>(`/guests/${id}`);
   const [adjOpen, setAdjOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
@@ -160,14 +164,14 @@ function GuestModal({ id, onClose }: { id: number; onClose: () => void }) {
             <div>🪪 {g.id_number ?? "—"}</div>
             <div>🌐 {g.nationality ?? "—"}</div>
             {g.preferences && <div className="text-slate-500">♥ {g.preferences}</div>}
-            <button className="btn-secondary mt-1 !py-1 text-xs" onClick={() => setEditOpen(true)}>Edit profile</button>
+            {can("hotel_guests.edit") && <button className="btn-secondary mt-1 !py-1 text-xs" onClick={() => setEditOpen(true)}>Edit profile</button>}
           </div>
         </Card>
         <Card title="Lifetime value">
           <div className="text-2xl font-extrabold text-brand-700">{lkr(g.lifetime_spend)}</div>
           <div className="text-sm text-slate-500">{data.total_stays} completed stay(s)</div>
         </Card>
-        <Card title="Loyalty points" actions={<button className="btn-secondary !py-1 text-xs" onClick={() => setAdjOpen(true)}>Adjust</button>}>
+        <Card title="Loyalty points" actions={can("hotel_guests.loyalty_adjust") ? <button className="btn-secondary !py-1 text-xs" onClick={() => setAdjOpen(true)}>Adjust</button> : undefined}>
           <div className="text-2xl font-extrabold">★ {g.loyalty_points}</div>
           <div className="text-xs text-slate-500">Earned on rooms, restaurant & venue spend · redeemable at checkout / POS</div>
         </Card>

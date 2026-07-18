@@ -9,6 +9,7 @@ import { lkr, toCents, useFetch, useSettings, usd } from "../lib/util";
 import { Badge, Card, Empty, ErrorText, Field, Modal, statusColor, Tabs } from "../components/ui";
 import { getSocket } from "../lib/socket";
 import { useToast } from "../lib/toast";
+import { useAuth } from "../lib/auth";
 import clsx from "clsx";
 
 type MenuItem = { id: number; item_no?: number | null; name: string; price: number; sold_out: boolean; description: string };
@@ -31,7 +32,9 @@ const PAY_METHODS = ["cash", "card", "lankaqr", "bank_transfer"] as const;
 const minsAgo = (iso: string) => Math.max(0, Math.round((Date.now() - +new Date(iso)) / 60000));
 
 export default function POS() {
-  const [view, setView] = useState<"new" | "open">("new");
+  const { can } = useAuth();
+  const canCreate = can("hotel_orders.create");
+  const [view, setView] = useState<"new" | "open">(canCreate ? "new" : "open");
   const { data: menuData, reload: reloadMenu } = useFetch<{ categories: MenuCat[] }>("/menu/full");
   const { data: roomsData } = useFetch<{ rooms: BoardRoom[] }>("/rooms");
   const { data: activeData, reload: reloadActive } = useFetch<{ orders: Order[] }>("/orders?scope=active");
@@ -82,7 +85,7 @@ export default function POS() {
           </span>
           <Tabs
             tabs={[
-              { id: "new" as const, label: "New order" },
+              ...(canCreate ? [{ id: "new" as const, label: "New order" }] : []),
               { id: "open" as const, label: `Open orders${openCount + parkedCount > 0 ? ` (${openCount + parkedCount})` : ""}` },
             ]}
             active={view}
@@ -502,6 +505,7 @@ function OpenOrders({ active, todays, usdRate, reload }: { active: Order[]; toda
 function OrderModal({ orderId, usdRate, onClose }: { orderId: number; usdRate: number; onClose: () => void }) {
   const { data, reload } = useFetch<{ order: Order }>(`/orders/${orderId}`);
   const order = data?.order;
+  const { can } = useAuth();
   const toast = useToast();
   const [error, setError] = useState("");
   const [payOpen, setPayOpen] = useState(false);
@@ -542,7 +546,7 @@ function OrderModal({ orderId, usdRate, onClose }: { orderId: number; usdRate: n
           <div key={i.id} className={clsx("flex items-center justify-between gap-2 py-1.5", i.voided && "text-slate-300 line-through")}>
             <span className="min-w-0 flex-1">{i.qty} × {i.name}</span>
             <span>{lkr(i.amount)}</span>
-            {canVoid && !i.voided && (
+            {canVoid && !i.voided && can("hotel_orders.void_item") && (
               <button className="rounded px-1.5 py-0.5 text-xs font-bold text-red-400 hover:bg-red-50 hover:text-red-600" title="Void this item (reason required)" onClick={() => setVoidingItem(i)}>
                 ✕
               </button>
@@ -574,8 +578,8 @@ function OrderModal({ orderId, usdRate, onClose }: { orderId: number; usdRate: n
       <div className="mt-4 flex flex-wrap gap-2">
         {!isDone && (
           <>
-            <button className="btn-primary" onClick={() => setPayOpen(true)}>Take payment / split bill</button>
-            {order.type.code === "room_guest" && (
+            {can("hotel_orders.settle") && <button className="btn-primary" onClick={() => setPayOpen(true)}>Take payment / split bill</button>}
+            {order.type.code === "room_guest" && can("hotel_orders.charge_to_room") && (
               <button
                 className="btn-secondary"
                 onClick={() =>
@@ -587,8 +591,8 @@ function OrderModal({ orderId, usdRate, onClose }: { orderId: number; usdRate: n
                 <BedDouble size={15} /> Charge to room folio
               </button>
             )}
-            <button className="btn-secondary" onClick={() => setDiscountOpen(true)}>Discount (manager)</button>
-            {order.status.code === "parked" ? (
+            {can("hotel_orders.discount") && <button className="btn-secondary" onClick={() => setDiscountOpen(true)}>Discount (manager)</button>}
+            {can("hotel_orders.hold") && (order.status.code === "parked" ? (
               <button className="btn-secondary" onClick={() => act(() => api(`/orders/${order.id}/resume`, { method: "PUT", body: {} }))}>
                 <PlayCircle size={15} /> Resume
               </button>
@@ -596,31 +600,37 @@ function OrderModal({ orderId, usdRate, onClose }: { orderId: number; usdRate: n
               <button className="btn-secondary" onClick={() => act(() => api(`/orders/${order.id}/park`, { method: "PUT", body: {} }))}>
                 <PauseCircle size={15} /> Park / hold
               </button>
+            ))}
+            {can("hotel_orders.void") && (
+              <button
+                className="btn-danger"
+                disabled={kitchenBusy}
+                title={kitchenBusy ? "Cannot void while preparing / ready to serve" : undefined}
+                onClick={() => setReasonAction("void")}
+              >
+                Void order
+              </button>
             )}
-            <button
-              className="btn-danger"
-              disabled={kitchenBusy}
-              title={kitchenBusy ? "Cannot void while preparing / ready to serve" : undefined}
-              onClick={() => setReasonAction("void")}
-            >
-              Void order
-            </button>
           </>
         )}
-        {isDone && order.status.code !== "void" && paid > 0 && (
+        {isDone && order.status.code !== "void" && paid > 0 && can("hotel_orders.refund") && (
           <button className="btn-danger" onClick={() => setReasonAction("refund")}>Refund…</button>
         )}
-        {order.type.code === "walkin" && (
+        {order.type.code === "walkin" && can("hotel_orders.slip") && (
           <button className="btn-secondary" onClick={() => openPdf(`/orders/${order.id}/slip`)}>
             <Printer size={15} /> Bill + token
           </button>
         )}
-        <button className="btn-secondary" onClick={() => openPdf(`/orders/${order.id}/receipt?format=thermal`)}>
-          <Printer size={15} /> Receipt
-        </button>
-        <button className="btn-secondary" onClick={() => openPdf(`/orders/${order.id}/kot-ticket`)}>
-          <Printer size={15} /> KOT ticket
-        </button>
+        {can("hotel_orders.receipt") && (
+          <button className="btn-secondary" onClick={() => openPdf(`/orders/${order.id}/receipt?format=thermal`)}>
+            <Printer size={15} /> Receipt
+          </button>
+        )}
+        {can("hotel_orders.kot_ticket") && (
+          <button className="btn-secondary" onClick={() => openPdf(`/orders/${order.id}/kot-ticket`)}>
+            <Printer size={15} /> KOT ticket
+          </button>
+        )}
       </div>
 
       {payOpen && (

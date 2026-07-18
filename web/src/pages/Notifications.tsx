@@ -2,6 +2,7 @@ import { useState } from "react";
 import { post } from "../lib/api";
 import { usePagedFetch, fmtDateTime } from "../lib/util";
 import { Badge, Card, Empty, Pagination, statusColor } from "../components/ui";
+import { useAuth } from "../lib/auth";
 
 type Lookup = { id: number; code: string; name: string; color: string | null };
 type Notif = {
@@ -18,6 +19,7 @@ type Notif = {
 };
 
 export default function Notifications() {
+  const { can } = useAuth();
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const { data, reload } = usePagedFetch<Notif>(`/notifications?page=${page}&page_size=${pageSize}`, "notifications", [page, pageSize]);
@@ -26,7 +28,7 @@ export default function Notifications() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-xl font-extrabold">Notifications</h1>
-        <button className="btn-secondary" onClick={() => post("/notifications/run-scheduled").then(reload)}>Run scheduled reminders now</button>
+        {can("hotel_notifications.run_scheduled") && <button className="btn-secondary" onClick={() => post("/notifications/run-scheduled").then(reload)}>Run scheduled reminders now</button>}
       </div>
       <p className="text-xs text-slate-500">
         Email &amp; WhatsApp delivery is <b>stubbed in Phase 1</b> (messages are composed, logged and marked sent by the console provider).

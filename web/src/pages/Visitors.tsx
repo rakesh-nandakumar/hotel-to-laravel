@@ -3,6 +3,7 @@ import { Plus } from "lucide-react";
 import { post } from "../lib/api";
 import { usePagedFetch, fmtDateTime } from "../lib/util";
 import { Badge, Card, Empty, ErrorText, Pagination } from "../components/ui";
+import { useAuth } from "../lib/auth";
 
 type Log = {
   id: number; name: string; vehicle_no?: string | null; purpose?: string | null; time_in: string; time_out?: string | null;
@@ -10,6 +11,7 @@ type Log = {
 };
 
 export default function Visitors() {
+  const { can } = useAuth();
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const { data, reload } = usePagedFetch<Log>(`/visitors?page=${page}&page_size=${pageSize}`, "visitors", [page, pageSize]);
@@ -21,7 +23,7 @@ export default function Visitors() {
     <div className="space-y-4">
       <h1 className="text-xl font-extrabold">Visitor & Vehicle Log</h1>
       <p className="text-xs text-slate-500">Security role — no financial access. Guest parking capacity is set in Settings (default 10 vehicles).</p>
-      <Card title="Sign in a visitor / vehicle">
+      {can("hotel_visitors.create") && <Card title="Sign in a visitor / vehicle">
         <div className="flex flex-wrap gap-2">
           <input className="input !w-52" placeholder="Visitor name *" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} />
           <input className="input !w-40" placeholder="Vehicle no." value={f.vehicleNo} onChange={(e) => setF({ ...f, vehicleNo: e.target.value })} />
@@ -39,7 +41,7 @@ export default function Visitors() {
           </button>
         </div>
         <ErrorText error={error} />
-      </Card>
+      </Card>}
       <Card title="Log">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[640px]">
@@ -56,7 +58,7 @@ export default function Visitors() {
                   <td className="td text-xs">{l.time_out ? fmtDateTime(l.time_out) : <Badge color="green">on site</Badge>}</td>
                   <td className="td text-xs text-slate-400">{l.logged_by.name}</td>
                   <td className="td text-right">
-                    {!l.time_out && (
+                    {!l.time_out && can("hotel_visitors.sign_out") && (
                       <button className="btn-secondary !py-1 text-xs" onClick={() => post(`/visitors/${l.id}/out`).then(reload)}>Sign out</button>
                     )}
                   </td>

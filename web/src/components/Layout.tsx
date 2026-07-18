@@ -62,9 +62,17 @@ const SECTIONS: Section[] = [
       { to: "/notifications", label: "Notifications", icon: <Bell size={18} />, permission: "hotel_notifications.access" },
       // Payroll is Owner-only server-side (Managers never see salaries).
       { to: "/payroll", label: "Payroll", icon: <Wallet size={18} />, permission: "hotel_payroll.view" },
-      { to: "/staff", label: "Staff", icon: <Users size={18} />, permission: ["user_management_users.access", "hotel_staff.set_pin"] },
-      { to: "/audit-log", label: "Audit Log", icon: <History size={18} />, permission: "audit_logs.access" },
       { to: "/settings", label: "Settings", icon: <SettingsIcon size={18} />, permission: "hotel_settings.access" },
+    ],
+  },
+  {
+    title: "Administration",
+    items: [
+      // Owners who only set POS PINs (hotel_staff.set_pin) still reach this — the
+      // page degrades to a PIN-only picker for them.
+      { to: "/staff", label: "User Management", icon: <Users size={18} />, permission: ["user_management_users.access", "hotel_staff.set_pin"] },
+      { to: "/roles", label: "Roles & Permissions", icon: <ShieldCheck size={18} />, permission: "user_management_roles.access" },
+      { to: "/audit-log", label: "Audit Log", icon: <History size={18} />, permission: "audit_logs.access" },
     ],
   },
   {
