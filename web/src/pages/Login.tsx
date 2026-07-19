@@ -62,7 +62,11 @@ export default function Login() {
       const msg = (err as Error).message;
       setError(msg);
       setPin("");
-      if (err instanceof ApiFail && err.status === 422 && /no longer trusted/i.test(msg)) {
+      if (
+        err instanceof ApiFail &&
+        err.status === 422 &&
+        /no longer trusted/i.test(msg)
+      ) {
         localStorage.removeItem("mv.device");
         localStorage.removeItem("mv.pinUser");
         setPinUser(null);
@@ -100,16 +104,22 @@ export default function Login() {
         <div className="relative z-10 flex flex-col items-center gap-5 text-center">
           <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-2xl bg-white/10 shadow-2xl ring-1 ring-white/10">
             {branding.logo ? (
-              <img src={branding.logo} alt={branding.name} className="h-full w-full object-contain p-2" />
+              <img
+                src={branding.logo}
+                alt={branding.name}
+                className="h-full w-full"
+              />
             ) : (
               <Building2 className="h-10 w-10 text-white" />
             )}
           </div>
           <div>
-            <h1 className="text-3xl font-black tracking-tight">{branding.name}</h1>
-            {branding.tagline && (
-              <p className="mx-auto mt-2 max-w-[240px] text-sm font-medium uppercase tracking-widest text-brand-100/70">
-                {branding.tagline}
+            <h1 className="text-3xl font-black tracking-tight">
+              {branding.name}
+            </h1>
+            {branding.login_tagline && (
+              <p className="mx-auto mt-2 max-w-[240px] text-sm font-medium tracking-widest text-brand-100/70">
+                {branding.login_tagline}
               </p>
             )}
           </div>
@@ -298,7 +308,15 @@ export default function Login() {
 }
 
 /** Fortify's standard TOTP challenge — a 6-digit authenticator code, or a one-time recovery code. */
-function TwoFactorForm({ busy, onSubmit, onBack }: { busy: boolean; onSubmit: (p: { code?: string; recovery_code?: string }) => void; onBack: () => void }) {
+function TwoFactorForm({
+  busy,
+  onSubmit,
+  onBack,
+}: {
+  busy: boolean;
+  onSubmit: (p: { code?: string; recovery_code?: string }) => void;
+  onBack: () => void;
+}) {
   const [useRecovery, setUseRecovery] = useState(false);
   const [value, setValue] = useState("");
 
@@ -310,7 +328,9 @@ function TwoFactorForm({ busy, onSubmit, onBack }: { busy: boolean; onSubmit: (p
         onSubmit(useRecovery ? { recovery_code: value } : { code: value });
       }}
     >
-      <p className="text-sm text-slate-600">Enter the 6-digit code from your authenticator app.</p>
+      <p className="text-sm text-slate-600">
+        Enter the 6-digit code from your authenticator app.
+      </p>
       <input
         className="input text-center text-lg tracking-[0.3em]"
         inputMode={useRecovery ? "text" : "numeric"}
@@ -324,7 +344,13 @@ function TwoFactorForm({ busy, onSubmit, onBack }: { busy: boolean; onSubmit: (p
         {busy ? "Verifying…" : "Verify"}
       </button>
       <div className="flex items-center justify-between text-xs">
-        <button type="button" className="text-slate-400 underline" onClick={onBack}>← Back</button>
+        <button
+          type="button"
+          className="text-slate-400 underline"
+          onClick={onBack}
+        >
+          ← Back
+        </button>
         <button
           type="button"
           className="font-bold text-brand-600 underline"
@@ -333,7 +359,9 @@ function TwoFactorForm({ busy, onSubmit, onBack }: { busy: boolean; onSubmit: (p
             setValue("");
           }}
         >
-          {useRecovery ? "Use authenticator code" : "Use a recovery code instead"}
+          {useRecovery
+            ? "Use authenticator code"
+            : "Use a recovery code instead"}
         </button>
       </div>
     </form>
@@ -341,14 +369,28 @@ function TwoFactorForm({ busy, onSubmit, onBack }: { busy: boolean; onSubmit: (p
 }
 
 /** This app's email-OTP challenge — masked email, resend cooldown, attempts remaining. */
-function OtpForm({ busy, onSubmit, onBack }: { busy: boolean; onSubmit: (p: { code?: string; recovery_code?: string }) => void; onBack: () => void }) {
-  const [info, setInfo] = useState<{ maskedEmail: string; resendIn: number; attemptsRemaining: number } | null>(null);
+function OtpForm({
+  busy,
+  onSubmit,
+  onBack,
+}: {
+  busy: boolean;
+  onSubmit: (p: { code?: string; recovery_code?: string }) => void;
+  onBack: () => void;
+}) {
+  const [info, setInfo] = useState<{
+    maskedEmail: string;
+    resendIn: number;
+    attemptsRemaining: number;
+  } | null>(null);
   const [value, setValue] = useState("");
   const [resendMsg, setResendMsg] = useState("");
   const [cooldown, setCooldown] = useState(0);
 
   useEffect(() => {
-    api<{ maskedEmail: string; resendIn: number; attemptsRemaining: number }>("/otp-challenge")
+    api<{ maskedEmail: string; resendIn: number; attemptsRemaining: number }>(
+      "/otp-challenge",
+    )
       .then((d) => {
         setInfo(d);
         setCooldown(d.resendIn);
@@ -365,7 +407,9 @@ function OtpForm({ busy, onSubmit, onBack }: { busy: boolean; onSubmit: (p: { co
   const resend = async () => {
     setResendMsg("");
     try {
-      const r = await api<{ message: string }>("/otp-challenge/resend", { method: "POST" });
+      const r = await api<{ message: string }>("/otp-challenge/resend", {
+        method: "POST",
+      });
       setResendMsg(r.message);
       setCooldown(30);
     } catch (err) {
@@ -382,8 +426,13 @@ function OtpForm({ busy, onSubmit, onBack }: { busy: boolean; onSubmit: (p: { co
       }}
     >
       <p className="text-sm text-slate-600">
-        Enter the 6-digit code sent to {info ? <strong>{info.maskedEmail}</strong> : "your email"}.
-        {info && info.attemptsRemaining <= 3 && <span className="ml-1 text-amber-600">({info.attemptsRemaining} attempts left)</span>}
+        Enter the 6-digit code sent to{" "}
+        {info ? <strong>{info.maskedEmail}</strong> : "your email"}.
+        {info && info.attemptsRemaining <= 3 && (
+          <span className="ml-1 text-amber-600">
+            ({info.attemptsRemaining} attempts left)
+          </span>
+        )}
       </p>
       <input
         className="input text-center text-lg tracking-[0.3em]"
@@ -397,10 +446,23 @@ function OtpForm({ busy, onSubmit, onBack }: { busy: boolean; onSubmit: (p: { co
       <button className="btn-primary w-full !py-3" disabled={busy || !value}>
         {busy ? "Verifying…" : "Verify"}
       </button>
-      {resendMsg && <p className="text-center text-xs text-slate-500">{resendMsg}</p>}
+      {resendMsg && (
+        <p className="text-center text-xs text-slate-500">{resendMsg}</p>
+      )}
       <div className="flex items-center justify-between text-xs">
-        <button type="button" className="text-slate-400 underline" onClick={onBack}>← Back</button>
-        <button type="button" className="font-bold text-brand-600 underline disabled:cursor-not-allowed disabled:text-slate-300 disabled:no-underline" disabled={cooldown > 0} onClick={resend}>
+        <button
+          type="button"
+          className="text-slate-400 underline"
+          onClick={onBack}
+        >
+          ← Back
+        </button>
+        <button
+          type="button"
+          className="font-bold text-brand-600 underline disabled:cursor-not-allowed disabled:text-slate-300 disabled:no-underline"
+          disabled={cooldown > 0}
+          onClick={resend}
+        >
           {cooldown > 0 ? `Resend in ${cooldown}s` : "Resend code"}
         </button>
       </div>

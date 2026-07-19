@@ -40,8 +40,8 @@ export function xsrfHeader(): Record<string, string> {
 
 /** Sanctum SPA CSRF handshake — fetched once, re-fetched after logout invalidates it. */
 let csrfPromise: Promise<void> | null = null;
-export function ensureCsrfCookie(): Promise<void> {
-  if (getCookie("XSRF-TOKEN")) return Promise.resolve();
+export function ensureCsrfCookie(force = false): Promise<void> {
+  if (!force && getCookie("XSRF-TOKEN")) return Promise.resolve();
   csrfPromise ??= fetch(`${API_ORIGIN}/sanctum/csrf-cookie`, { credentials: "include" })
     .then(() => undefined)
     .finally(() => {
@@ -50,7 +50,7 @@ export function ensureCsrfCookie(): Promise<void> {
   return csrfPromise;
 }
 
-export async function api<T = unknown>(path: string, opts: { method?: string; body?: unknown; silent401?: boolean } = {}): Promise<T> {
+export async function api<T = unknown>(path: string, opts: { method?: string; body?: unknown; silent401?: boolean; _retried?: boolean } = {}): Promise<T> {
   const method = opts.method || (opts.body !== undefined ? "POST" : "GET");
   if (MUTATING.has(method)) await ensureCsrfCookie();
 
@@ -64,6 +64,17 @@ export async function api<T = unknown>(path: string, opts: { method?: string; bo
     },
     body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
   });
+
+  // The XSRF-TOKEN cookie is only re-fetched when absent, so a token that
+  // went stale server-side (session regenerated, expired mid-edit, etc.)
+  // gets reused as-is and rejected with 419. Slow, deliberate interactions —
+  // picking/dragging/pasting a logo, editing text before saving — are the
+  // most likely to outlive it. Refresh the cookie and retry exactly once
+  // before surfacing an error, instead of making the user re-submit by hand.
+  if (res.status === 419 && MUTATING.has(method) && !opts._retried) {
+    await ensureCsrfCookie(true);
+    return api<T>(path, { ...opts, _retried: true });
+  }
 
   // A mid-session expiry on a real request hard-redirects to /login. The auth
   // probe (`/me`) passes silent401 so a logged-out boot is handled client-side

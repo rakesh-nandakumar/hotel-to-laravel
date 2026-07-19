@@ -48,3 +48,4 @@
 @endsection
 
 @php($footerExtra = 'Thank you — please come again!')
+@php($poweredBy = true)

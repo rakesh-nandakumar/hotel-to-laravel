@@ -1,10 +1,44 @@
-import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
-  LayoutDashboard, BedDouble, CalendarDays, CalendarRange, UtensilsCrossed, ChefHat, ClipboardList,
-  Wrench, Users, Building2, Clock4, Banknote, BarChart3, Settings as SettingsIcon,
-  PartyPopper, Contact, LogOut, Menu as MenuIcon, X, WifiOff, ShieldCheck, Bell, Package, Sparkles, Plug, Shirt, Wallet, History, Search,
-  PanelLeftClose, PanelLeft,
+  LayoutDashboard,
+  BedDouble,
+  CalendarDays,
+  CalendarRange,
+  UtensilsCrossed,
+  ChefHat,
+  ClipboardList,
+  Wrench,
+  Users,
+  Building2,
+  Clock4,
+  Banknote,
+  BarChart3,
+  Settings as SettingsIcon,
+  PartyPopper,
+  Contact,
+  LogOut,
+  Menu as MenuIcon,
+  X,
+  WifiOff,
+  ShieldCheck,
+  Bell,
+  Package,
+  Sparkles,
+  Plug,
+  Shirt,
+  Wallet,
+  History,
+  Search,
+  PanelLeftClose,
+  PanelLeft,
 } from "lucide-react";
 import { useAuth } from "../lib/auth";
 import { useBranding, brandInitials } from "../lib/branding";
@@ -16,56 +50,171 @@ import { ConfirmDialog, Avatar } from "./ui";
 import clsx from "clsx";
 
 /** `permission` omitted means "visible to any authenticated user" (e.g. Attendance); an array means "any of". */
-type Item = { to: string; label: string; icon: ReactNode; permission?: string | string[]; fullAdminOnly?: boolean };
+type Item = {
+  to: string;
+  label: string;
+  icon: ReactNode;
+  permission?: string | string[];
+  fullAdminOnly?: boolean;
+};
 type Section = { title: string; items: Item[] };
 
 const SECTIONS: Section[] = [
   {
     title: "Overview",
-    items: [{ to: "/", label: "Dashboard", icon: <LayoutDashboard size={18} />, permission: "dashboard.access" }],
+    items: [
+      {
+        to: "/",
+        label: "Dashboard",
+        icon: <LayoutDashboard size={18} />,
+        permission: "dashboard.access",
+      },
+    ],
   },
   {
     title: "Front Desk",
     items: [
-      { to: "/reservations", label: "Reservations", icon: <CalendarDays size={18} />, permission: "hotel_reservations.access" },
-      { to: "/calendar", label: "Calendar", icon: <CalendarRange size={18} />, permission: "hotel_reservations.access" },
-      { to: "/rooms", label: "Rooms", icon: <BedDouble size={18} />, permission: "hotel_rooms.access" },
-      { to: "/guests", label: "Guests", icon: <Contact size={18} />, permission: "hotel_guests.access" },
+      {
+        to: "/reservations",
+        label: "Reservations",
+        icon: <CalendarDays size={18} />,
+        permission: "hotel_reservations.access",
+      },
+      {
+        to: "/calendar",
+        label: "Calendar",
+        icon: <CalendarRange size={18} />,
+        permission: "hotel_reservations.access",
+      },
+      {
+        to: "/rooms",
+        label: "Rooms",
+        icon: <BedDouble size={18} />,
+        permission: "hotel_rooms.access",
+      },
+      {
+        to: "/guests",
+        label: "Guests",
+        icon: <Contact size={18} />,
+        permission: "hotel_guests.access",
+      },
     ],
   },
   {
     title: "Restaurant",
     items: [
-      { to: "/pos", label: "POS", icon: <UtensilsCrossed size={18} />, permission: "hotel_orders.access" },
-      { to: "/kot", label: "Kitchen (KOT)", icon: <ChefHat size={18} />, permission: "hotel_orders.access" },
-      { to: "/menu", label: "Menu", icon: <ClipboardList size={18} />, permission: "hotel_menu_items.access" },
-      { to: "/inventory", label: "Inventory", icon: <Package size={18} />, permission: "hotel_ingredients.access" },
+      {
+        to: "/pos",
+        label: "POS",
+        icon: <UtensilsCrossed size={18} />,
+        permission: "hotel_orders.access",
+      },
+      {
+        to: "/kot",
+        label: "Kitchen (KOT)",
+        icon: <ChefHat size={18} />,
+        permission: "hotel_orders.access",
+      },
+      {
+        to: "/menu",
+        label: "Menu",
+        icon: <ClipboardList size={18} />,
+        permission: "hotel_menu_items.access",
+      },
+      {
+        to: "/inventory",
+        label: "Inventory",
+        icon: <Package size={18} />,
+        permission: "hotel_ingredients.access",
+      },
     ],
   },
   {
     title: "Events",
-    items: [{ to: "/venues", label: "Venues", icon: <PartyPopper size={18} />, permission: "hotel_venues.access" }],
+    items: [
+      {
+        to: "/venues",
+        label: "Venues",
+        icon: <PartyPopper size={18} />,
+        permission: "hotel_venues.access",
+      },
+    ],
   },
   {
     title: "Operations",
     items: [
-      { to: "/housekeeping", label: "Housekeeping", icon: <Sparkles size={18} />, permission: "hotel_housekeeping.access" },
-      { to: "/laundry", label: "Laundry", icon: <Shirt size={18} />, permission: "hotel_laundry.access" },
-      { to: "/maintenance", label: "Maintenance", icon: <Wrench size={18} />, permission: "hotel_maintenance.access" },
-      { to: "/visitors", label: "Visitor Log", icon: <ShieldCheck size={18} />, permission: "hotel_visitors.access" },
-      { to: "/attendance", label: "Attendance", icon: <Clock4 size={18} />, permission: "hotel_attendance.access" },
+      {
+        to: "/housekeeping",
+        label: "Housekeeping",
+        icon: <Sparkles size={18} />,
+        permission: "hotel_housekeeping.access",
+      },
+      {
+        to: "/laundry",
+        label: "Laundry",
+        icon: <Shirt size={18} />,
+        permission: "hotel_laundry.access",
+      },
+      {
+        to: "/maintenance",
+        label: "Maintenance",
+        icon: <Wrench size={18} />,
+        permission: "hotel_maintenance.access",
+      },
+      {
+        to: "/visitors",
+        label: "Visitor Log",
+        icon: <ShieldCheck size={18} />,
+        permission: "hotel_visitors.access",
+      },
+      {
+        to: "/attendance",
+        label: "Attendance",
+        icon: <Clock4 size={18} />,
+        permission: "hotel_attendance.access",
+      },
     ],
   },
   {
     title: "Money & Admin",
     items: [
-      { to: "/shifts", label: "Cash / Shifts", icon: <Banknote size={18} />, permission: "hotel_shifts.access" },
-      { to: "/corporate", label: "Corporate", icon: <Building2 size={18} />, permission: "hotel_corporate.access" },
-      { to: "/reports", label: "Reports", icon: <BarChart3 size={18} />, permission: "hotel_reports.dashboard" },
-      { to: "/notifications", label: "Notifications", icon: <Bell size={18} />, permission: "hotel_notifications.access" },
+      {
+        to: "/shifts",
+        label: "Cash / Shifts",
+        icon: <Banknote size={18} />,
+        permission: "hotel_shifts.access",
+      },
+      {
+        to: "/corporate",
+        label: "Corporate",
+        icon: <Building2 size={18} />,
+        permission: "hotel_corporate.access",
+      },
+      {
+        to: "/reports",
+        label: "Reports",
+        icon: <BarChart3 size={18} />,
+        permission: "hotel_reports.dashboard",
+      },
+      {
+        to: "/notifications",
+        label: "Notifications",
+        icon: <Bell size={18} />,
+        permission: "hotel_notifications.access",
+      },
       // Payroll is Owner-only server-side (Managers never see salaries).
-      { to: "/payroll", label: "Payroll", icon: <Wallet size={18} />, permission: "hotel_payroll.view" },
-      { to: "/settings", label: "Settings", icon: <SettingsIcon size={18} />, permission: "hotel_settings.access" },
+      {
+        to: "/payroll",
+        label: "Payroll",
+        icon: <Wallet size={18} />,
+        permission: "hotel_payroll.view",
+      },
+      {
+        to: "/settings",
+        label: "Settings",
+        icon: <SettingsIcon size={18} />,
+        permission: "hotel_settings.access",
+      },
     ],
   },
   {
@@ -73,9 +222,24 @@ const SECTIONS: Section[] = [
     items: [
       // Owners who only set POS PINs (hotel_staff.set_pin) still reach this — the
       // page degrades to a PIN-only picker for them.
-      { to: "/staff", label: "User Management", icon: <Users size={18} />, permission: ["user_management_users.access", "hotel_staff.set_pin"] },
-      { to: "/roles", label: "Roles & Permissions", icon: <ShieldCheck size={18} />, permission: "user_management_roles.access" },
-      { to: "/audit-log", label: "Audit Log", icon: <History size={18} />, permission: "audit_logs.access" },
+      {
+        to: "/staff",
+        label: "User Management",
+        icon: <Users size={18} />,
+        permission: ["user_management_users.access", "hotel_staff.set_pin"],
+      },
+      {
+        to: "/roles",
+        label: "Roles & Permissions",
+        icon: <ShieldCheck size={18} />,
+        permission: "user_management_roles.access",
+      },
+      {
+        to: "/audit-log",
+        label: "Audit Log",
+        icon: <History size={18} />,
+        permission: "audit_logs.access",
+      },
     ],
   },
   {
@@ -83,7 +247,12 @@ const SECTIONS: Section[] = [
     items: [
       // Integrations settings — Full Administrator only, matching the backend's
       // hard admin-only gate on the "integrations" settings category.
-      { to: "/integrations", label: "Integrations", icon: <Plug size={18} />, fullAdminOnly: true },
+      {
+        to: "/integrations",
+        label: "Integrations",
+        icon: <Plug size={18} />,
+        fullAdminOnly: true,
+      },
     ],
   },
 ];
@@ -96,7 +265,13 @@ type FlatItem = Item & { section: string };
  * or section. Mirrors the leolanka-inertia search: Ctrl/⌘+K focuses, ↑/↓ move,
  * ↵ opens, Esc clears, click-outside closes.
  */
-function SidebarSearch({ sections, onNavigate }: { sections: Section[]; onNavigate: () => void }) {
+function SidebarSearch({
+  sections,
+  onNavigate,
+}: {
+  sections: Section[];
+  onNavigate: () => void;
+}) {
   const nav = useNavigate();
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(-1);
@@ -105,14 +280,21 @@ function SidebarSearch({ sections, onNavigate }: { sections: Section[]; onNaviga
   const containerRef = useRef<HTMLDivElement>(null);
 
   const flat = useMemo<FlatItem[]>(
-    () => sections.flatMap((s) => s.items.map((i) => ({ ...i, section: s.title }))),
-    [sections]
+    () =>
+      sections.flatMap((s) => s.items.map((i) => ({ ...i, section: s.title }))),
+    [sections],
   );
 
   const results = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return [];
-    return flat.filter((i) => i.label.toLowerCase().includes(q) || i.section.toLowerCase().includes(q)).slice(0, 8);
+    return flat
+      .filter(
+        (i) =>
+          i.label.toLowerCase().includes(q) ||
+          i.section.toLowerCase().includes(q),
+      )
+      .slice(0, 8);
   }, [query, flat]);
 
   const showResults = focused && query.trim().length > 0;
@@ -132,7 +314,10 @@ function SidebarSearch({ sections, onNavigate }: { sections: Section[]; onNaviga
   // Close the results when clicking outside.
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(e.target as Node)
+      ) {
         setFocused(false);
         setActiveIndex(-1);
       }
@@ -150,7 +335,7 @@ function SidebarSearch({ sections, onNavigate }: { sections: Section[]; onNaviga
       inputRef.current?.blur();
       onNavigate();
     },
-    [nav, onNavigate]
+    [nav, onNavigate],
   );
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -231,43 +416,55 @@ function SidebarSearch({ sections, onNavigate }: { sections: Section[]; onNaviga
                       onMouseEnter={() => setActiveIndex(index)}
                       className={clsx(
                         "flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm transition-colors",
-                        highlighted ? "bg-brand-600 text-white" : "text-sidebar-fg hover:bg-sidebar-accent"
+                        highlighted
+                          ? "bg-brand-600 text-white"
+                          : "text-sidebar-fg hover:bg-sidebar-accent",
                       )}
                     >
                       <div
                         className={clsx(
                           "flex h-7 w-7 shrink-0 items-center justify-center rounded-md",
-                          highlighted ? "bg-white/20" : "bg-sidebar-accent"
+                          highlighted ? "bg-white/20" : "bg-sidebar-accent",
                         )}
                       >
                         {item.icon}
                       </div>
                       <div className="flex min-w-0 flex-1 flex-col">
-                        <span className="truncate font-medium leading-tight">{item.label}</span>
+                        <span className="truncate font-medium leading-tight">
+                          {item.label}
+                        </span>
                         <span
                           className={clsx(
                             "mt-0.5 truncate text-xs leading-tight",
-                            highlighted ? "text-white/70" : "text-sidebar-fg/50"
+                            highlighted
+                              ? "text-white/70"
+                              : "text-sidebar-fg/50",
                           )}
                         >
                           {item.section}
                         </span>
                       </div>
                       {highlighted && (
-                        <kbd className="shrink-0 rounded border border-white/30 px-1.5 py-0.5 text-[10px] text-white/70">↵</kbd>
+                        <kbd className="shrink-0 rounded border border-white/30 px-1.5 py-0.5 text-[10px] text-white/70">
+                          ↵
+                        </kbd>
                       )}
                     </button>
                   );
                 })}
               </div>
               <div className="border-t border-sidebar-border/60 px-3 py-1.5">
-                <span className="text-[10px] text-sidebar-fg/30">↑↓ navigate · ↵ open · esc close</span>
+                <span className="text-[10px] text-sidebar-fg/30">
+                  ↑↓ navigate · ↵ open · esc close
+                </span>
               </div>
             </>
           ) : (
             <div className="flex flex-col items-center gap-1 px-3 py-6 text-center">
               <Search className="h-5 w-5 text-sidebar-fg/20" />
-              <p className="text-sm text-sidebar-fg/40">No results for "{query}"</p>
+              <p className="text-sm text-sidebar-fg/40">
+                No results for "{query}"
+              </p>
             </div>
           )}
         </div>
@@ -285,7 +482,9 @@ export default function Layout({ children }: { children: ReactNode }) {
   const isKotBoard = pathname === "/kot";
   const [open, setOpen] = useState(false);
   // Desktop-only icon-collapse (leolanka-inertia's collapsible="icon" behaviour), persisted per device.
-  const [collapsed, setCollapsed] = useState(() => localStorage.getItem("mv.sidebarCollapsed") === "1");
+  const [collapsed, setCollapsed] = useState(
+    () => localStorage.getItem("mv.sidebarCollapsed") === "1",
+  );
   const [online, setOnline] = useState(navigator.onLine);
   const [queued, setQueued] = useState(0);
   const [confirmLogout, setConfirmLogout] = useState(false);
@@ -315,15 +514,22 @@ export default function Layout({ children }: { children: ReactNode }) {
 
   if (!me) return null;
   const { user } = me;
-  const roleName = me.is_full_admin ? "Full Administrator" : user.role?.name ?? "Staff";
+  const roleName = me.is_full_admin
+    ? "Full Administrator"
+    : (user.role?.name ?? "Staff");
   const visible = (items: Item[]) =>
     items.filter((i) => {
       if (i.fullAdminOnly) return me.is_full_admin;
       if (!i.permission) return true;
-      return Array.isArray(i.permission) ? i.permission.some(can) : can(i.permission);
+      return Array.isArray(i.permission)
+        ? i.permission.some(can)
+        : can(i.permission);
     });
 
-  const visibleSections = SECTIONS.map((s) => ({ ...s, items: visible(s.items) })).filter((s) => s.items.length > 0);
+  const visibleSections = SECTIONS.map((s) => ({
+    ...s,
+    items: visible(s.items),
+  })).filter((s) => s.items.length > 0);
 
   /**
    * The sidebar contents. `mini` renders the icon-only collapsed rail (desktop);
@@ -332,35 +538,63 @@ export default function Layout({ children }: { children: ReactNode }) {
   const renderSidebar = (mini: boolean) => (
     <nav className="flex h-full flex-col text-sidebar-fg">
       {/* Brand */}
-      <div className={clsx("flex items-center py-4", mini ? "justify-center px-2" : "gap-2.5 px-4")}>
+      <div
+        className={clsx(
+          "flex items-center py-4",
+          mini ? "justify-center px-2" : "gap-2.5 px-4",
+        )}
+      >
         {mini ? (
           branding.logo ? (
-            <img src={branding.logo} alt={branding.name} className="h-9 w-9 rounded-lg bg-white/10 object-contain p-1" />
+            <img
+              src={branding.logo}
+              alt={branding.name}
+              className="h-9 w-9 rounded-lg bg-white/10 object-contain p-1"
+            />
           ) : (
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-600 text-sm font-black text-white">{brandInitials(branding.name)}</div>
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-600 text-sm font-black text-white">
+              {brandInitials(branding.name)}
+            </div>
           )
         ) : (
           <>
             {branding.logo && (
-              <img src={branding.logo} alt="" className="h-10 w-10 shrink-0 rounded-lg bg-white/10 object-contain p-1" />
+              <img
+                src={branding.logo}
+                alt=""
+                className="h-10 w-10 shrink-0 rounded-lg bg-white/10"
+              />
             )}
             <div className="min-w-0">
-              <div className="truncate text-lg font-black leading-tight text-white">{branding.name}</div>
+              <div className="truncate text-lg font-black leading-tight text-white">
+                {branding.name}
+              </div>
               {branding.tagline && (
-                <div className="truncate text-[11px] font-medium uppercase tracking-widest text-sidebar-fg/60">{branding.tagline}</div>
+                <div className="truncate text-[11px] font-medium tracking-widest text-sidebar-fg/60">
+                  {branding.tagline}
+                </div>
               )}
             </div>
           </>
         )}
       </div>
 
-      {!mini && <SidebarSearch sections={visibleSections} onNavigate={() => setOpen(false)} />}
+      {!mini && (
+        <SidebarSearch
+          sections={visibleSections}
+          onNavigate={() => setOpen(false)}
+        />
+      )}
 
-      <div className={clsx("flex-1 overflow-y-auto pb-4", mini ? "px-2" : "px-3")}>
+      <div
+        className={clsx("flex-1 overflow-y-auto pb-4", mini ? "px-2" : "px-3")}
+      >
         {visibleSections.map((section) => (
           <div key={section.title} className={mini ? "mb-2" : "mb-3"}>
             {!mini && (
-              <div className="px-3 pb-1 pt-2 text-[9px] font-black uppercase tracking-[0.18em] text-sidebar-fg/40">{section.title}</div>
+              <div className="px-3 pb-1 pt-2 text-[9px] font-black uppercase tracking-[0.18em] text-sidebar-fg/40">
+                {section.title}
+              </div>
             )}
             <div className="space-y-0.5">
               {section.items.map((i) => (
@@ -376,7 +610,10 @@ export default function Layout({ children }: { children: ReactNode }) {
                       mini ? "justify-center px-0 py-2.5" : "gap-2.5 px-3 py-2",
                       isActive
                         ? "bg-brand-600 text-white shadow-sm"
-                        : clsx("text-sidebar-fg/80 hover:bg-white/10 hover:text-white", !mini && "hover:translate-x-0.5")
+                        : clsx(
+                            "text-sidebar-fg/80 hover:bg-white/10 hover:text-white",
+                            !mini && "hover:translate-x-0.5",
+                          ),
                     )
                   }
                 >
@@ -390,7 +627,9 @@ export default function Layout({ children }: { children: ReactNode }) {
       </div>
 
       {/* Account + session controls */}
-      <div className={clsx("border-t border-sidebar-border", mini ? "p-2" : "p-3")}>
+      <div
+        className={clsx("border-t border-sidebar-border", mini ? "p-2" : "p-3")}
+      >
         {mini ? (
           <div className="flex flex-col items-center gap-2">
             <button
@@ -417,16 +656,27 @@ export default function Layout({ children }: { children: ReactNode }) {
             >
               <Avatar name={user.name} size={36} />
               <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-bold text-white">{user.name}</div>
-                <div className="truncate text-[11px] uppercase tracking-wide text-sidebar-fg/60">{roleName}</div>
+                <div className="truncate text-sm font-bold text-white">
+                  {user.name}
+                </div>
+                <div className="truncate text-[11px] uppercase tracking-wide text-sidebar-fg/60">
+                  {roleName}
+                </div>
               </div>
               <SettingsIcon className="h-4 w-4 shrink-0 text-sidebar-fg/50" />
             </button>
             <div className="flex gap-1.5">
-              <button className="btn flex-1 bg-white/10 text-white hover:bg-white/20" onClick={() => setConfirmLogout(true)}>
+              <button
+                className="btn flex-1 bg-white/10 text-white hover:bg-white/20"
+                onClick={() => setConfirmLogout(true)}
+              >
                 <LogOut size={15} /> Sign out
               </button>
-              <button className="btn bg-white/10 text-white hover:bg-white/20" title="Switch staff (PIN)" onClick={() => nav("/login")}>
+              <button
+                className="btn bg-white/10 text-white hover:bg-white/20"
+                title="Switch staff (PIN)"
+                onClick={() => nav("/login")}
+              >
                 PIN
               </button>
             </div>
@@ -443,21 +693,29 @@ export default function Layout({ children }: { children: ReactNode }) {
       <aside
         className={clsx(
           "hidden shrink-0 bg-gradient-to-b from-sidebar to-sidebar-deep transition-[width] duration-200 ease-out lg:sticky lg:top-0 lg:block lg:h-screen",
-          collapsed ? "lg:w-16" : "lg:w-60"
+          collapsed ? "lg:w-16" : "lg:w-60",
         )}
       >
         {renderSidebar(collapsed)}
       </aside>
       {open && (
         <div className="fixed inset-0 z-40 lg:hidden">
-          <div className="absolute inset-0 bg-black/50 backdrop-blur-[2px]" onClick={() => setOpen(false)} />
-          <aside className="absolute left-0 top-0 h-full w-64 bg-gradient-to-b from-sidebar to-sidebar-deep shadow-2xl">{renderSidebar(false)}</aside>
+          <div
+            className="absolute inset-0 bg-black/50 backdrop-blur-[2px]"
+            onClick={() => setOpen(false)}
+          />
+          <aside className="absolute left-0 top-0 h-full w-64 bg-gradient-to-b from-sidebar to-sidebar-deep shadow-2xl">
+            {renderSidebar(false)}
+          </aside>
         </div>
       )}
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-slate-200 bg-white/90 px-4 py-2 backdrop-blur lg:px-6">
           {/* Mobile: open the drawer */}
-          <button className="btn-ghost !p-1.5 lg:hidden" onClick={() => setOpen(!open)}>
+          <button
+            className="btn-ghost !p-1.5 lg:hidden"
+            onClick={() => setOpen(!open)}
+          >
             {open ? <X size={20} /> : <MenuIcon size={20} />}
           </button>
           {/* Desktop: collapse / expand the sidebar */}
@@ -475,11 +733,15 @@ export default function Layout({ children }: { children: ReactNode }) {
               onClick={() => flushQueue()}
               className={clsx(
                 "flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold",
-                online ? "bg-amber-100 text-amber-800" : "bg-red-100 text-red-700"
+                online
+                  ? "bg-amber-100 text-amber-800"
+                  : "bg-red-100 text-red-700",
               )}
             >
               <WifiOff size={13} />
-              {online ? `${queued} queued — syncing…` : `OFFLINE${queued ? ` · ${queued} queued` : ""}`}
+              {online
+                ? `${queued} queued — syncing…`
+                : `OFFLINE${queued ? ` · ${queued} queued` : ""}`}
             </button>
           )}
           <button
@@ -494,7 +756,21 @@ export default function Layout({ children }: { children: ReactNode }) {
             <Clock />
           </div>
         </header>
-        <main className={clsx("page-enter flex-1", isKotBoard ? "flex flex-col" : "mx-auto w-full max-w-7xl p-4 lg:p-6")}>{children}</main>
+        <main
+          className={clsx(
+            "page-enter flex-1",
+            isKotBoard
+              ? "flex flex-col"
+              : "mx-auto w-full max-w-7xl p-4 lg:p-6",
+          )}
+        >
+          {children}
+        </main>
+        {!isKotBoard && (
+          <footer className="border-t border-slate-200 px-4 py-3 text-center text-xs text-slate-400 lg:px-6">
+            Powered by Vellix Global
+          </footer>
+        )}
       </div>
       <ConfirmDialog
         open={confirmLogout}

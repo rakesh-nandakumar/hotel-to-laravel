@@ -1,6 +1,8 @@
 <?php
 
+use App\Models\DeviceToken;
 use App\Services\DeviceTokenService;
+use App\Services\Settings;
 use Database\Seeders\LookupSeeder;
 use Database\Seeders\MenuSeeder;
 use Database\Seeders\PermissionsAndRolesSeeder;
@@ -20,7 +22,7 @@ it('issues a device token for the current session', function () {
     $response = $this->actingAs($manager)->postJson('/api/device-token')->assertOk();
 
     expect($response->json('device_token'))->toBeString()->and(strlen($response->json('device_token')))->toBeGreaterThan(20);
-    expect(\App\Models\DeviceToken::where('user_id', $manager->id)->count())->toBe(1);
+    expect(DeviceToken::where('user_id', $manager->id)->count())->toBe(1);
 });
 
 it('logs in via PIN using a previously issued device token', function () {
@@ -94,7 +96,7 @@ it('lets a manager update a business setting but not an integrations setting', f
     $manager = staffWithRole('Manager');
 
     $this->actingAs($manager)->putJson('/api/hotel-settings/billing.vat_pct', ['value' => 12])->assertOk();
-    expect(\App\Services\Settings::num('billing.vat_pct'))->toBe(12.0);
+    expect(Settings::num('billing.vat_pct'))->toBe(12.0);
 
     $this->actingAs($manager)->putJson('/api/hotel-settings/integrations.whatsapp_enabled', ['value' => true])
         ->assertForbidden();
@@ -104,7 +106,7 @@ it('lets a full administrator update integrations settings and validates the val
     $admin = fullAdmin();
 
     $this->actingAs($admin)->putJson('/api/hotel-settings/integrations.whatsapp_enabled', ['value' => true])->assertOk();
-    expect(\App\Services\Settings::bool('integrations.whatsapp_enabled'))->toBeTrue();
+    expect(Settings::bool('integrations.whatsapp_enabled'))->toBeTrue();
 
     $this->actingAs($admin)->putJson('/api/hotel-settings/billing.vat_pct', ['value' => 150])
         ->assertUnprocessable()->assertJsonValidationErrors('value');
@@ -114,4 +116,18 @@ it('blocks housekeeper from updating any setting', function () {
     $housekeeper = staffWithRole('Housekeeper');
 
     $this->actingAs($housekeeper)->putJson('/api/hotel-settings/billing.vat_pct', ['value' => 5])->assertForbidden();
+});
+
+it('lets a manager upload and remove the hotel logo', function () {
+    $manager = staffWithRole('Manager');
+    $dataUri = 'data:image/png;base64,'.str_repeat('A', 80_000);
+
+    $this->actingAs($manager)->putJson('/api/hotel-settings/hotel.logo_url', ['value' => $dataUri])->assertOk();
+    expect(Settings::str('hotel.logo_url'))->toBe($dataUri);
+
+    // The frontend "Remove logo" button sends "" — Laravel's global
+    // ConvertEmptyStringsToNull middleware turns that into null before it
+    // reaches the controller, so null must be accepted as "no image".
+    $this->actingAs($manager)->putJson('/api/hotel-settings/hotel.logo_url', ['value' => ''])->assertOk();
+    expect(Settings::str('hotel.logo_url'))->toBe('');
 });

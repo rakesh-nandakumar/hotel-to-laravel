@@ -82,7 +82,16 @@ class PayrollController extends Controller
     {
         $data = $request->validated();
 
-        $line = $this->payroll->updateLine($line, $data['ot_hours'] ?? null, $data['bonus'] ?? null, $data['deduction'] ?? null, $data['deduction_note'] ?? null);
+        $line = $this->payroll->updateLine(
+            $line,
+            $data['ot_hours'] ?? null,
+            $data['bonus'] ?? null,
+            $data['unpaid_leave_deduction'] ?? null,
+            $data['loan'] ?? null,
+            $data['advance'] ?? null,
+            $data['other_deduction'] ?? null,
+            $data['other_deduction_note'] ?? null,
+        );
 
         return response()->json(['line' => $line]);
     }
@@ -103,12 +112,13 @@ class PayrollController extends Controller
         $run->load(['lines.user:id,name,epf_number']);
         $money = fn (int $cents) => number_format($cents / 100, 2, '.', '');
 
-        $rows = ['Staff,Role,EPF No,Worked Hrs,OT Hrs,Basic,OT Pay,Allowance,Bonus,Gross,EPF 8%,Deduction,Net Pay,EPF 12% (employer),ETF 3% (employer),Paid'];
+        $rows = ['Staff,Role,EPF No,Worked Hrs,OT Hrs,Basic,OT Pay,Allowance,Bonus,Unpaid Leave Ded.,Gross,EPF Employee,APIT,Loan,Advance,Other Ded.,Net Pay,EPF Employer,ETF,Employer Cost,Paid'];
         foreach ($run->lines as $line) {
             $rows[] = "\"{$line->user->name}\",,".($line->user->epf_number ?? '').",{$line->worked_hours},{$line->ot_hours},"
                 .$money($line->base_salary).','.$money($line->ot_pay).','.$money($line->allowance).','.$money($line->bonus).','
-                .$money($line->gross).','.$money($line->epf_employee).','.$money($line->deduction).','.$money($line->net_pay).','
-                .$money($line->epf_employer).','.$money($line->etf).','.($line->paid ? 'YES' : 'no');
+                .$money($line->unpaid_leave_deduction).','.$money($line->gross).','.$money($line->epf_employee).','.$money($line->apit).','
+                .$money($line->loan).','.$money($line->advance).','.$money($line->other_deduction).','.$money($line->net_pay).','
+                .$money($line->epf_employer).','.$money($line->etf).','.$money($line->employer_cost).','.($line->paid ? 'YES' : 'no');
         }
 
         return response(implode("\n", $rows), 200, [

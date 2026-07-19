@@ -31,6 +31,6 @@
 <body>
 @include('hotel.pdf.partials.header', ['format' => $format])
 @yield('content')
-@include('hotel.pdf.partials.footer', ['format' => $format, 'extra' => $footerExtra ?? null])
+@include('hotel.pdf.partials.footer', ['format' => $format, 'extra' => $footerExtra ?? null, 'poweredBy' => $poweredBy ?? null])
 </body>
 </html>

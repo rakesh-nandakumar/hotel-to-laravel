@@ -25,6 +25,7 @@ class PublicController extends Controller
         return response()->json([
             'name' => Settings::str('hotel.name', 'Mount View Hotel, Badulla'),
             'tagline' => Settings::str('hotel.tagline', 'Hospitality Management System'),
+            'login_tagline' => Settings::str('hotel.login_tagline', 'Hospitality Management System'),
             'logo' => Settings::str('hotel.logo_url', ''),
             'address' => Settings::str('hotel.address', ''),
             'phone' => Settings::str('hotel.phone', ''),

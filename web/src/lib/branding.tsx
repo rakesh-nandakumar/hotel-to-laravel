@@ -10,7 +10,10 @@ import { api } from "./api";
  */
 export type Branding = {
   name: string;
+  /** Shown under the hotel name in the sidebar. */
   tagline: string;
+  /** Shown under the hotel name on the login screen. */
+  login_tagline: string;
   /** Data URI of the uploaded logo, or "" when none is set. */
   logo: string;
   check_in_time: string;
@@ -20,6 +23,7 @@ export type Branding = {
 const DEFAULTS: Branding = {
   name: "Hotel Management System",
   tagline: "Hospitality Management System",
+  login_tagline: "Hospitality Management System",
   logo: "",
   check_in_time: "14:00",
   check_out_time: "12:00",

@@ -19,8 +19,11 @@ class UpdatePayrollLineRequest extends FormRequest
         return [
             'ot_hours' => ['sometimes', 'numeric', 'min:0'],
             'bonus' => ['sometimes', 'integer', 'min:0'],
-            'deduction' => ['sometimes', 'integer', 'min:0'],
-            'deduction_note' => ['sometimes', 'nullable', 'string', 'max:500'],
+            'unpaid_leave_deduction' => ['sometimes', 'integer', 'min:0'],
+            'loan' => ['sometimes', 'integer', 'min:0'],
+            'advance' => ['sometimes', 'integer', 'min:0'],
+            'other_deduction' => ['sometimes', 'integer', 'min:0'],
+            'other_deduction_note' => ['sometimes', 'nullable', 'string', 'max:500'],
         ];
     }
 }

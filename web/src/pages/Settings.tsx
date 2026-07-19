@@ -320,7 +320,6 @@ function LogoUpload({ value, onSave }: { value: string; onSave: (v: unknown) => 
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [dragOver, setDragOver] = useState(false);
-  const [focused, setFocused] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const handleFile = useCallback(
@@ -343,9 +342,11 @@ function LogoUpload({ value, onSave }: { value: string; onSave: (v: unknown) => 
     [onSave],
   );
 
-  // Paste an image while the drop zone is focused (click it, then Ctrl/⌘+V).
+  // Paste an image anywhere on the page while this field is on screen. Gating
+  // this on the drop zone being focused doesn't work: clicking it to focus it
+  // also opens the native file picker (see onClick below), which blurs the
+  // zone and detaches the listener before Ctrl/⌘+V can be pressed.
   useEffect(() => {
-    if (!focused) return;
     const onPaste = (e: ClipboardEvent) => {
       const item = Array.from(e.clipboardData?.items ?? []).find((i) => i.type.startsWith("image/"));
       if (item) {
@@ -355,15 +356,13 @@ function LogoUpload({ value, onSave }: { value: string; onSave: (v: unknown) => 
     };
     document.addEventListener("paste", onPaste);
     return () => document.removeEventListener("paste", onPaste);
-  }, [focused, handleFile]);
+  }, [handleFile]);
 
   return (
     <div>
       <div
         role="button"
         tabIndex={0}
-        onFocus={() => setFocused(true)}
-        onBlur={() => setFocused(false)}
         onClick={() => inputRef.current?.click()}
         onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && inputRef.current?.click()}
         onDragOver={(e) => {

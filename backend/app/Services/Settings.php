@@ -117,7 +117,11 @@ class Settings
             SettingType::BOOLEAN => ! is_bool($value)
                 ? 'Value must be true or false.'
                 : null,
-            SettingType::IMAGE => ! is_string($value)
+            // Laravel's global ConvertEmptyStringsToNull middleware turns the ""
+            // sent by "Remove logo" into null before it gets here, so null must
+            // be accepted as "no image" — only a genuinely wrong type (number,
+            // array, ...) should be rejected.
+            SettingType::IMAGE => ($value !== null && ! is_string($value))
                 ? 'Value must be an image.'
                 : null,
             default => null,

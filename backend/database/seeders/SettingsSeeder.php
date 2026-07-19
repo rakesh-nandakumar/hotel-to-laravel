@@ -37,7 +37,8 @@ class SettingsSeeder extends Seeder
         return [
             // ── Hotel identity ───────────────────────────────────────────────
             ['key' => 'hotel.name', 'value' => 'Mount View Hotel', 'type' => SettingType::TEXT, 'category' => 'hotel', 'label' => 'Hotel Name', 'hint' => 'Shown in the sidebar, login screen, printed documents and guest pages.'],
-            ['key' => 'hotel.tagline', 'value' => 'Hospitality Management System', 'type' => SettingType::TEXT, 'category' => 'hotel', 'label' => 'Tagline / Short Description', 'hint' => 'The small line shown under the hotel name on the login screen and sidebar.'],
+            ['key' => 'hotel.tagline', 'value' => 'Hospitality Management System', 'type' => SettingType::TEXT, 'category' => 'hotel', 'label' => 'Sidebar Tagline / Short Description', 'hint' => 'The small line shown under the hotel name in the sidebar.'],
+            ['key' => 'hotel.login_tagline', 'value' => 'Hospitality Management System', 'type' => SettingType::TEXT, 'category' => 'hotel', 'label' => 'Login Screen Tagline / Short Description', 'hint' => 'The small line shown under the hotel name on the login screen.'],
             ['key' => 'hotel.address', 'value' => '⚠ confirm with owner', 'type' => SettingType::TEXT, 'category' => 'hotel', 'label' => 'Address'],
             ['key' => 'hotel.phone', 'value' => '⚠ confirm with owner', 'type' => SettingType::TEXT, 'category' => 'hotel', 'label' => 'Phone'],
             ['key' => 'hotel.email', 'value' => '⚠ confirm with owner', 'type' => SettingType::TEXT, 'category' => 'hotel', 'label' => 'Email', 'hint' => 'Also receives low-stock/venue-inquiry alerts.'],
@@ -93,6 +94,14 @@ class SettingsSeeder extends Seeder
             ['key' => 'payroll.epf_employer_pct', 'value' => 12, 'type' => SettingType::PERCENT, 'category' => 'payroll', 'label' => 'EPF — Employer %'],
             ['key' => 'payroll.etf_pct', 'value' => 3, 'type' => SettingType::PERCENT, 'category' => 'payroll', 'label' => 'ETF — Employer %'],
             ['key' => 'payroll.standard_monthly_hours', 'value' => 200, 'type' => SettingType::NUMBER, 'category' => 'payroll', 'label' => 'Standard Monthly Hours', 'hint' => 'Hours beyond this count as overtime.'],
+            ['key' => 'payroll.apit_brackets', 'value' => [
+                ['width' => 15_000_000, 'rate' => 0],
+                ['width' => 100_000_000 / 12, 'rate' => 6],
+                ['width' => 50_000_000 / 12, 'rate' => 18],
+                ['width' => 50_000_000 / 12, 'rate' => 24],
+                ['width' => 50_000_000 / 12, 'rate' => 30],
+                ['width' => null, 'rate' => 36],
+            ], 'type' => SettingType::JSON, 'category' => 'payroll', 'label' => 'APIT Tax Brackets', 'hint' => 'Sri Lanka monthly APIT bands (Y/A 2025/2026): each band\'s "width" is LKR cents taxed at "rate" %, consumed in order; the last band (width=null) is unbounded. Derived from the Rs. 1,800,000/yr personal relief + progressive schedule, so widths are precise twelfths rather than the IRD\'s rounded monthly display figures.'],
 
             // ── Inventory ────────────────────────────────────────────────────
             ['key' => 'inventory.expiry_warn_days', 'value' => 3, 'type' => SettingType::NUMBER, 'category' => 'inventory', 'label' => 'Expiry Warning Window (days)'],

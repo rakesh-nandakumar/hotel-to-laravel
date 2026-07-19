@@ -55,3 +55,4 @@
 @endsection
 
 @php($footerExtra = 'Settlement currency: LKR. Thank you for choosing us!')
+@php($poweredBy = true)

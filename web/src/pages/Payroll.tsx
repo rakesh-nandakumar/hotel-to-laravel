@@ -15,8 +15,9 @@ type Run = {
 };
 type Line = {
   id: number; base_salary: number; worked_hours: number; ot_hours: number; ot_pay: number; allowance: number;
-  bonus: number; deduction: number; deduction_note?: string | null; gross: number; epf_employee: number;
-  epf_employer: number; etf: number; net_pay: number; paid: boolean; paid_at?: string | null;
+  bonus: number; unpaid_leave_deduction: number; gross: number; epf_employee: number; apit: number;
+  loan: number; advance: number; other_deduction: number; other_deduction_note?: string | null;
+  epf_employer: number; etf: number; net_pay: number; employer_cost: number; paid: boolean; paid_at?: string | null;
   user: { id: number; name: string; epf_number?: string | null; ot_hourly_rate?: number; epf_enabled?: boolean; roles: { id: number; name: string }[] };
 };
 type RunDetail = {
@@ -42,7 +43,7 @@ export default function Payroll() {
         <Tabs tabs={tabs} active={tab} onChange={setTab} />
       </div>
       <p className="text-xs text-slate-500">
-        Worked hours come from staff attendance; hours over the standard month count as overtime. EPF 8% is deducted from pay; employer EPF 12% + ETF 3% are tracked for statutory reporting (percentages editable in Settings → payroll).
+        Worked hours come from staff attendance; hours over the standard month count as overtime. Gross = Basic + OT + Allowance + Bonus − Unpaid Leave. EPF/APIT are deducted from gross pay; employer EPF + ETF are tracked as Employer Cost for statutory reporting (percentages and APIT bands editable in Settings → payroll).
       </p>
       {tab === "salaries" && canSalaries ? <Salaries /> : <Runs />}
     </div>
@@ -227,54 +228,66 @@ function RunModal({ runId, onClose }: { runId: number; onClose: () => void }) {
       </div>
       <ErrorText error={error} />
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[880px] text-sm">
+        <table className="w-full min-w-[1240px] text-sm">
           <thead className="border-b border-slate-100">
             <tr>
               <th className="th">Staff</th><th className="th text-right">Hrs</th><th className="th text-right">OT hrs</th>
               <th className="th text-right">Basic</th><th className="th text-right">OT pay</th><th className="th text-right">Allow.</th>
-              <th className="th text-right">Bonus</th><th className="th text-right">EPF 8%</th><th className="th text-right">Deduct.</th>
-              <th className="th text-right">Net pay</th><th className="th" />
+              <th className="th text-right">Bonus</th><th className="th text-right">Leave</th><th className="th text-right">Gross</th>
+              <th className="th text-right">EPF</th><th className="th text-right">APIT</th><th className="th text-right">Other ded.</th>
+              <th className="th text-right">Net pay</th><th className="th text-right">Employer cost</th><th className="th" />
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-50">
-            {run.lines.map((l) => (
-              <tr key={l.id} className={l.paid ? "bg-emerald-50/40" : ""}>
-                <td className="td">
-                  <div className="font-semibold">{l.user.name}</div>
-                  <div className="text-[10px] uppercase text-slate-400">
-                    {l.user.roles[0] ? `(${l.user.roles.map((r) => r.name).join(", ")}) · ` : ""}
-                    {l.user.epf_number ? `EPF ${l.user.epf_number}` : "—"}
-                  </div>
-                </td>
-                <td className="td text-right">{l.worked_hours}</td>
-                <td className="td text-right">{l.ot_hours}</td>
-                <td className="td text-right">{lkr(l.base_salary)}</td>
-                <td className="td text-right">{lkr(l.ot_pay)}</td>
-                <td className="td text-right">{lkr(l.allowance)}</td>
-                <td className="td text-right">{lkr(l.bonus)}</td>
-                <td className="td text-right text-red-600">-{lkr(l.epf_employee)}</td>
-                <td className="td text-right text-red-600">{l.deduction > 0 ? `-${lkr(l.deduction)}` : "—"}</td>
-                <td className="td text-right font-extrabold">{lkr(l.net_pay)}</td>
-                <td className="td whitespace-nowrap text-right">
-                  {draft && can("hotel_payroll.adjust_line") && <button className="btn-ghost !py-1 text-xs" onClick={() => setEditing(l)}>Adjust</button>}
-                  {!draft && !l.paid && can("hotel_payroll.mark_paid") && (
-                    <button className="btn-primary !py-1 text-xs" onClick={() => act(() => post(`/payroll/lines/${l.id}/mark-paid`), `${l.user.name} marked paid — ${lkr(l.net_pay)}`)}>
-                      <CheckCircle2 size={13} /> Mark paid
-                    </button>
-                  )}
-                  {!draft && l.paid && <Badge color="green">PAID</Badge>}
-                  {can("hotel_payroll.payslip") && (
-                    <button className="btn-ghost !py-1 text-xs" title="Payslip PDF" onClick={() => openPdf(`/payroll/lines/${l.id}/payslip`)}>
-                      <Printer size={13} />
-                    </button>
-                  )}
-                </td>
-              </tr>
-            ))}
+            {run.lines.map((l) => {
+              const otherDed = l.loan + l.advance + l.other_deduction;
+              const otherDedTitle = `Loan ${lkr(l.loan)} · Advance ${lkr(l.advance)} · Other ${lkr(l.other_deduction)}${l.other_deduction_note ? ` (${l.other_deduction_note})` : ""}`;
+              return (
+                <tr key={l.id} className={l.paid ? "bg-emerald-50/40" : ""}>
+                  <td className="td">
+                    <div className="font-semibold">{l.user.name}</div>
+                    <div className="text-[10px] uppercase text-slate-400">
+                      {l.user.roles[0] ? `(${l.user.roles.map((r) => r.name).join(", ")}) · ` : ""}
+                      {l.user.epf_number ? `EPF ${l.user.epf_number}` : "—"}
+                    </div>
+                  </td>
+                  <td className="td text-right">{l.worked_hours}</td>
+                  <td className="td text-right">{l.ot_hours}</td>
+                  <td className="td text-right">{lkr(l.base_salary)}</td>
+                  <td className="td text-right">{lkr(l.ot_pay)}</td>
+                  <td className="td text-right">{lkr(l.allowance)}</td>
+                  <td className="td text-right">{lkr(l.bonus)}</td>
+                  <td className="td text-right text-red-600">{l.unpaid_leave_deduction > 0 ? `-${lkr(l.unpaid_leave_deduction)}` : "—"}</td>
+                  <td className="td text-right font-semibold">{lkr(l.gross)}</td>
+                  <td className="td text-right text-red-600">-{lkr(l.epf_employee)}</td>
+                  <td className="td text-right text-red-600">{l.apit > 0 ? `-${lkr(l.apit)}` : "—"}</td>
+                  <td className="td text-right text-red-600" title={otherDedTitle}>{otherDed > 0 ? `-${lkr(otherDed)}` : "—"}</td>
+                  <td className="td text-right font-extrabold">{lkr(l.net_pay)}</td>
+                  <td className="td text-right text-slate-500">{lkr(l.employer_cost)}</td>
+                  <td className="td whitespace-nowrap text-right">
+                    {draft && can("hotel_payroll.adjust_line") && <button className="btn-ghost !py-1 text-xs" onClick={() => setEditing(l)}>Adjust</button>}
+                    {!draft && !l.paid && can("hotel_payroll.mark_paid") && (
+                      <button className="btn-primary !py-1 text-xs" onClick={() => act(() => post(`/payroll/lines/${l.id}/mark-paid`), `${l.user.name} marked paid — ${lkr(l.net_pay)}`)}>
+                        <CheckCircle2 size={13} /> Mark paid
+                      </button>
+                    )}
+                    {!draft && l.paid && <Badge color="green">PAID</Badge>}
+                    {can("hotel_payroll.payslip") && (
+                      <button className="btn-ghost !py-1 text-xs" title="Payslip PDF" onClick={() => openPdf(`/payroll/lines/${l.id}/payslip`)}>
+                        <Printer size={13} />
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
-      <p className="mt-2 text-[11px] text-slate-400">Employer contributions (not deducted): EPF 12% {lkr(run.lines.reduce((s, l) => s + l.epf_employer, 0))} · ETF 3% {lkr(run.lines.reduce((s, l) => s + l.etf, 0))}</p>
+      <p className="mt-2 text-[11px] text-slate-400">
+        Employer contributions (not deducted): EPF {lkr(run.lines.reduce((s, l) => s + l.epf_employer, 0))} · ETF {lkr(run.lines.reduce((s, l) => s + l.etf, 0))}
+        {" · "}Total employer cost {lkr(run.lines.reduce((s, l) => s + l.employer_cost, 0))}
+      </p>
 
       {editing && (
         <AdjustLine
@@ -294,8 +307,11 @@ function AdjustLine({ line, onClose, onSaved }: { line: Line; onClose: () => voi
   const [f, setF] = useState({
     otHours: String(line.ot_hours),
     bonus: centsToRupees(line.bonus),
-    deduction: centsToRupees(line.deduction),
-    deductionNote: line.deduction_note ?? "",
+    unpaidLeaveDeduction: centsToRupees(line.unpaid_leave_deduction),
+    loan: centsToRupees(line.loan),
+    advance: centsToRupees(line.advance),
+    otherDeduction: centsToRupees(line.other_deduction),
+    otherDeductionNote: line.other_deduction_note ?? "",
   });
   const [error, setError] = useState("");
   return (
@@ -305,8 +321,13 @@ function AdjustLine({ line, onClose, onSaved }: { line: Line; onClose: () => voi
           <input className="input" value={f.otHours} onChange={(e) => setF({ ...f, otHours: e.target.value })} />
         </Field>
         <Field label="Bonus (LKR)"><input className="input" value={f.bonus} onChange={(e) => setF({ ...f, bonus: e.target.value })} /></Field>
-        <Field label="Deduction (LKR)" hint="Advances, no-pay leave etc."><input className="input" value={f.deduction} onChange={(e) => setF({ ...f, deduction: e.target.value })} /></Field>
-        <Field label="Deduction note"><input className="input" value={f.deductionNote} onChange={(e) => setF({ ...f, deductionNote: e.target.value })} /></Field>
+        <Field label="Unpaid leave deduction (LKR)" hint="Subtracted from gross before EPF/APIT">
+          <input className="input" value={f.unpaidLeaveDeduction} onChange={(e) => setF({ ...f, unpaidLeaveDeduction: e.target.value })} />
+        </Field>
+        <Field label="Loan (LKR)"><input className="input" value={f.loan} onChange={(e) => setF({ ...f, loan: e.target.value })} /></Field>
+        <Field label="Advance (LKR)"><input className="input" value={f.advance} onChange={(e) => setF({ ...f, advance: e.target.value })} /></Field>
+        <Field label="Other deduction (LKR)"><input className="input" value={f.otherDeduction} onChange={(e) => setF({ ...f, otherDeduction: e.target.value })} /></Field>
+        <Field label="Other deduction note"><input className="input" value={f.otherDeductionNote} onChange={(e) => setF({ ...f, otherDeductionNote: e.target.value })} /></Field>
       </div>
       <ErrorText error={error} />
       <button
@@ -315,14 +336,17 @@ function AdjustLine({ line, onClose, onSaved }: { line: Line; onClose: () => voi
           put(`/payroll/lines/${line.id}`, {
             ot_hours: parseFloat(f.otHours) || 0,
             bonus: toCents(f.bonus),
-            deduction: toCents(f.deduction),
-            deduction_note: f.deductionNote || null,
+            unpaid_leave_deduction: toCents(f.unpaidLeaveDeduction),
+            loan: toCents(f.loan),
+            advance: toCents(f.advance),
+            other_deduction: toCents(f.otherDeduction),
+            other_deduction_note: f.otherDeductionNote || null,
           })
             .then(onSaved)
             .catch((e) => setError(e.message))
         }
       >
-        Save (recalculates EPF & net pay)
+        Save (recalculates gross, EPF, APIT & net pay)
       </button>
     </Modal>
   );
