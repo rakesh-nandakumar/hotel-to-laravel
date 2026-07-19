@@ -12,7 +12,7 @@ import { useToast } from "../lib/toast";
 import { useAuth } from "../lib/auth";
 import clsx from "clsx";
 
-type MenuItem = { id: number; item_no?: number | null; name: string; price: number; sold_out: boolean; description: string };
+type MenuItem = { id: number; item_no?: number | null; name: string; price: number; sold_out: boolean; description: string; image?: string | null };
 type MenuCat = { id: number; name: string; is_minibar: boolean; items: MenuItem[] };
 type BoardRoom = { id: number; number: string; status: { code: string }; occupant: { code: string; guest: { name: string } } | null };
 type Order = {
@@ -174,6 +174,9 @@ function NewOrder({ menu, rooms, usdRate, scPct, vatPct, onDone }: {
     setError("");
     if (cart.length === 0) return setError("Add items first");
     if (type === "room_guest" && !roomId) return setError("Select the guest's room");
+    // Open the slip's tab synchronously, in direct response to this click — opening it later, after the
+    // order-creation request resolves, would fall outside the browser's popup-blocker gesture window.
+    const slipTab = type === "walkin" ? window.open("", "_blank") : null;
     setBusy(true);
     try {
       const res = await posRequest("/orders", {
@@ -190,17 +193,19 @@ function NewOrder({ menu, rooms, usdRate, scPct, vatPct, onDone }: {
       setNotes("");
       setDiningMode("dine_in");
       if ((res as { queued?: boolean }).queued) {
+        slipTab?.close();
         setQueuedMsg("No connection — order saved and will sync to the kitchen automatically when back online. Print the slip from Open Orders after sync.");
         toast.warning("Order queued offline", "Will sync to the kitchen automatically when back online");
       } else {
         const created = (res as { order: { id: number } }).order;
         toast.success(`Order #${created.id} sent to kitchen`);
         if (type === "walkin") {
-          openPdf(`/orders/${created.id}/slip`).catch(() => {});
+          openPdf(`/orders/${created.id}/slip`, slipTab).catch(() => {});
         }
         onDone();
       }
     } catch (e) {
+      slipTab?.close();
       setError((e as Error).message);
     } finally {
       setBusy(false);
@@ -248,6 +253,7 @@ function NewOrder({ menu, rooms, usdRate, scPct, vatPct, onDone }: {
                   inCart && "ring-2 ring-brand-500"
                 )}
               >
+                {item.image && <img src={item.image} alt="" className="mb-2 aspect-square w-full rounded-lg object-cover" />}
                 <div className="flex items-start justify-between gap-1">
                   {item.item_no != null && <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] font-black text-slate-500">#{item.item_no}</span>}
                   {inCart && <span className="rounded-full bg-brand-600 px-1.5 py-0.5 text-[10px] font-black text-white">{inCart.qty}</span>}

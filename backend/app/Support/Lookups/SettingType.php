@@ -24,4 +24,6 @@ class SettingType
     public const TIME = 'time';
 
     public const IMAGE = 'image';
+
+    public const COLOR = 'color';
 }

@@ -76,6 +76,7 @@ class MenuItemController extends Controller
                 'price' => $data['price'],
                 'item_no' => $itemNo,
                 'description' => $data['description'] ?? '',
+                'image' => $data['image'] ?? null,
             ]);
 
             if (! empty($data['recipe'])) {

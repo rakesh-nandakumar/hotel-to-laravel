@@ -58,6 +58,30 @@ it('creates a menu item with a recipe, auto-assigning the next item number', fun
         ->and($response->json('menu_item.recipe'))->toHaveCount(1);
 });
 
+it('stores a menu item photo and serves it back on both the admin list and the POS grid', function () {
+    $manager = staffWithRole('Manager');
+    $category = MenuCategory::create(['name' => 'Mains']);
+    $dataUri = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
+
+    $created = $this->actingAs($manager)->postJson('/api/menu/items', [
+        'name' => 'Fish Curry',
+        'menu_category_id' => $category->id,
+        'price' => 140000,
+        'image' => $dataUri,
+    ])->assertCreated()->json('menu_item');
+
+    expect($created['image'])->toBe($dataUri);
+
+    $full = $this->actingAs($manager)->getJson('/api/menu/full')->assertOk();
+    $item = collect($full->json('categories.0.items'))->firstWhere('id', $created['id']);
+    expect($item['image'])->toBe($dataUri);
+
+    // Removing the photo (client sends "" -> normalized to null by ConvertEmptyStringsToNull) clears it.
+    $updated = $this->actingAs($manager)->putJson("/api/menu/items/{$created['id']}", ['image' => ''])
+        ->assertOk()->json('menu_item');
+    expect($updated['image'])->toBeNull();
+});
+
 it('hard-deletes a menu item that has never been ordered', function () {
     $manager = staffWithRole('Manager');
     $category = MenuCategory::create(['name' => 'Mains']);

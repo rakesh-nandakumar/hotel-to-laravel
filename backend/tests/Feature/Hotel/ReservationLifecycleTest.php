@@ -69,6 +69,36 @@ it('creates a reservation for a new guest, locking the rate and computing the de
         ->and($response->json('reservation.folio'))->not->toBeNull();
 });
 
+it('shows a created reservation on the calendar feed for an overlapping date range', function () {
+    $manager = staffWithRole('Manager');
+    ['room' => $room, 'check_in' => $checkIn, 'check_out' => $checkOut] = bookTwoPersonRoom();
+
+    $created = $this->actingAs($manager)->postJson('/api/reservations', [
+        'new_guest' => ['name' => 'Calendar Guest', 'phone' => '0771234567'],
+        'channel' => 'walkin',
+        'check_in' => $checkIn,
+        'check_out' => $checkOut,
+        'adults' => 1,
+        'rooms' => [['room_id' => $room->id]],
+    ])->assertCreated()->json('reservation');
+
+    $response = $this->actingAs($manager)
+        ->getJson('/api/reservations/calendar?from=2026-08-01&to=2026-08-10')
+        ->assertOk();
+
+    $row = collect($response->json('reservations'))->firstWhere('id', $created['id']);
+    expect($row)->not->toBeNull()
+        ->and($row['guest'])->toBe('Calendar Guest')
+        ->and($row['status'])->toBe('confirmed')
+        ->and($row['room_ids'])->toContain($room->id);
+
+    // A range that does NOT overlap the stay must not include it.
+    $outside = $this->actingAs($manager)
+        ->getJson('/api/reservations/calendar?from=2026-09-01&to=2026-09-10')
+        ->assertOk();
+    expect(collect($outside->json('reservations'))->firstWhere('id', $created['id']))->toBeNull();
+});
+
 it('rejects booking a room already reserved for overlapping dates', function () {
     $manager = staffWithRole('Manager');
     ['room' => $room, 'check_in' => $checkIn, 'check_out' => $checkOut] = bookTwoPersonRoom();

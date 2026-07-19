@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useState, ReactNode } from "react";
 import { api } from "./api";
+import { applyTheme } from "./theme";
 
 /**
  * Site identity — hotel name, tagline and logo — pulled from the business
@@ -18,6 +19,10 @@ export type Branding = {
   logo: string;
   check_in_time: string;
   check_out_time: string;
+  /** Base colors the whole UI's brand/sidebar palettes are generated from — see lib/theme.ts. */
+  theme_primary: string;
+  theme_secondary: string;
+  theme_sidebar: string;
 };
 
 const DEFAULTS: Branding = {
@@ -27,6 +32,9 @@ const DEFAULTS: Branding = {
   logo: "",
   check_in_time: "14:00",
   check_out_time: "12:00",
+  theme_primary: "#0462d3",
+  theme_secondary: "#3783f0",
+  theme_sidebar: "#0c182a",
 };
 
 type BrandingCtx = { branding: Branding; loading: boolean; refresh: () => void };
@@ -59,6 +67,10 @@ export function BrandingProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     document.title = branding.tagline ? `${branding.name} — ${branding.tagline}` : branding.name;
   }, [branding]);
+
+  useEffect(() => {
+    applyTheme(branding.theme_primary, branding.theme_secondary, branding.theme_sidebar);
+  }, [branding.theme_primary, branding.theme_secondary, branding.theme_sidebar]);
 
   return <Ctx.Provider value={{ branding, loading, refresh }}>{children}</Ctx.Provider>;
 }

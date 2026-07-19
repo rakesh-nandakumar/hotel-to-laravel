@@ -104,10 +104,39 @@ export async function api<T = unknown>(path: string, opts: { method?: string; bo
 export const put = <T = unknown>(path: string, body: unknown) => api<T>(path, { method: "PUT", body });
 export const post = <T = unknown>(path: string, body?: unknown) => api<T>(path, { method: "POST", body: body ?? {} });
 
-/** Open a server-generated PDF (receipt/invoice) in a new tab for printing. */
-export async function openPdf(path: string) {
-  const res = await fetch(`${API_ORIGIN}/api${path}`, { credentials: "include", headers: { Accept: "application/pdf" } });
-  if (!res.ok) throw new ApiFail(res.status, "Could not generate PDF");
-  const blob = await res.blob();
-  window.open(URL.createObjectURL(blob), "_blank");
+/**
+ * Open a server-generated PDF (receipt/invoice) in a new tab for printing.
+ *
+ * The tab is opened SYNCHRONOUSLY, before the `await fetch(...)` below, so it
+ * still counts as a direct response to the triggering click for the browser's
+ * popup blocker — opening it only after the network round-trip resolves (the
+ * previous implementation) falls outside that window and gets silently
+ * blocked on Chrome/Edge/Firefox with no visible error.
+ *
+ * If the caller already needs to `await` something else (e.g. creating the
+ * order) before it knows which PDF to show, it should open the tab itself
+ * at the top of its own click handler — synchronously, before its first
+ * `await` — and pass it in as `tab`, otherwise the same popup-blocking
+ * problem just moves one level up (Firefox in particular blocks `window.open`
+ * the moment it's called after ANY prior `await`, not just this one).
+ */
+export async function openPdf(path: string, tab: Window | null = window.open("", "_blank")) {
+  try {
+    const res = await fetch(`${API_ORIGIN}/api${path}`, { credentials: "include", headers: { Accept: "application/pdf" } });
+    if (!res.ok) throw new ApiFail(res.status, "Could not generate PDF");
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    if (tab && !tab.closed) {
+      tab.location.href = url;
+    } else {
+      // Popup blocked even with the synchronous open (e.g. a browser setting that blocks all popups) — fall back to a direct download.
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = (path.split("/").pop() || "document") + ".pdf";
+      a.click();
+    }
+  } catch (e) {
+    tab?.close();
+    throw e;
+  }
 }

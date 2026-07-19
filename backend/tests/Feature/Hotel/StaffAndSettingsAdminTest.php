@@ -131,3 +131,13 @@ it('lets a manager upload and remove the hotel logo', function () {
     $this->actingAs($manager)->putJson('/api/hotel-settings/hotel.logo_url', ['value' => ''])->assertOk();
     expect(Settings::str('hotel.logo_url'))->toBe('');
 });
+
+it('lets a manager update the theme colors and rejects a non-hex value', function () {
+    $manager = staffWithRole('Manager');
+
+    $this->actingAs($manager)->putJson('/api/hotel-settings/theme.primary', ['value' => '#ff8800'])->assertOk();
+    expect(Settings::str('theme.primary'))->toBe('#ff8800');
+
+    $this->actingAs($manager)->putJson('/api/hotel-settings/theme.primary', ['value' => 'not-a-color'])
+        ->assertUnprocessable()->assertJsonValidationErrors('value');
+});

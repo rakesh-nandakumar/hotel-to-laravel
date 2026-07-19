@@ -2,6 +2,8 @@
 .env
 .env.backup
 .env.production
+.env.testing
+/database/testing.sqlite
 .phpactor.json
 .phpunit.result.cache
 /.fleet

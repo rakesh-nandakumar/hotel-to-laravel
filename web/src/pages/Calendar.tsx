@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { ChevronLeft, ChevronRight, CalendarDays, Plus, X } from "lucide-react";
 import dayjs from "dayjs";
 import { useFetch } from "../lib/util";
-import { Badge, Empty, Tabs } from "../components/ui";
+import { Badge, Empty, ErrorText, Tabs } from "../components/ui";
 import { NewBooking } from "./Reservations";
 import { useAuth } from "../lib/auth";
 import clsx from "clsx";
@@ -92,7 +92,7 @@ export default function Calendar() {
 function TapeChart({ daysShown, start, rooms }: { daysShown: number; start: dayjs.Dayjs; rooms: Room[] }) {
   const from = start.format("YYYY-MM-DD");
   const to = start.add(daysShown, "day").format("YYYY-MM-DD");
-  const { data: calResp, reload } = useFetch<{ reservations: CalRes[] }>(`/reservations/calendar?from=${from}&to=${to}`, [from, to]);
+  const { data: calResp, error, reload } = useFetch<{ reservations: CalRes[] }>(`/reservations/calendar?from=${from}&to=${to}`, [from, to]);
   const reservations = calResp?.reservations;
   const nav = useNavigate();
   const { can } = useAuth();
@@ -155,6 +155,7 @@ function TapeChart({ daysShown, start, rooms }: { daysShown: number; start: dayj
 
   return (
     <div className="space-y-3">
+      <ErrorText error={error} />
       <div className="flex flex-wrap items-center gap-3 text-xs">
         {Object.entries({ CONFIRMED: "Confirmed", CHECKED_IN: "Checked in", PENDING: "Pending", CHECKED_OUT: "Checked out" }).map(([k, label]) => (
           <span key={k} className="flex items-center gap-1.5">
@@ -308,7 +309,7 @@ function TapeChart({ daysShown, start, rooms }: { daysShown: number; start: dayj
 function YearView({ year, rooms, onPickDay }: { year: number; rooms: Room[]; onPickDay: (date: string) => void }) {
   const from = `${year}-01-01`;
   const to = `${year + 1}-01-01`;
-  const { data: calResp } = useFetch<{ reservations: CalRes[] }>(`/reservations/calendar?from=${from}&to=${to}`, [from, to]);
+  const { data: calResp, error } = useFetch<{ reservations: CalRes[] }>(`/reservations/calendar?from=${from}&to=${to}`, [from, to]);
   const reservations = calResp?.reservations;
   const totalRooms = rooms.length || 1;
 
@@ -344,6 +345,7 @@ function YearView({ year, rooms, onPickDay }: { year: number; rooms: Room[]; onP
 
   return (
     <div className="space-y-3">
+      <ErrorText error={error} />
       <div className="flex flex-wrap items-center gap-3 text-xs">
         <span className="font-semibold text-slate-600">Occupancy heatmap — darker = fuller</span>
         <span className="flex items-center gap-1">

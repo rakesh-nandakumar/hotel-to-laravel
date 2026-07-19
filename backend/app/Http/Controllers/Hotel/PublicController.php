@@ -33,6 +33,9 @@ class PublicController extends Controller
             'check_in_time' => Settings::str('frontdesk.check_in_time', '14:00'),
             'check_out_time' => Settings::str('frontdesk.check_out_time', '12:00'),
             'usd_rate' => Settings::num('currency.usd_rate', 300),
+            'theme_primary' => Settings::str('theme.primary', '#0462d3'),
+            'theme_secondary' => Settings::str('theme.secondary', '#3783f0'),
+            'theme_sidebar' => Settings::str('theme.sidebar', '#0c182a'),
         ]);
     }
 

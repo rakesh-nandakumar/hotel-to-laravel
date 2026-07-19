@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Search, Settings as SettingsIcon, Image as ImageIcon } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Search, Settings as SettingsIcon } from "lucide-react";
 import { put } from "../lib/api";
 import { useFetch, fmtDateTime } from "../lib/util";
 import { Empty, ErrorText } from "../components/ui";
+import { ImageDropUpload } from "../components/ImageUpload";
 import { useAuth } from "../lib/auth";
 import { useBranding } from "../lib/branding";
 import clsx from "clsx";
@@ -66,8 +67,8 @@ export default function Settings() {
         setSaved(s.key);
         setTimeout(() => setSaved(""), 1500);
         reload();
-        // Identity keys (name/tagline/logo) drive the sidebar & login — refresh live.
-        if (s.key.startsWith("hotel.")) refreshBranding();
+        // Identity keys (name/tagline/logo) and theme colors drive the sidebar & login — refresh live.
+        if (s.key.startsWith("hotel.") || s.key.startsWith("theme.")) refreshBranding();
       })
       .catch((e) => setError(`${s.label}: ${e.message}`));
   };
@@ -115,24 +116,53 @@ export default function Settings() {
           )}
           {shown.length === 0 && <Empty text="No settings match" />}
           <fieldset disabled={!canUpdate} className="contents">
-          <div className="grid gap-3 xl:grid-cols-2">
-            {shown.map((s) => (
-              <div key={s.key} className="card p-4">
-                <div className="mb-1.5 flex items-start justify-between gap-2">
-                  <label className="text-sm font-bold text-slate-800">
-                    {s.label}
-                    {saved === s.key && <span className="ml-2 text-xs font-semibold text-emerald-600">saved ✓</span>}
-                  </label>
-                  {q && <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[9px] font-bold uppercase text-slate-400">{CATEGORY_META[s.category]?.label ?? s.category}</span>}
-                </div>
-                <SettingControl s={s} onSave={(v) => save(s, v)} />
-                {s.hint && <p className="mt-1.5 text-[11px] leading-snug text-slate-400">{s.hint}</p>}
-                {s.updated_at && <p className="mt-1 text-[10px] text-slate-300">Last changed {fmtDateTime(s.updated_at)}</p>}
-              </div>
-            ))}
-          </div>
+          {!q && activeCat === "hotel" ? (
+            <div className="space-y-5">
+              <SettingGroup title="Identity" fields={shown.filter((s) => !s.key.startsWith("theme."))} saved={saved} onSave={save} />
+              <SettingGroup
+                title="Theming"
+                blurb="Pick your primary, secondary and sidebar colors — the whole app re-colors instantly, no rebuild needed."
+                fields={shown.filter((s) => s.key.startsWith("theme."))}
+                saved={saved}
+                onSave={save}
+              />
+            </div>
+          ) : (
+            <SettingGroup fields={shown} saved={saved} onSave={save} showCategoryBadge={!!q} />
+          )}
           </fieldset>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/** One labeled block of setting cards — used to split "Hotel identity" into Identity vs. Theming sub-sections. */
+function SettingGroup({
+  title, blurb, fields, saved, onSave, showCategoryBadge,
+}: {
+  title?: string; blurb?: string; fields: Parsed[]; saved: string; onSave: (s: Setting, v: unknown) => void; showCategoryBadge?: boolean;
+}) {
+  if (fields.length === 0) return null;
+  return (
+    <div>
+      {title && <h2 className="mb-2 text-xs font-black uppercase tracking-wide text-slate-400">{title}</h2>}
+      {blurb && <p className="mb-2 text-[11px] leading-snug text-slate-400">{blurb}</p>}
+      <div className="grid gap-3 xl:grid-cols-2">
+        {fields.map((s) => (
+          <div key={s.key} className="card p-4">
+            <div className="mb-1.5 flex items-start justify-between gap-2">
+              <label className="text-sm font-bold text-slate-800">
+                {s.label}
+                {saved === s.key && <span className="ml-2 text-xs font-semibold text-emerald-600">saved ✓</span>}
+              </label>
+              {showCategoryBadge && <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[9px] font-bold uppercase text-slate-400">{CATEGORY_META[s.category]?.label ?? s.category}</span>}
+            </div>
+            <SettingControl s={s} onSave={(v) => onSave(s, v)} />
+            {s.hint && <p className="mt-1.5 text-[11px] leading-snug text-slate-400">{s.hint}</p>}
+            {s.updated_at && <p className="mt-1 text-[10px] text-slate-300">Last changed {fmtDateTime(s.updated_at)}</p>}
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -148,6 +178,7 @@ function SettingControl({ s, onSave }: { s: Parsed; onSave: (v: unknown) => void
   if (s.key === "notifications.channels") return <ChannelPicker value={s.parsed as string[]} onSave={onSave} />;
 
   if (s.type === "image") return <LogoUpload value={String(s.parsed ?? "")} onSave={onSave} />;
+  if (s.type === "color") return <ColorPicker value={String(s.parsed ?? "#000000")} onSave={onSave} />;
 
   if (s.type === "boolean") {
     const on = s.parsed === true;
@@ -210,11 +241,17 @@ function CancellationRules({ value, onSave }: { value: { daysBefore: number; ref
       {rules.map((r, i) => (
         <div key={i} className="flex items-center gap-2 text-sm">
           <span className="text-xs text-slate-400">≥</span>
-          <input className="input !w-16 !py-1 text-right" inputMode="numeric" value={r.daysBefore}
-            onChange={(e) => upd(rules.map((x, j) => (j === i ? { ...x, daysBefore: parseInt(e.target.value) || 0 } : x)))} />
+          <input className="input !w-16 !py-1 text-right" inputMode="numeric" defaultValue={r.daysBefore}
+            onBlur={(e) => {
+              const n = parseInt(e.target.value) || 0;
+              if (n !== r.daysBefore) upd(rules.map((x, j) => (j === i ? { ...x, daysBefore: n } : x)));
+            }} />
           <span className="text-xs text-slate-500">days before check-in →</span>
-          <input className="input !w-16 !py-1 text-right" inputMode="numeric" value={r.refundPct}
-            onChange={(e) => upd(rules.map((x, j) => (j === i ? { ...x, refundPct: Math.min(100, parseInt(e.target.value) || 0) } : x)))} />
+          <input className="input !w-16 !py-1 text-right" inputMode="numeric" defaultValue={r.refundPct}
+            onBlur={(e) => {
+              const n = Math.min(100, parseInt(e.target.value) || 0);
+              if (n !== r.refundPct) upd(rules.map((x, j) => (j === i ? { ...x, refundPct: n } : x)));
+            }} />
           <span className="text-xs text-slate-500">% refund</span>
           <button className="ml-auto text-xs font-bold text-red-400 hover:text-red-600" onClick={() => upd(rules.filter((_, j) => j !== i))}>✕</button>
         </div>
@@ -281,7 +318,11 @@ function RedemptionCatalog({ value, onSave }: { value: { name: string; points: n
       {items.map((it, i) => (
         <div key={i} className="flex items-center gap-2">
           <input className="input !py-1" value={it.name} onChange={(e) => upd(items.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))} />
-          <input className="input !w-20 !py-1 text-right" inputMode="numeric" value={it.points} onChange={(e) => upd(items.map((x, j) => (j === i ? { ...x, points: parseInt(e.target.value) || 0 } : x)))} />
+          <input className="input !w-20 !py-1 text-right" inputMode="numeric" defaultValue={it.points}
+            onBlur={(e) => {
+              const n = parseInt(e.target.value) || 0;
+              if (n !== it.points) upd(items.map((x, j) => (j === i ? { ...x, points: n } : x)));
+            }} />
           <span className="text-xs text-slate-400">pts</span>
           <button className="text-xs font-bold text-red-400 hover:text-red-600" onClick={() => upd(items.filter((_, j) => j !== i))}>✕</button>
         </div>
@@ -311,147 +352,42 @@ function ChannelPicker({ value, onSave }: { value: string[]; onSave: (v: unknown
 }
 
 /**
- * Logo picker — drag & drop, paste from clipboard, or browse. The image is
- * downscaled and stored inline as a data URI in the setting value (no separate
- * file host needed), so it shows everywhere branding is read: sidebar, login
- * screen, guest pages and printed documents.
+ * Logo picker — the image is downscaled and stored inline as a data URI in
+ * the setting value (no separate file host needed), so it shows everywhere
+ * branding is read: sidebar, login screen, guest pages and printed documents.
  */
 function LogoUpload({ value, onSave }: { value: string; onSave: (v: unknown) => void }) {
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState("");
-  const [dragOver, setDragOver] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
+  return <ImageDropUpload value={value} onChange={onSave} maxBox={320} removeLabel="Remove logo" />;
+}
 
-  const handleFile = useCallback(
-    async (file: File | null | undefined) => {
-      if (!file) return;
-      if (!file.type.startsWith("image/")) {
-        setErr("Please choose an image file.");
-        return;
-      }
-      setErr("");
-      setBusy(true);
-      try {
-        onSave(await fileToLogoDataUrl(file));
-      } catch {
-        setErr("Could not read that image.");
-      } finally {
-        setBusy(false);
-      }
-    },
-    [onSave],
-  );
+const HEX_RE = /^#[0-9a-fA-F]{6}$/;
 
-  // Paste an image anywhere on the page while this field is on screen. Gating
-  // this on the drop zone being focused doesn't work: clicking it to focus it
-  // also opens the native file picker (see onClick below), which blurs the
-  // zone and detaches the listener before Ctrl/⌘+V can be pressed.
-  useEffect(() => {
-    const onPaste = (e: ClipboardEvent) => {
-      const item = Array.from(e.clipboardData?.items ?? []).find((i) => i.type.startsWith("image/"));
-      if (item) {
-        e.preventDefault();
-        void handleFile(item.getAsFile());
-      }
-    };
-    document.addEventListener("paste", onPaste);
-    return () => document.removeEventListener("paste", onPaste);
-  }, [handleFile]);
+/** Native color swatch + hex text field, kept in sync; saves only on a valid 6-digit hex. */
+function ColorPicker({ value, onSave }: { value: string; onSave: (v: unknown) => void }) {
+  const [text, setText] = useState(value);
+  const valid = HEX_RE.test(text);
+
+  const commit = (next: string) => {
+    if (HEX_RE.test(next) && next.toLowerCase() !== value.toLowerCase()) onSave(next.toLowerCase());
+  };
 
   return (
-    <div>
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={() => inputRef.current?.click()}
-        onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && inputRef.current?.click()}
-        onDragOver={(e) => {
-          e.preventDefault();
-          setDragOver(true);
-        }}
-        onDragLeave={() => setDragOver(false)}
-        onDrop={(e) => {
-          e.preventDefault();
-          setDragOver(false);
-          void handleFile(e.dataTransfer.files?.[0]);
-        }}
-        className={clsx(
-          "flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed p-4 text-center outline-none transition",
-          dragOver ? "border-brand-500 bg-brand-50" : "border-slate-300 hover:border-brand-400 focus:border-brand-500",
-        )}
-      >
-        {value ? (
-          <img src={value} alt="Logo preview" className="max-h-20 max-w-[160px] object-contain" />
-        ) : (
-          <ImageIcon className="h-8 w-8 text-slate-300" />
-        )}
-        <div className="text-xs text-slate-500">
-          {busy ? (
-            "Processing…"
-          ) : (
-            <>
-              Drag &amp; drop, paste, or <span className="font-semibold text-brand-600">browse</span>
-            </>
-          )}
-        </div>
-      </div>
+    <div className="flex items-center gap-2">
       <input
-        ref={inputRef}
-        type="file"
-        accept="image/*"
-        className="hidden"
+        type="color"
+        className="h-9 w-9 shrink-0 cursor-pointer rounded-lg border border-slate-300 p-0.5"
+        value={valid ? text : value}
         onChange={(e) => {
-          void handleFile(e.target.files?.[0]);
-          e.target.value = ""; // allow re-selecting the same file
+          setText(e.target.value);
+          commit(e.target.value);
         }}
       />
-      {value && (
-        <button className="mt-1.5 text-xs font-semibold text-red-500 hover:text-red-600" onClick={() => onSave("")}>
-          Remove logo
-        </button>
-      )}
-      {err && <p className="mt-1 text-xs text-red-500">{err}</p>}
+      <input
+        className={clsx("input !w-28 font-mono uppercase", !valid && "!border-red-400")}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onBlur={() => (valid ? commit(text) : setText(value))}
+      />
     </div>
   );
-}
-
-/**
- * Turn a chosen file into a small data URI. SVGs are kept as-is (crisp & tiny);
- * raster images are downscaled to a 320px box and re-encoded as PNG so the
- * stored value stays small.
- */
-async function fileToLogoDataUrl(file: File): Promise<string> {
-  const dataUrl = await readAsDataUrl(file);
-  if (file.type === "image/svg+xml") return dataUrl;
-
-  const img = await loadImage(dataUrl);
-  const max = 320;
-  const scale = Math.min(1, max / Math.max(img.width, img.height));
-  const w = Math.max(1, Math.round(img.width * scale));
-  const h = Math.max(1, Math.round(img.height * scale));
-  const canvas = document.createElement("canvas");
-  canvas.width = w;
-  canvas.height = h;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return dataUrl;
-  ctx.drawImage(img, 0, 0, w, h);
-  return canvas.toDataURL("image/png");
-}
-
-function readAsDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(new Error("read failed"));
-    reader.readAsDataURL(file);
-  });
-}
-
-function loadImage(src: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error("load failed"));
-    img.src = src;
-  });
 }

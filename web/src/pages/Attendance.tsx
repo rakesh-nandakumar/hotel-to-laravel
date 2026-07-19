@@ -42,6 +42,10 @@ export default function Attendance() {
 
   const exportCsv = async () => {
     const res = await fetch(`${API_ORIGIN}/api/attendance/export?month=${month}`, { credentials: "include", headers: { Accept: "text/csv" } });
+    if (!res.ok) {
+      setError("Could not export CSV");
+      return;
+    }
     const blob = await res.blob();
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);

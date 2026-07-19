@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { Plus, Search, ClipboardList, Trash2, ArchiveRestore } from "lucide-react";
+import { Plus, Search, ClipboardList, Trash2, ArchiveRestore, ImageOff } from "lucide-react";
 import { api, post, put } from "../lib/api";
 import { useFetch, lkr, toCents, centsToRupees } from "../lib/util";
 import { Badge, Empty, ErrorText, Field, Modal, Pagination } from "../components/ui";
+import { ImageDropUpload } from "../components/ImageUpload";
 import { useAuth } from "../lib/auth";
 import clsx from "clsx";
 
@@ -10,6 +11,7 @@ type Cat = { id: number; name: string; sort_order: number; is_minibar: boolean; 
 type Ingredient = { id: number; name: string; unit: string };
 type Item = {
   id: number; item_no?: number | null; name: string; price: number; sold_out: boolean; active: boolean; description: string;
+  image?: string | null;
   category: { id: number; name: string };
   recipe: { ingredient_id: number; qty: number; ingredient: { name: string; unit: string } }[];
 };
@@ -117,6 +119,13 @@ export default function MenuAdmin() {
       <div className="card divide-y divide-slate-50">
         {shown.map((i) => (
           <div key={i.id} className="flex flex-wrap items-center gap-3 px-4 py-2.5 transition hover:bg-slate-50/60">
+            {i.image ? (
+              <img src={i.image} alt="" className="h-10 w-10 shrink-0 rounded-lg object-cover" />
+            ) : (
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-300">
+                <ImageOff size={16} />
+              </div>
+            )}
             <span className="w-12 shrink-0 rounded-lg bg-slate-100 px-2 py-1 text-center font-mono text-xs font-black text-slate-600">
               #{i.item_no ?? "—"}
             </span>
@@ -258,6 +267,7 @@ function ItemEditor({ item, cats, ingredients, onClose }: { item: Item | null; c
     price: item ? centsToRupees(item.price) : "",
     itemNo: item?.item_no != null ? String(item.item_no) : "",
     description: item?.description ?? "",
+    image: item?.image ?? "",
   });
   const [recipe, setRecipe] = useState<{ ingredientId: string; qty: string }[]>(
     (item?.recipe ?? []).map((r) => ({ ingredientId: String(r.ingredient_id), qty: String(r.qty) }))
@@ -272,6 +282,7 @@ function ItemEditor({ item, cats, ingredients, onClose }: { item: Item | null; c
       price: toCents(f.price),
       item_no: f.itemNo.trim() ? parseInt(f.itemNo) : null,
       description: f.description,
+      image: f.image || null,
       recipe: recipe.filter((r) => r.ingredientId && parseFloat(r.qty) > 0).map((r) => ({ ingredient_id: Number(r.ingredientId), qty: parseFloat(r.qty) })),
     };
     try {
@@ -285,17 +296,28 @@ function ItemEditor({ item, cats, ingredients, onClose }: { item: Item | null; c
 
   return (
     <Modal open onClose={onClose} title={item ? `Edit #${item.item_no ?? "—"} ${item.name}` : "New menu item"} wide>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="Name"><input className="input" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} autoFocus /></Field>
-        <Field label="Category">
-          <select className="input" value={f.categoryId} onChange={(e) => setF({ ...f, categoryId: e.target.value })}>
-            {cats.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
+      <div className="grid gap-3 sm:grid-cols-[160px_1fr]">
+        <Field label="Photo" hint="Shown on the POS item grid.">
+          <ImageDropUpload
+            value={f.image}
+            onChange={(v) => setF({ ...f, image: v })}
+            maxBox={240}
+            removeLabel="Remove photo"
+            previewClassName="h-20 w-20 rounded-lg object-cover"
+          />
         </Field>
-        <Field label="Price (LKR)"><input className="input" value={f.price} onChange={(e) => setF({ ...f, price: e.target.value })} /></Field>
-        <Field label="Menu number" hint="Printed menu no. — cashier can type it for quick POS entry. Blank = auto-assign.">
-          <input className="input" inputMode="numeric" value={f.itemNo} onChange={(e) => setF({ ...f, itemNo: e.target.value })} placeholder="auto" />
-        </Field>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="Name"><input className="input" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} autoFocus /></Field>
+          <Field label="Category">
+            <select className="input" value={f.categoryId} onChange={(e) => setF({ ...f, categoryId: e.target.value })}>
+              {cats.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </Field>
+          <Field label="Price (LKR)"><input className="input" value={f.price} onChange={(e) => setF({ ...f, price: e.target.value })} /></Field>
+          <Field label="Menu number" hint="Printed menu no. — cashier can type it for quick POS entry. Blank = auto-assign.">
+            <input className="input" inputMode="numeric" value={f.itemNo} onChange={(e) => setF({ ...f, itemNo: e.target.value })} placeholder="auto" />
+          </Field>
+        </div>
       </div>
       <div className="mt-3">
         <Field label="Description"><input className="input" value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} /></Field>

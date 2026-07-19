@@ -124,6 +124,9 @@ class Settings
             SettingType::IMAGE => ($value !== null && ! is_string($value))
                 ? 'Value must be an image.'
                 : null,
+            SettingType::COLOR => (! is_string($value) || ! preg_match('/^#[0-9a-fA-F]{6}$/', $value))
+                ? 'Value must be a hex color, e.g. #0462d3.'
+                : null,
             default => null,
         };
 

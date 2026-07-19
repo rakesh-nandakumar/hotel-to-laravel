@@ -45,6 +45,9 @@ class SettingsSeeder extends Seeder
             ['key' => 'hotel.tax_reg_no', 'value' => '⚠ confirm with owner', 'type' => SettingType::TEXT, 'category' => 'hotel', 'label' => 'Tax Registration No.'],
             ['key' => 'hotel.website', 'value' => '', 'type' => SettingType::TEXT, 'category' => 'hotel', 'label' => 'Website'],
             ['key' => 'hotel.logo_url', 'value' => '', 'type' => SettingType::IMAGE, 'category' => 'hotel', 'label' => 'Logo', 'hint' => 'Shown in the sidebar, on the login screen and printed documents. Drag & drop, paste, or choose an image.'],
+            ['key' => 'theme.primary', 'value' => '#0462d3', 'type' => SettingType::COLOR, 'category' => 'hotel', 'label' => 'Primary color', 'hint' => 'Buttons, links, focus rings and active states across the whole app.'],
+            ['key' => 'theme.secondary', 'value' => '#3783f0', 'type' => SettingType::COLOR, 'category' => 'hotel', 'label' => 'Secondary color', 'hint' => 'Accent highlight for the active menu item in the sidebar.'],
+            ['key' => 'theme.sidebar', 'value' => '#0c182a', 'type' => SettingType::COLOR, 'category' => 'hotel', 'label' => 'Sidebar color', 'hint' => 'Base color the sidebar\'s dark background, borders and text are shaded from.'],
 
             // ── Front desk ───────────────────────────────────────────────────
             ['key' => 'frontdesk.check_in_time', 'value' => '14:00', 'type' => SettingType::TIME, 'category' => 'frontdesk', 'label' => 'Check-in Time'],

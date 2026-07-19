@@ -26,6 +26,7 @@ class MenuItem extends Model
         'menu_category_id',
         'price',
         'description',
+        'image',
         'sold_out',
         'active',
         'created_by',

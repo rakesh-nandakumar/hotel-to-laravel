@@ -1,7 +1,9 @@
 import { useMemo, useState } from "react";
-import { History, Search, ChevronDown, Globe, Info } from "lucide-react";
+import { History, Search, ChevronDown, Globe, Info, Download } from "lucide-react";
 import { useFetch, fmtDateTime } from "../lib/util";
-import { Badge, Card, Empty, Field, Pagination } from "../components/ui";
+import { Badge, Card, Empty, ErrorText, Field, Pagination } from "../components/ui";
+import { API_ORIGIN } from "../lib/api";
+import { useAuth } from "../lib/auth";
 import clsx from "clsx";
 
 type Row = {
@@ -45,6 +47,7 @@ const ACTION_COLOR = (action: string): string => {
 };
 
 export default function AuditLog() {
+  const { can } = useAuth();
   const [staffId, setStaffId] = useState("");
   const [action, setAction] = useState("");
   const [entity, setEntity] = useState("");
@@ -54,6 +57,7 @@ export default function AuditLog() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
   const [expanded, setExpanded] = useState<number | null>(null);
+  const [exportError, setExportError] = useState("");
 
   const query = useMemo(() => {
     const p = new URLSearchParams();
@@ -76,18 +80,38 @@ export default function AuditLog() {
     setPage(1);
   };
 
+  const exportCsv = async () => {
+    setExportError("");
+    const res = await fetch(`${API_ORIGIN}/api/audit-logs/export?${query}`, { credentials: "include", headers: { Accept: "text/csv" } });
+    if (!res.ok) {
+      setExportError("Could not export CSV");
+      return;
+    }
+    const blob = await res.blob();
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "audit-logs.csv";
+    a.click();
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="flex items-center gap-2 text-xl font-extrabold">
           <History /> Audit Log <Badge color="purple">OWNER / MANAGER / SYS ADMIN</Badge>
         </h1>
-        <button className="btn-ghost text-xs" onClick={reload}>Refresh</button>
+        <div className="flex gap-2">
+          {can("audit_logs.export") && (
+            <button className="btn-secondary text-xs" onClick={exportCsv}><Download size={14} /> Export CSV</button>
+          )}
+          <button className="btn-ghost text-xs" onClick={reload}>Refresh</button>
+        </div>
       </div>
       <p className="text-xs text-slate-500">
         Every sensitive action across the system — logins, check-ins/checkouts, voids, refunds, discounts, settings and menu changes, stock
         adjustments, payroll, staff changes and more — with who did it and when. Not shown here: routine read-only page views.
       </p>
+      <ErrorText error={exportError} />
 
       <Card>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">

@@ -113,7 +113,39 @@ export default function KOT() {
   const audioCtxRef = useRef<AudioContext | null>(null);
   const seenIds = useRef<Set<number>>(new Set());
   const initialized = useRef(false);
+  const [armed, setArmed] = useState(false);
   const T = theme(light);
+
+  // Browsers only allow audio to start playing in direct response to a real user gesture (click/tap/key).
+  // A kitchen display is often an unattended kiosk, so we listen for the FIRST gesture anywhere on the
+  // page (not just the mute button) and use it to unlock/resume the AudioContext.
+  const primeAudio = () => {
+    try {
+      audioCtxRef.current ??= new AudioContext();
+      if (audioCtxRef.current.state === "suspended") {
+        audioCtxRef.current.resume().then(() => setArmed(true)).catch(() => {});
+      } else {
+        setArmed(true);
+      }
+    } catch {
+      /* WebAudio unsupported/blocked — chime() calls will no-op via their own try/catch */
+    }
+  };
+
+  useEffect(() => {
+    const opts = { capture: true } as const;
+    const onGesture = () => {
+      primeAudio();
+      window.removeEventListener("pointerdown", onGesture, opts);
+      window.removeEventListener("keydown", onGesture, opts);
+    };
+    window.addEventListener("pointerdown", onGesture, opts);
+    window.addEventListener("keydown", onGesture, opts);
+    return () => {
+      window.removeEventListener("pointerdown", onGesture, opts);
+      window.removeEventListener("keydown", onGesture, opts);
+    };
+  }, []);
 
   useEffect(() => {
     const s = getSocket();
@@ -149,10 +181,8 @@ export default function KOT() {
       return;
     }
     const isNew = orders.some((o) => o.kot_status.code === "new" && !seenIds.current.has(o.id));
-    if (isNew && !muted) {
+    if (isNew && !muted && audioCtxRef.current && audioCtxRef.current.state === "running") {
       try {
-        audioCtxRef.current ??= new AudioContext();
-        if (audioCtxRef.current.state === "suspended") audioCtxRef.current.resume();
         chime(audioCtxRef.current);
       } catch {
         /* audio blocked — silent fail, ticket still shows visually */
@@ -165,11 +195,8 @@ export default function KOT() {
     const next = !muted;
     setMuted(next);
     localStorage.setItem("mv.kot.muted", next ? "1" : "0");
-    // First tap doubles as the user gesture that unlocks WebAudio autoplay.
-    try {
-      audioCtxRef.current ??= new AudioContext();
-      if (audioCtxRef.current.state === "suspended") audioCtxRef.current.resume();
-    } catch {}
+    // This tap also doubles as the user gesture that unlocks WebAudio autoplay.
+    primeAudio();
   };
 
   const toggleLight = () => {
@@ -225,11 +252,14 @@ export default function KOT() {
           </button>
           <button
             onClick={toggleMute}
-            className={clsx("flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold transition", muted ? T.mutedBtn : "bg-brand-600 text-white")}
-            title={muted ? "Sound off — tap to enable new-order chime" : "Sound on — new tickets chime"}
+            className={clsx(
+              "flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold transition",
+              muted ? T.mutedBtn : !armed ? "animate-pulse bg-amber-500 text-amber-950" : "bg-brand-600 text-white"
+            )}
+            title={muted ? "Sound off — tap to enable new-order chime" : !armed ? "Tap to enable the new-order chime (browser requires one tap first)" : "Sound on — new tickets chime"}
           >
             {muted ? <VolumeX size={15} /> : <Volume2 size={15} />}
-            {muted ? "Muted" : "Sound on"}
+            {muted ? "Muted" : !armed ? "Tap to enable sound" : "Sound on"}
           </button>
           <button onClick={toggleFullscreen} className={clsx("flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold transition", T.neutralBtn)}>
             {fullscreen ? <Minimize size={15} /> : <Maximize size={15} />}

@@ -2,7 +2,10 @@
 
 use App\Models\Branch;
 use App\Models\Hotel\Guest;
+use App\Models\Hotel\Notification;
+use App\Models\Hotel\Reservation;
 use App\Models\Hotel\Venue;
+use App\Models\Hotel\VenueBooking;
 use Database\Seeders\BranchSeeder;
 use Database\Seeders\HotelRoomsSeeder;
 use Database\Seeders\LookupSeeder;
@@ -23,7 +26,10 @@ it('serves branding with no authentication required', function () {
     $response = $this->getJson('/api/public/branding')->assertOk();
 
     expect($response->json('name'))->toBe('Mount View Hotel')
-        ->and($response->json('check_in_time'))->toBe('14:00');
+        ->and($response->json('check_in_time'))->toBe('14:00')
+        ->and($response->json('theme_primary'))->toBe('#0462d3')
+        ->and($response->json('theme_secondary'))->toBe('#3783f0')
+        ->and($response->json('theme_sidebar'))->toBe('#0c182a');
 });
 
 it('lists only active venues publicly', function () {
@@ -65,7 +71,7 @@ it('lets a guest submit pre-check-in for a confirmed booking, pre-filling their 
         ->and($guest->fresh()->phone)->toBe('0719999999')
         ->and($guest->fresh()->nationality)->toBe('British');
 
-    $reservation = \App\Models\Hotel\Reservation::find($created->json('reservation.id'));
+    $reservation = Reservation::find($created->json('reservation.id'));
     expect($reservation->pre_check_in['full_name'])->toBe('Jane Guest')
         ->and($reservation->pre_check_in)->toHaveKey('submitted_at');
 });
@@ -91,11 +97,11 @@ it('records a public venue inquiry as an INQUIRY booking and notifies the hotel'
     expect($response->json('ok'))->toBeTrue()
         ->and($response->json('reference'))->toStartWith('VNB-');
 
-    $booking = \App\Models\Hotel\VenueBooking::where('code', $response->json('reference'))->first();
+    $booking = VenueBooking::where('code', $response->json('reference'))->first();
     expect($booking->status->code)->toBe('inquiry')
         ->and($booking->folio)->not->toBeNull();
 
-    expect(\App\Models\Hotel\Notification::where('type', 'VENUE_INQUIRY_RECEIVED')->where('ref_id', $booking->id)->exists())->toBeTrue();
+    expect(Notification::where('type', 'VENUE_INQUIRY_RECEIVED')->where('ref_id', $booking->id)->exists())->toBeTrue();
 });
 
 it('rejects a public venue inquiry exceeding capacity', function () {

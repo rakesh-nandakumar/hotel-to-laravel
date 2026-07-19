@@ -38,6 +38,26 @@ class AdminUsersSeeder extends Seeder
             ],
         );
         $this->assignRole($manager, 'Manager');
+
+        // One account per remaining operational role — useful for manual testing/demo
+        // and for automated E2E coverage of role-gated behavior (Playwright logs in as each).
+        foreach ([
+            'owner@vellix.lk' => ['Owner Account', 'Owner'],
+            'housekeeper@vellix.lk' => ['Housekeeping Staff', 'Housekeeper'],
+            'chef@vellix.lk' => ['Head Chef', 'Chef'],
+            'security@vellix.lk' => ['Security Officer', 'Security'],
+        ] as $email => [$name, $roleName]) {
+            $user = User::updateOrCreate(
+                ['email' => $email],
+                [
+                    'name' => $name,
+                    'password' => Hash::make('password'),
+                    'status' => User::STATUS_ACTIVE,
+                    'email_verified_at' => now(),
+                ],
+            );
+            $this->assignRole($user, $roleName);
+        }
     }
 
     private function assignRole(User $user, string $roleName): void

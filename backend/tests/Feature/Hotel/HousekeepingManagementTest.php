@@ -45,6 +45,16 @@ it('lets a manager create an ad-hoc task, dirtying an available room', function 
         ->and($room->fresh()->status->code)->toBe(RoomStatus::DIRTY);
 });
 
+it('includes the task status on the list endpoint, not just the room status', function () {
+    $manager = staffWithRole('Manager');
+    $room = Room::query()->statusCode(RoomStatus::AVAILABLE)->firstOrFail();
+    $this->actingAs($manager)->postJson('/api/housekeeping/tasks', ['room_id' => $room->id])->assertCreated();
+
+    $response = $this->actingAs($manager)->getJson('/api/housekeeping/tasks')->assertOk();
+
+    expect($response->json('tasks.0.status.code'))->not->toBeNull();
+});
+
 it('lets a manager assign a task, which moves it to in progress', function () {
     $manager = staffWithRole('Manager');
     $housekeeper = staffWithRole('Housekeeper');
