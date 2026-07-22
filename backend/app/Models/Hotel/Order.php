@@ -2,6 +2,8 @@
 
 namespace App\Models\Hotel;
 
+use App\Models\Concerns\BelongsToTenant;
+
 use App\Models\Lookup;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
@@ -11,6 +13,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Order extends Model
 {
+    use BelongsToTenant;
     protected $fillable = [
         'client_key',
         'order_type_id',

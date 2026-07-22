@@ -2,6 +2,8 @@
 
 namespace App\Models\Hotel;
 
+use App\Models\Concerns\BelongsToTenant;
+
 use App\Models\Lookup;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
@@ -9,6 +11,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class MaintenanceIssue extends Model
 {
+    use BelongsToTenant;
     protected $fillable = [
         'room_id',
         'venue_id',

@@ -21,8 +21,7 @@ class UpdateRoomRequest extends FormRequest
 
         return [
             'number' => ['sometimes', 'string', 'max:20', Rule::unique('rooms', 'number')->ignore($room)],
-            'room_type_id' => ['sometimes', 'integer', 'exists:room_types,id'],
-            'branch_id' => ['sometimes', 'integer', 'exists:warehouses,id'],
+            'room_type_id' => ['required', 'integer', 'exists:room_types,id'],
             'floor' => ['nullable', 'string', 'max:50'],
             'view' => ['nullable', 'string', 'max:50'],
             'amenities' => ['array'],

@@ -11,8 +11,8 @@ class DatabaseSeeder extends Seeder
         $this->call([
             MenuSeeder::class,
             PermissionsAndRolesSeeder::class,
-            BranchSeeder::class,
-            AdminUsersSeeder::class,
+            PlatformAdminSeeder::class,
+            TenantSeeder::class,
             LookupSeeder::class,
             SettingsSeeder::class,
             HotelRoomsSeeder::class,

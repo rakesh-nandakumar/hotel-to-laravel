@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToTenant;
 use App\Models\Concerns\HasPermissions;
 use App\Traits\HasUserstamps;
 use Database\Factories\UserFactory;
@@ -19,7 +20,7 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
-    use HasFactory, HasPermissions, HasUserstamps, Notifiable, SoftDeletes, TwoFactorAuthenticatable;
+    use BelongsToTenant, HasFactory, HasPermissions, HasUserstamps, Notifiable, SoftDeletes, TwoFactorAuthenticatable;
 
     public const STATUS_ACTIVE = 'active';
 
@@ -62,6 +63,7 @@ class User extends Authenticatable
         'password_reset_otp_hash',
         'password_reset_otp_expires_at',
         'role_id',
+        'tenant_id',
         'created_by',
         'updated_by',
         'email_verified_at',
@@ -149,9 +151,13 @@ class User extends Authenticatable
         return $this->belongsToMany(Role::class, 'user_roles')->withTimestamps();
     }
 
-    public function warehouses(): BelongsToMany
+    /**
+     * Whether this user is a platform-level admin (not a tenant user).
+     * This is distinct from isFullAdmin() which checks tenant-level admin.
+     */
+    public function isPlatformAdmin(): bool
     {
-        return $this->belongsToMany(Branch::class, 'user_warehouse_access', 'user_id', 'warehouse_id');
+        return false; // Tenant users are never platform admins.
     }
 
     public function createdBy(): BelongsTo

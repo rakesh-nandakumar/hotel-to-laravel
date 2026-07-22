@@ -209,12 +209,6 @@ const SECTIONS: Section[] = [
         icon: <Wallet size={18} />,
         permission: "hotel_payroll.view",
       },
-      {
-        to: "/settings",
-        label: "Settings",
-        icon: <SettingsIcon size={18} />,
-        permission: "hotel_settings.access",
-      },
     ],
   },
   {
@@ -474,7 +468,7 @@ function SidebarSearch({
 }
 
 export default function Layout({ children }: { children: ReactNode }) {
-  const { me, can, logout } = useAuth();
+  const { me, can, logout, stopImpersonating } = useAuth();
   const { branding } = useBranding();
   const nav = useNavigate();
   const { pathname } = useLocation();
@@ -710,6 +704,17 @@ export default function Layout({ children }: { children: ReactNode }) {
         </div>
       )}
       <div className="flex min-w-0 flex-1 flex-col">
+        {me.impersonating && (
+          <div className="bg-amber-500 px-4 py-2 text-center text-sm font-medium text-amber-950 shadow-sm flex items-center justify-center gap-4 z-40">
+            <span>You are currently impersonating this tenant.</span>
+            <button
+              onClick={() => stopImpersonating()}
+              className="rounded-md bg-amber-950/10 px-3 py-1 text-xs font-bold hover:bg-amber-950/20 transition"
+            >
+              Stop Impersonating
+            </button>
+          </div>
+        )}
         <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-slate-200 bg-white/90 px-4 py-2 backdrop-blur lg:px-6">
           {/* Mobile: open the drawer */}
           <button

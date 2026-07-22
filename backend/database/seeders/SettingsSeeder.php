@@ -13,19 +13,23 @@ use Illuminate\Database\Seeder;
  */
 class SettingsSeeder extends Seeder
 {
-    public function run(): void
+    public function run(?int $tenantId = null): void
     {
-        foreach ($this->definitions() as $definition) {
-            Setting::firstOrCreate(
-                ['key' => $definition['key']],
-                [
-                    'value' => json_encode($definition['value']),
-                    'type' => $definition['type'],
-                    'category' => $definition['category'],
-                    'label' => $definition['label'],
-                    'hint' => $definition['hint'] ?? null,
-                ],
-            );
+        $tenantIds = $tenantId ? [$tenantId] : \App\Models\Tenant::pluck('id')->all();
+
+        foreach ($tenantIds as $id) {
+            foreach ($this->definitions() as $definition) {
+                Setting::withoutGlobalScopes()->firstOrCreate(
+                    ['key' => $definition['key'], 'tenant_id' => $id],
+                    [
+                        'value' => json_encode($definition['value']),
+                        'type' => $definition['type'],
+                        'category' => $definition['category'],
+                        'label' => $definition['label'],
+                        'hint' => $definition['hint'] ?? null,
+                    ],
+                );
+            }
         }
     }
 

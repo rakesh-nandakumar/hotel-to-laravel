@@ -2,7 +2,6 @@
 
 namespace Database\Seeders;
 
-use App\Models\Branch;
 use App\Models\Hotel\Package;
 use App\Models\Hotel\Room;
 use App\Models\Hotel\RoomType;
@@ -65,49 +64,51 @@ class HotelRoomsSeeder extends Seeder
 
     public function run(): void
     {
-        $branch = Branch::query()->active()->firstOrFail();
         $availableStatusId = Lookup::id(LookupType::ROOM_STATUS, RoomStatus::AVAILABLE);
 
-        foreach (self::ROOM_TYPES as $definition) {
-            $roomType = RoomType::query()->firstOrCreate(
-                ['name' => $definition['name']],
-                [
-                    'max_occupancy' => $definition['max_occupancy'],
-                    'bed_config' => 'TBC — pending from owner',
-                    'amenities' => self::DEFAULT_AMENITIES,
-                    'weekday_rate' => $definition['weekday'] * 100,
-                    'weekend_rate' => $definition['weekend'] * 100,
-                    'item_checklist' => self::ITEM_CHECKLIST,
-                    'cleaning_checklist' => self::CLEANING_CHECKLIST,
-                ],
-            );
-
-            $roomType->seasonalRates()->firstOrCreate(
-                ['name' => 'December Peak'],
-                [
-                    'start_date' => '2026-12-15',
-                    'end_date' => '2027-01-05',
-                    'rate' => (int) round($definition['weekend'] * 100 * 1.2),
-                ],
-            );
-
-            foreach ($definition['rooms'] as $number) {
-                Room::query()->firstOrCreate(
-                    ['number' => $number],
+        foreach (\App\Models\Tenant::all() as $tenant) {
+            foreach (self::ROOM_TYPES as $definition) {
+                $roomType = RoomType::query()->firstOrCreate(
+                    ['name' => $definition['name'], 'tenant_id' => $tenant->id],
                     [
-                        'room_type_id' => $roomType->id,
-                        'branch_id' => $branch->id,
-                        'floor' => str_starts_with($number, '11') ? 'Upper' : 'Ground',
-                        'view' => 'Hill view',
+                        'max_occupancy' => $definition['max_occupancy'],
+                        'bed_config' => 'TBC — pending from owner',
                         'amenities' => self::DEFAULT_AMENITIES,
-                        'room_status_id' => $availableStatusId,
+                        'weekday_rate' => $definition['weekday'] * 100,
+                        'weekend_rate' => $definition['weekend'] * 100,
+                        'item_checklist' => self::ITEM_CHECKLIST,
+                        'cleaning_checklist' => self::CLEANING_CHECKLIST,
                     ],
                 );
+
+                $roomType->seasonalRates()->firstOrCreate(
+                    ['name' => 'December Peak', 'tenant_id' => $tenant->id],
+                    [
+                        'start_date' => '2026-12-15',
+                        'end_date' => '2027-01-05',
+                        'rate' => (int) round($definition['weekend'] * 100 * 1.2),
+                    ],
+                );
+
+                foreach ($definition['rooms'] as $number) {
+                    Room::query()->firstOrCreate(
+                        ['number' => $number, 'tenant_id' => $tenant->id],
+                        [
+                            'room_type_id' => $roomType->id,
+                            'floor' => str_starts_with($number, '11') ? 'Upper' : 'Ground',
+                            'view' => 'Hill view',
+                            'amenities' => self::DEFAULT_AMENITIES,
+                            'room_status_id' => $availableStatusId,
+                        ],
+                    );
+                }
             }
         }
 
-        foreach ($this->packages() as $package) {
-            Package::query()->firstOrCreate(['code' => $package['code']], $package);
+        foreach (\App\Models\Tenant::all() as $tenant) {
+            foreach ($this->packages() as $package) {
+                Package::query()->firstOrCreate(['code' => $package['code'], 'tenant_id' => $tenant->id], $package);
+            }
         }
     }
 

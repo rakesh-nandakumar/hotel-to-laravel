@@ -12,7 +12,6 @@ use App\Http\Controllers\Auth\OtpChallengeController;
 use App\Http\Controllers\Auth\PasswordResetLinkController;
 use App\Http\Controllers\Auth\PinLoginController;
 use App\Http\Controllers\Auth\VerifyEmailController;
-use App\Http\Controllers\BranchContextController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\Hotel\AttendanceController;
 use App\Http\Controllers\Hotel\CorporateAccountController;
@@ -106,8 +105,6 @@ Route::middleware(['auth', 'check_active'])->group(function () {
         ->middleware('can_do:dashboard.access')
         ->name('dashboard');
 
-    // ── Branch context (top-bar selector) ─────────────────────────────────────
-    Route::post('branch/select', [BranchContextController::class, 'select'])->name('branch.select');
 
     // ── Settings / Profile ─────────────────────────────────────────────────────
     Route::get('settings/profile', [ProfileController::class, 'edit'])->name('profile.edit');
@@ -728,13 +725,4 @@ Route::middleware(['auth', 'check_active'])->group(function () {
             ->name('pin.update');
     });
 
-    // ── Settings admin ───────────────────────────────────────────────────────
-    Route::prefix('hotel-settings')->name('hotel.settings.')->group(function () {
-        Route::get('/', [SettingController::class, 'index'])
-            ->middleware('can_do:hotel_settings.access')
-            ->name('index');
-        Route::put('{setting}', [SettingController::class, 'update'])
-            ->middleware('can_do:hotel_settings.update')
-            ->name('update');
-    });
 });

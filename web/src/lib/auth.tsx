@@ -32,6 +32,7 @@ export type Me = {
   home: string;
   menu: MenuNode[];
   branch: { branches: Branch[]; selected_id: number | null; show_selector: boolean };
+  impersonating: boolean;
 };
 
 type Challenge = "two-factor" | "otp";
@@ -52,6 +53,7 @@ type AuthCtx = {
   completeOtp: (payload: { code?: string; recovery_code?: string }) => Promise<Me | null>;
   pinLogin: (pin: string) => Promise<Me | null>;
   logout: () => Promise<void>;
+  stopImpersonating: () => Promise<void>;
 };
 
 /** The account bound to this device by its last credential login — the only one allowed to PIN-unlock here. */
@@ -146,6 +148,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             // Device/PIN binding is device-bound, not session-bound — it survives sign-out.
             setMe(null);
           }
+        },
+        stopImpersonating: async () => {
+          await post("/admin/impersonate/stop");
+          window.location.href = import.meta.env.VITE_ADMIN_URL || "/admin";
         },
       }}
     >

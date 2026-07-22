@@ -2,6 +2,8 @@
 
 namespace App\Models\Hotel;
 
+use App\Models\Concerns\BelongsToTenant;
+
 use App\Models\Lookup;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
@@ -10,6 +12,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class HousekeepingTask extends Model
 {
+    use BelongsToTenant;
     protected $fillable = [
         'room_id',
         'assigned_to_id',

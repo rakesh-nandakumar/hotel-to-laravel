@@ -9,22 +9,26 @@ use Illuminate\Support\Facades\DB;
 
 class MenuSeeder extends Seeder
 {
-    public function run(): void
+    public function run(?int $tenantId = null): void
     {
-        DB::transaction(function (): void {
-            MenuItem::withTrashed()->forceDelete();
+        $tenantIds = $tenantId ? [$tenantId] : \App\Models\Tenant::pluck('id')->all();
 
-            $this->seedNodes(MenuDefinition::tree(), parentId: null);
+        DB::transaction(function () use ($tenantIds): void {
+            foreach ($tenantIds as $id) {
+                MenuItem::withoutGlobalScopes()->where('tenant_id', $id)->forceDelete();
+                $this->seedNodes(MenuDefinition::tree(), null, $id);
+            }
         });
     }
 
     /**
      * @param  array<int, array<string, mixed>>  $nodes
      */
-    private function seedNodes(array $nodes, ?int $parentId): void
+    private function seedNodes(array $nodes, ?int $parentId, int $tenantId): void
     {
         foreach ($nodes as $order => $node) {
-            $item = MenuItem::create([
+            $item = MenuItem::withoutGlobalScopes()->create([
+                'tenant_id' => $tenantId,
                 'parent_id' => $parentId,
                 'name' => $node['name'],
                 'icon' => $node['icon'] ?? null,
@@ -36,7 +40,7 @@ class MenuSeeder extends Seeder
             ]);
 
             if (! empty($node['children'])) {
-                $this->seedNodes($node['children'], $item->id);
+                $this->seedNodes($node['children'], $item->id, $tenantId);
             }
         }
     }

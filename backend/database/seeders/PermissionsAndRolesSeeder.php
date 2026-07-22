@@ -13,11 +13,19 @@ use RuntimeException;
 
 class PermissionsAndRolesSeeder extends Seeder
 {
-    public function run(): void
+    public function run(?int $tenantId = null): void
     {
-        DB::transaction(function (): void {
-            $this->derivePermissionsFromMenu();
-            $this->seedSystemRoles();
+        DB::transaction(function () use ($tenantId): void {
+            if ($tenantId === null) {
+                $this->derivePermissionsFromMenu();
+                
+                $tenantIds = \App\Models\Tenant::pluck('id')->all();
+                foreach ($tenantIds as $id) {
+                    $this->seedSystemRoles($id);
+                }
+            } else {
+                $this->seedSystemRoles($tenantId);
+            }
         });
 
         User::query()->whereNotNull('role_id')->lazy()->each(function (User $user): void {
@@ -47,11 +55,11 @@ class PermissionsAndRolesSeeder extends Seeder
             ->each(fn (Permission $permission) => $permission->forceDelete());
     }
 
-    private function seedSystemRoles(): void
+    private function seedSystemRoles(int $tenantId): void
     {
         foreach (SystemRoleDefinition::roles() as $name => $config) {
             /** @var Role $role */
-            $role = Role::firstOrNew(['name' => $name]);
+            $role = Role::withoutGlobalScopes()->firstOrNew(['name' => $name, 'tenant_id' => $tenantId]);
             $role->fill([
                 'description' => $config['description'] ?? null,
                 'is_system' => true,

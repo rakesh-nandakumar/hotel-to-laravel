@@ -20,7 +20,6 @@ class StoreRoomRequest extends FormRequest
         return [
             'number' => ['required', 'string', 'max:20', Rule::unique('rooms', 'number')],
             'room_type_id' => ['required', 'integer', 'exists:room_types,id'],
-            'branch_id' => ['nullable', 'integer', 'exists:warehouses,id'],
             'floor' => ['nullable', 'string', 'max:50'],
             'view' => ['nullable', 'string', 'max:50'],
             'amenities' => ['array'],

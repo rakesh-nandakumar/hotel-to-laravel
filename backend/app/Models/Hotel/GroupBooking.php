@@ -2,6 +2,8 @@
 
 namespace App\Models\Hotel;
 
+use App\Models\Concerns\BelongsToTenant;
+
 use App\Traits\HasUserstamps;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -9,7 +11,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class GroupBooking extends Model
 {
-    use HasUserstamps, SoftDeletes;
+    use BelongsToTenant, HasUserstamps, SoftDeletes;
 
     protected $fillable = [
         'reference',

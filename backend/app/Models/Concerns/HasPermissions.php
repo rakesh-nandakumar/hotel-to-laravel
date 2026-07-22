@@ -3,6 +3,7 @@
 namespace App\Models\Concerns;
 
 use App\Models\Permission;
+use App\Services\TenantContext;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
@@ -11,10 +12,14 @@ use Illuminate\Support\Facades\DB;
 /**
  * Layered RBAC: a user's effective permissions are COMPUTED, never copied.
  *
- *   Effective = (permissions of every active assigned role) + allow overrides − deny overrides
+ *   Effective = ((permissions of every active assigned role) + allow overrides − deny overrides)
+ *               ∩ tenant-enabled permissions
  *
  * Roles are the bulk control; per-user allow/deny overrides are the exception
  * layer. Editing a role flows to its users immediately (no re-sync).
+ *
+ * The tenant's permission set acts as the upper limit — a user can never
+ * hold a permission that has been disabled for their tenant.
  */
 trait HasPermissions
 {
@@ -37,7 +42,8 @@ trait HasPermissions
     }
 
     /**
-     * Resolve the live effective permission set from roles + overrides.
+     * Resolve the live effective permission set from roles + overrides,
+     * then intersect with tenant-enabled permissions.
      */
     public function computeEffectivePermissionNames(): Collection
     {
@@ -52,11 +58,19 @@ trait HasPermissions
 
         [$allows, $denies] = $this->overrideNames();
 
-        return $rolePermissions
+        $userPermissions = $rolePermissions
             ->merge($allows)
             ->unique()
             ->diff($denies)
             ->values();
+
+        // Intersect with tenant-enabled permissions (the upper limit).
+        $tenantPermissions = $this->tenantPermissionNames();
+        if ($tenantPermissions !== null) {
+            $userPermissions = $userPermissions->intersect($tenantPermissions)->values();
+        }
+
+        return $userPermissions;
     }
 
     /**
@@ -123,6 +137,29 @@ trait HasPermissions
     {
         Cache::forget($this->permissionCacheKey());
         Cache::forget($this->fullAdminCacheKey());
+    }
+
+    /**
+     * Get the permission names enabled for this user's tenant, or null
+     * if no tenant is resolved (i.e. all permissions allowed).
+     *
+     * @return Collection<int, string>|null
+     */
+    private function tenantPermissionNames(): ?Collection
+    {
+        $tenantId = $this->tenant_id ?? app(TenantContext::class)->tenantId();
+        if ($tenantId === null) {
+            return null;
+        }
+
+        return Cache::remember(
+            "tenant:{$tenantId}:permissions",
+            now()->addHour(),
+            fn () => DB::table('tenant_permissions as tp')
+                ->join('permissions as p', 'p.id', '=', 'tp.permission_id')
+                ->where('tp.tenant_id', $tenantId)
+                ->pluck('p.name'),
+        );
     }
 
     /**

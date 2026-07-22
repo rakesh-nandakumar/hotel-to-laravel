@@ -3,7 +3,7 @@
 use App\Http\Middleware\CheckActiveUser;
 use App\Http\Middleware\CheckPermission;
 use App\Http\Middleware\RequirePasswordChange;
-use App\Http\Middleware\ResolveBranchContext;
+use App\Http\Middleware\ResolveTenant;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -21,6 +21,12 @@ return Application::configure(basePath: dirname(__DIR__))
         apiPrefix: 'api',
         commands: __DIR__.'/../routes/console.php',
         health: '/up',
+        then: function () {
+            Route::middleware(['api'])
+                ->prefix('api/admin')
+                ->name('admin.')
+                ->group(base_path('routes/admin.php'));
+        },
     )
     // Registered separately (rather than via withRouting's `channels:` param)
     // so /broadcasting/auth requires the same Sanctum session auth as every
@@ -52,7 +58,7 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $middleware->api(append: [
             RequirePasswordChange::class,
-            ResolveBranchContext::class,
+            ResolveTenant::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {

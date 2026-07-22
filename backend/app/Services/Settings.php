@@ -15,14 +15,15 @@ use Illuminate\Validation\ValidationException;
  */
 class Settings
 {
-    private const CACHE_KEY = 'settings:all';
-
     /**
      * @return array<string, mixed>
      */
     private static function all(): array
     {
-        return Cache::rememberForever(self::CACHE_KEY, function (): array {
+        $tenantId = app(TenantContext::class)->tenantId() ?? 0;
+        $cacheKey = "settings:{$tenantId}:all";
+
+        return Cache::rememberForever($cacheKey, function (): array {
             return Setting::query()->get()->mapWithKeys(
                 fn (Setting $setting) => [$setting->key => self::decode($setting->value)],
             )->all();
@@ -89,7 +90,8 @@ class Settings
 
     public static function invalidate(): void
     {
-        Cache::forget(self::CACHE_KEY);
+        $tenantId = app(TenantContext::class)->tenantId() ?? 0;
+        Cache::forget("settings:{$tenantId}:all");
     }
 
     private static function decode(?string $raw): mixed

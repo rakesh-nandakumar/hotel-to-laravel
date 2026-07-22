@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToTenant;
 use App\Traits\HasUserstamps;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -11,7 +12,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Role extends Model
 {
-    use HasFactory, HasUserstamps, SoftDeletes;
+    use BelongsToTenant, HasFactory, HasUserstamps, SoftDeletes;
 
     protected $fillable = [
         'name',
@@ -19,6 +20,7 @@ class Role extends Model
         'is_system',
         'is_full_admin',
         'is_active',
+        'tenant_id',
         'created_by',
         'updated_by',
     ];

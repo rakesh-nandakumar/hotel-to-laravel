@@ -2,13 +2,15 @@
 
 namespace App\Models\Hotel;
 
+use App\Models\Concerns\BelongsToTenant;
+
 use App\Traits\HasUserstamps;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class SeasonalRate extends Model
 {
-    use HasUserstamps;
+    use BelongsToTenant, HasUserstamps;
 
     protected $fillable = [
         'room_type_id',

@@ -2,6 +2,8 @@
 
 namespace App\Models\Hotel;
 
+use App\Models\Concerns\BelongsToTenant;
+
 use App\Models\Lookup;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
@@ -10,6 +12,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class PayrollRun extends Model
 {
+    use BelongsToTenant;
     protected $fillable = [
         'month',
         'payroll_status_id',

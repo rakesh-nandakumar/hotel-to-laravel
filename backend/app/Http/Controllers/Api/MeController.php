@@ -3,8 +3,8 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Services\CurrentContext;
 use App\Services\MenuRenderer;
+use App\Services\TenantContext;
 use App\Services\UserLanding;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -16,7 +16,7 @@ use Illuminate\Http\Request;
  */
 class MeController extends Controller
 {
-    public function __construct(private readonly CurrentContext $context) {}
+    public function __construct(private readonly TenantContext $context) {}
 
     public function show(Request $request): JsonResponse
     {
@@ -46,26 +46,12 @@ class MeController extends Controller
             'permissions' => $user->cachedPermissionNames()->values()->all(),
             'home' => UserLanding::urlFor($user),
             'menu' => MenuRenderer::forUser($user),
-            'branch' => $this->resolveBranchContext($request),
+            'tenant' => [
+                'id' => $this->context->tenantId(),
+                'name' => $this->context->tenant()?->name,
+                'slug' => $this->context->tenant()?->slug,
+            ],
+            'impersonating' => $request->session()->has('impersonating_from'),
         ]);
-    }
-
-    /**
-     * @return array{branches: array<int, array{id:int, name:string}>, selected_id: int|null, show_selector: bool}
-     */
-    private function resolveBranchContext(Request $request): array
-    {
-        $branches = $this->context->branches();
-
-        $selected = $request->session()->get('selected_branch_id');
-        if (! $selected && $branches->count() === 1) {
-            $selected = $branches->first()->id;
-        }
-
-        return [
-            'branches' => $branches->map(fn ($b) => ['id' => $b->id, 'name' => $b->name])->values()->all(),
-            'selected_id' => $selected ? (int) $selected : null,
-            'show_selector' => $branches->count() > 1,
-        ];
     }
 }

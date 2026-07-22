@@ -2,6 +2,8 @@
 
 namespace App\Models\Hotel;
 
+use App\Models\Concerns\BelongsToTenant;
+
 use App\Traits\HasUserstamps;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -16,7 +18,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  */
 class MenuItem extends Model
 {
-    use HasUserstamps;
+    use BelongsToTenant, HasUserstamps;
 
     protected $table = 'pos_menu_items';
 
