@@ -22,7 +22,7 @@ class HousekeepingTaskController extends Controller
 
     public function index(Request $request): JsonResponse
     {
-        $query = HousekeepingTask::query()->with(['status', 'room:id,number,room_status_id', 'room.status', 'room.roomType:id,name', 'assignedTo:id,name']);
+        $query = HousekeepingTask::query()->with(['status', 'room:id,number,room_status_id,room_type_id', 'room.status', 'room.roomType:id,name', 'assignedTo:id,name']);
 
         if ($request->boolean('mine')) {
             $query->where('assigned_to_id', $request->user()->id);

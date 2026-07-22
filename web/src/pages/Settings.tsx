@@ -1,9 +1,11 @@
-import { useMemo, useState } from "react";
-import { Search, Settings as SettingsIcon } from "lucide-react";
+import { useMemo, useState, useEffect } from "react";
+import { Search, Settings as SettingsIcon, Eye, Copy, Check } from "lucide-react";
 import { put } from "../lib/api";
 import { useFetch, fmtDateTime } from "../lib/util";
 import { Empty, ErrorText } from "../components/ui";
 import { ImageDropUpload } from "../components/ImageUpload";
+import { ThemeCustomizer, ThemeColors } from "../components/ThemeCustomizer";
+import { getContrastRatio, getWcagRating } from "../lib/theme";
 import { useAuth } from "../lib/auth";
 import { useBranding } from "../lib/branding";
 import clsx from "clsx";
@@ -57,6 +59,19 @@ export default function Settings() {
     return business.filter((s) => s.category === activeCat);
   }, [business, q, activeCat]);
 
+  const themePrimary = useMemo(
+    () => String(business.find((s) => s.key === "theme.primary")?.parsed ?? "#0462d3"),
+    [business]
+  );
+  const themeSecondary = useMemo(
+    () => String(business.find((s) => s.key === "theme.secondary")?.parsed ?? "#3783f0"),
+    [business]
+  );
+  const themeSidebar = useMemo(
+    () => String(business.find((s) => s.key === "theme.sidebar")?.parsed ?? "#0c182a"),
+    [business]
+  );
+
   if (!data) return <Empty text="Loading settings…" />;
 
   const save = (s: Setting, value: unknown) => {
@@ -71,6 +86,25 @@ export default function Settings() {
         if (s.key.startsWith("hotel.") || s.key.startsWith("theme.")) refreshBranding();
       })
       .catch((e) => setError(`${s.label}: ${e.message}`));
+  };
+
+  const saveThemeColors = async (colors: ThemeColors) => {
+    if (!canUpdate) return;
+    try {
+      await Promise.all([
+        put(`/hotel-settings/theme.primary`, { value: colors.primary }),
+        put(`/hotel-settings/theme.secondary`, { value: colors.secondary }),
+        put(`/hotel-settings/theme.sidebar`, { value: colors.sidebar }),
+      ]);
+      setError("");
+      setSaved("theme.primary");
+      setTimeout(() => setSaved(""), 1500);
+      reload();
+      refreshBranding();
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setError(`Theme save failed: ${msg}`);
+    }
   };
 
   return (
@@ -117,15 +151,18 @@ export default function Settings() {
           {shown.length === 0 && <Empty text="No settings match" />}
           <fieldset disabled={!canUpdate} className="contents">
           {!q && activeCat === "hotel" ? (
-            <div className="space-y-5">
+            <div className="space-y-6">
               <SettingGroup title="Identity" fields={shown.filter((s) => !s.key.startsWith("theme."))} saved={saved} onSave={save} />
-              <SettingGroup
-                title="Theming"
-                blurb="Pick your primary, secondary and sidebar colors — the whole app re-colors instantly, no rebuild needed."
-                fields={shown.filter((s) => s.key.startsWith("theme."))}
-                saved={saved}
-                onSave={save}
-              />
+              <div>
+                <h2 className="mb-2 text-xs font-black uppercase tracking-wide text-slate-400">Theming & Live Preview</h2>
+                <ThemeCustomizer
+                  initialPrimary={themePrimary}
+                  initialSecondary={themeSecondary}
+                  initialSidebar={themeSidebar}
+                  disabled={!canUpdate}
+                  onSaveTheme={saveThemeColors}
+                />
+              </div>
             </div>
           ) : (
             <SettingGroup fields={shown} saved={saved} onSave={save} showCategoryBadge={!!q} />
@@ -361,33 +398,137 @@ function LogoUpload({ value, onSave }: { value: string; onSave: (v: unknown) => 
 }
 
 const HEX_RE = /^#[0-9a-fA-F]{6}$/;
+const COMMON_SWATCHES = [
+  "#0462d3", "#3783f0", "#0c182a", "#059669", "#10b981",
+  "#7c3aed", "#d97706", "#e11d48", "#0d9488", "#2563eb"
+];
 
-/** Native color swatch + hex text field, kept in sync; saves only on a valid 6-digit hex. */
+/** Advanced color picker with swatches, hex input, contrast analysis, and live use-case preview toggle. */
 function ColorPicker({ value, onSave }: { value: string; onSave: (v: unknown) => void }) {
   const [text, setText] = useState(value);
+  const [showPreview, setShowPreview] = useState(false);
   const valid = HEX_RE.test(text);
+
+  useEffect(() => {
+    setText(value);
+  }, [value]);
 
   const commit = (next: string) => {
     if (HEX_RE.test(next) && next.toLowerCase() !== value.toLowerCase()) onSave(next.toLowerCase());
   };
 
+  const contrast = valid ? getContrastRatio(text, "#FFFFFF") : 1;
+  const wcag = getWcagRating(contrast);
+
   return (
-    <div className="flex items-center gap-2">
-      <input
-        type="color"
-        className="h-9 w-9 shrink-0 cursor-pointer rounded-lg border border-slate-300 p-0.5"
-        value={valid ? text : value}
-        onChange={(e) => {
-          setText(e.target.value);
-          commit(e.target.value);
-        }}
-      />
-      <input
-        className={clsx("input !w-28 font-mono uppercase", !valid && "!border-red-400")}
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        onBlur={() => (valid ? commit(text) : setText(value))}
-      />
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          type="color"
+          className="h-9 w-9 shrink-0 cursor-pointer rounded-lg border border-slate-300 p-0.5 shadow-xs"
+          value={valid ? text : value}
+          onChange={(e) => {
+            setText(e.target.value);
+            commit(e.target.value);
+          }}
+          title="Open color wheel"
+        />
+        <input
+          className={clsx("input !w-28 font-mono uppercase font-bold text-xs tracking-wider", !valid && "!border-red-400 !bg-red-50")}
+          value={text}
+          onChange={(e) => {
+            const val = e.target.value;
+            setText(val);
+            if (HEX_RE.test(val)) commit(val);
+          }}
+          onBlur={() => (valid ? commit(text) : setText(value))}
+          maxLength={7}
+        />
+
+        <button
+          type="button"
+          onClick={() => setShowPreview(!showPreview)}
+          className={clsx(
+            "flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-bold transition",
+            showPreview ? "bg-slate-800 text-white border-slate-800" : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+          )}
+        >
+          <Eye size={13} />
+          {showPreview ? "Hide Preview" : "Live Preview"}
+        </button>
+
+        {valid && (
+          <span className={clsx(
+            "rounded px-2 py-0.5 text-[10px] font-extrabold uppercase",
+            wcag.level === "AAA" ? "bg-emerald-100 text-emerald-800" : wcag.level === "AA" ? "bg-blue-100 text-blue-800" : "bg-amber-100 text-amber-800"
+          )}>
+            WCAG {wcag.level} ({contrast.toFixed(1)}:1)
+          </span>
+        )}
+      </div>
+
+      {/* Quick Swatches Row */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="text-[10px] font-semibold text-slate-400 mr-1">Swatches:</span>
+        {COMMON_SWATCHES.map((swatch) => {
+          const active = (valid ? text : value).toLowerCase() === swatch.toLowerCase();
+          return (
+            <button
+              key={swatch}
+              type="button"
+              onClick={() => {
+                setText(swatch);
+                commit(swatch);
+              }}
+              className={clsx(
+                "h-5 w-5 rounded-full border border-black/15 transition-transform hover:scale-110 shadow-xs flex items-center justify-center",
+                active && "ring-2 ring-offset-1 ring-slate-800 scale-110"
+              )}
+              style={{ backgroundColor: swatch }}
+              title={swatch}
+            >
+              {active && <span className="h-1.5 w-1.5 rounded-full bg-white" />}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Live Sample Use-Case Widget */}
+      {showPreview && (
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-2 text-xs">
+          <div className="flex items-center justify-between font-bold text-slate-700">
+            <span>Use-Case Live Sample Preview</span>
+            <span className="text-[10px] text-slate-400 font-mono">{text}</span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 text-[11px]">
+            {/* CTA Button Sample */}
+            <div className="rounded-lg bg-white p-2 border border-slate-200 space-y-1">
+              <span className="text-[10px] font-semibold text-slate-400 block">Primary Action Button</span>
+              <button
+                className="w-full rounded-md py-1 text-xs font-bold text-white text-center shadow-xs transition"
+                style={{ backgroundColor: valid ? text : value }}
+              >
+                + Check-In Guest
+              </button>
+            </div>
+
+            {/* Badge & Highlight Sample */}
+            <div className="rounded-lg bg-white p-2 border border-slate-200 space-y-1">
+              <span className="text-[10px] font-semibold text-slate-400 block">Active Status Pill</span>
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-slate-700">Room 304</span>
+                <span
+                  className="rounded-full px-2 py-0.5 text-[9px] font-bold text-white"
+                  style={{ backgroundColor: valid ? text : value }}
+                >
+                  Confirmed
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

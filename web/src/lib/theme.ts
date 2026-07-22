@@ -10,10 +10,10 @@
  * keep working. See that file's comment for why hex alone wouldn't do that.
  */
 
-type HSL = { h: number; s: number; l: number };
-type RGB = { r: number; g: number; b: number };
+export type HSL = { h: number; s: number; l: number };
+export type RGB = { r: number; g: number; b: number };
 
-function hexToRgb(hex: string): RGB {
+export function hexToRgb(hex: string): RGB {
   const m = /^#([0-9a-f]{6})$/i.exec(hex);
   if (!m) return { r: 0, g: 0, b: 0 };
   return {
@@ -23,12 +23,17 @@ function hexToRgb(hex: string): RGB {
   };
 }
 
-function rgbToHsl({ r, g, b }: RGB): HSL {
+export function rgbToHex({ r, g, b }: RGB): string {
+  const toHex = (n: number) => Math.min(255, Math.max(0, Math.round(n))).toString(16).padStart(2, "0");
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+}
+
+export function rgbToHsl({ r, g, b }: RGB): HSL {
   const rN = r / 255, gN = g / 255, bN = b / 255;
   const max = Math.max(rN, gN, bN);
   const min = Math.min(rN, gN, bN);
   const l = (max + min) / 2;
-  if (max === min) return { h: 0, s: 0, l: l * 100 };
+  if (max === min) return { h: 0, s: Math.round(0), l: Math.round(l * 100) };
   const d = max - min;
   const s = d / (1 - Math.abs(2 * l - 1));
   let h: number;
@@ -37,10 +42,10 @@ function rgbToHsl({ r, g, b }: RGB): HSL {
   else h = (rN - gN) / d + 4;
   h *= 60;
   if (h < 0) h += 360;
-  return { h, s: s * 100, l: l * 100 };
+  return { h: Math.round(h), s: Math.round(s * 100), l: Math.round(l * 100) };
 }
 
-function hslToRgb({ h, s, l }: HSL): RGB {
+export function hslToRgb({ h, s, l }: HSL): RGB {
   const sN = Math.min(100, Math.max(0, s)) / 100;
   const lN = Math.min(100, Math.max(0, l)) / 100;
   const c = (1 - Math.abs(2 * lN - 1)) * sN;
@@ -54,6 +59,37 @@ function hslToRgb({ h, s, l }: HSL): RGB {
   else if (h < 300) [r, g, b] = [x, 0, c];
   else [r, g, b] = [c, 0, x];
   return { r: Math.round((r + m) * 255), g: Math.round((g + m) * 255), b: Math.round((b + m) * 255) };
+}
+
+export function getRelativeLuminance(hex: string): number {
+  const { r, g, b } = hexToRgb(hex);
+  const [rs, gs, bs] = [r / 255, g / 255, b / 255].map((val) =>
+    val <= 0.03928 ? val / 12.92 : Math.pow((val + 0.055) / 1.055, 2.4)
+  );
+  return 0.2126 * rs + 0.7152 * gs + 0.0722 * bs;
+}
+
+export function getContrastRatio(hex1: string, hex2: string): number {
+  const lum1 = getRelativeLuminance(hex1);
+  const lum2 = getRelativeLuminance(hex2);
+  const lighter = Math.max(lum1, lum2);
+  const darker = Math.min(lum1, lum2);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+export function getWcagRating(ratio: number): { text: string; pass: boolean; level: "AAA" | "AA" | "Fail" } {
+  if (ratio >= 7) return { text: "AAA (Excellent)", pass: true, level: "AAA" };
+  if (ratio >= 4.5) return { text: "AA (Pass)", pass: true, level: "AA" };
+  if (ratio >= 3) return { text: "Large Text Only", pass: false, level: "AA" };
+  return { text: "Poor Contrast", pass: false, level: "Fail" };
+}
+
+export function suggestAccentColor(primaryHex: string): string {
+  const hsl = rgbToHsl(hexToRgb(primaryHex));
+  // Shift hue by +30 degrees and increase lightness slightly for vibrant accent
+  const newH = (hsl.h + 30) % 360;
+  const newL = Math.min(85, Math.max(35, hsl.l + 12));
+  return rgbToHex(hslToRgb({ h: newH, s: Math.min(95, hsl.s + 5), l: newL }));
 }
 
 const triple = ({ r, g, b }: RGB) => `${r} ${g} ${b}`;

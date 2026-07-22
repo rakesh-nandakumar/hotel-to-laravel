@@ -8,7 +8,7 @@ import { useToast } from "../lib/toast";
 type Task = {
   id: number; notes?: string | null; created_at: string;
   status: { code: string };
-  room: { number: string; status: { code: string }; room_type: { name: string } };
+  room: { number: string; status: { code: string }; room_type: { name: string } | null };
   assigned_to?: { id: number; name: string } | null;
   checklist: { item: string; done: boolean }[];
 };
@@ -41,7 +41,7 @@ export default function Housekeeping() {
                 <span className="text-2xl font-black">Room {t.room.number}</span>
                 <Badge color={statusColor(t.status.code)}>{t.status.code}</Badge>
               </div>
-              <div className="text-xs text-slate-500">{t.room.room_type.name} · created {fmtDateTime(t.created_at)}</div>
+              <div className="text-xs text-slate-500">{t.room.room_type?.name ?? "—"} · created {fmtDateTime(t.created_at)}</div>
               <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100">
                 <div className="h-full bg-brand-500 transition-all" style={{ width: `${(done / t.checklist.length) * 100}%` }} />
               </div>

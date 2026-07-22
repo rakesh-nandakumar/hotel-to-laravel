@@ -117,8 +117,11 @@ export default function KOT() {
   const T = theme(light);
 
   // Browsers only allow audio to start playing in direct response to a real user gesture (click/tap/key).
-  // A kitchen display is often an unattended kiosk, so we listen for the FIRST gesture anywhere on the
-  // page (not just the mute button) and use it to unlock/resume the AudioContext.
+  // A kitchen display is often an unattended kiosk, so we listen for gestures anywhere on the page (not
+  // just the mute button) and use them to unlock/resume the AudioContext. The browser can also silently
+  // auto-suspend a running context again later (tab loses focus, kiosk sits idle, etc.), so this listener
+  // is kept alive for the life of the page instead of removing itself after the first gesture — otherwise
+  // there would be no way to re-arm the chime and it would stay silent for the rest of the session.
   const primeAudio = () => {
     try {
       audioCtxRef.current ??= new AudioContext();
@@ -134,16 +137,13 @@ export default function KOT() {
 
   useEffect(() => {
     const opts = { capture: true } as const;
-    const onGesture = () => {
-      primeAudio();
-      window.removeEventListener("pointerdown", onGesture, opts);
-      window.removeEventListener("keydown", onGesture, opts);
-    };
-    window.addEventListener("pointerdown", onGesture, opts);
-    window.addEventListener("keydown", onGesture, opts);
+    window.addEventListener("pointerdown", primeAudio, opts);
+    window.addEventListener("keydown", primeAudio, opts);
+    document.addEventListener("visibilitychange", primeAudio);
     return () => {
-      window.removeEventListener("pointerdown", onGesture, opts);
-      window.removeEventListener("keydown", onGesture, opts);
+      window.removeEventListener("pointerdown", primeAudio, opts);
+      window.removeEventListener("keydown", primeAudio, opts);
+      document.removeEventListener("visibilitychange", primeAudio);
     };
   }, []);
 
@@ -181,12 +181,19 @@ export default function KOT() {
       return;
     }
     const isNew = orders.some((o) => o.kot_status.code === "new" && !seenIds.current.has(o.id));
-    if (isNew && !muted && audioCtxRef.current && audioCtxRef.current.state === "running") {
-      try {
-        chime(audioCtxRef.current);
-      } catch {
-        /* audio blocked — silent fail, ticket still shows visually */
-      }
+    if (isNew && !muted && audioCtxRef.current) {
+      const ctx = audioCtxRef.current;
+      const play = () => {
+        try {
+          chime(ctx);
+        } catch {
+          /* audio blocked — silent fail, ticket still shows visually */
+        }
+      };
+      // Resume first instead of just checking `.state === "running"` — the context can have been
+      // auto-suspended since it was last armed, and resume() on an already-running context is a no-op.
+      if (ctx.state === "running") play();
+      else ctx.resume().then(play).catch(() => {});
     }
     seenIds.current = new Set([...seenIds.current, ...currentIds]);
   }, [orders, muted]);

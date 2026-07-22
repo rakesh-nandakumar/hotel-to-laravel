@@ -92,6 +92,6 @@ return Application::configure(basePath: dirname(__DIR__))
                 return null;
             }
 
-            return response()->json(['message' => 'Server error.'], 500);
+            return response()->json(['message' => 'Server error.', 'error' => $e->getMessage()], 500);
         });
     })->create();

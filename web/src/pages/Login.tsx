@@ -79,9 +79,8 @@ export default function Login() {
 
   const press = (d: string) => {
     if (busy) return;
-    const next = (pin + d).slice(0, 6);
+    const next = (pin + d).slice(0, 4);
     setPin(next);
-    if (next.length === 4) void tryPin(next);
   };
 
   return (
@@ -235,6 +234,13 @@ export default function Login() {
                     ),
                   )}
                 </div>
+                <button
+                  className="btn-primary mt-3 w-full !py-3"
+                  disabled={pin.length !== 4 || busy}
+                  onClick={() => void tryPin(pin)}
+                >
+                  {busy ? "Confirming…" : "Confirm PIN"}
+                </button>
                 <p className="mt-3 text-center text-[11px] text-slate-400">
                   Not {pinUser.name.split(" ")[0]}? Use{" "}
                   <button
