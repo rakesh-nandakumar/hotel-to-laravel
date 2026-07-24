@@ -131,7 +131,14 @@ class MenuDefinition
                 'icon' => 'shopping-cart',
                 'route_name' => 'hotel.orders.index',
                 'module_key' => 'hotel_orders',
-                'actions' => ['access', 'view', 'create', 'kot', 'void_item', 'hold', 'discount', 'settle', 'charge_to_room', 'void', 'refund', 'receipt', 'slip', 'kot_ticket'],
+                'actions' => ['access', 'view', 'create', 'kot', 'void_item', 'hold', 'discount', 'settle', 'charge_to_room', 'void', 'refund', 'receipt', 'slip', 'kot_ticket', 'split', 'merge', 'delivery_dispatch'],
+            ],
+            [
+                'name' => 'Dining Tables',
+                'icon' => 'grid-2x2',
+                'route_name' => 'hotel.dining-tables.index',
+                'module_key' => 'hotel_dining_tables',
+                'actions' => ['access', 'create', 'edit', 'edit_status'],
             ],
             [
                 'name' => 'Housekeeping',
@@ -227,6 +234,78 @@ class MenuDefinition
                 'route_name' => 'hotel.settings.index',
                 'module_key' => 'hotel_settings',
                 'actions' => ['access', 'update'],
+            ],
+            [
+                'name' => 'Apartments',
+                'icon' => 'building',
+                'children' => [
+                    [
+                        'name' => 'Properties',
+                        'route_name' => 'apartments.properties.index',
+                        'module_key' => 'apartment_properties',
+                        'actions' => ['access', 'create', 'edit'],
+                    ],
+                    [
+                        'name' => 'Unit Types',
+                        'route_name' => 'apartments.unit-types.index',
+                        'module_key' => 'apartment_unit_types',
+                        'actions' => ['access', 'create', 'edit'],
+                    ],
+                    [
+                        'name' => 'Units',
+                        'route_name' => 'apartments.units.index',
+                        'module_key' => 'apartment_units',
+                        'actions' => ['access', 'create', 'edit', 'edit_status'],
+                    ],
+                    [
+                        'name' => 'Customers',
+                        'route_name' => 'apartments.customers.index',
+                        'module_key' => 'apartment_customers',
+                        'actions' => ['access', 'view', 'create', 'edit'],
+                    ],
+                    [
+                        'name' => 'Bookings',
+                        'route_name' => 'apartments.bookings.index',
+                        'module_key' => 'apartment_bookings',
+                        'actions' => ['access', 'view', 'create', 'check_in', 'checkout', 'cancel'],
+                    ],
+                    [
+                        'name' => 'Leases',
+                        'route_name' => 'apartments.leases.index',
+                        'module_key' => 'apartment_leases',
+                        'actions' => ['access', 'view', 'create', 'renew', 'terminate', 'utility_reading'],
+                    ],
+                    [
+                        'name' => 'Sales',
+                        'route_name' => 'apartments.sales.index',
+                        'module_key' => 'apartment_sales',
+                        'actions' => ['access', 'view', 'create', 'reserve', 'sign_agreement', 'complete', 'cancel'],
+                    ],
+                    [
+                        'name' => 'Ledgers',
+                        'route_name' => 'apartments.ledgers.show',
+                        'module_key' => 'apartment_ledgers',
+                        'actions' => ['view', 'add_line', 'void_line', 'payment', 'refund'],
+                    ],
+                    [
+                        'name' => 'Housekeeping',
+                        'route_name' => 'apartments.housekeeping.tasks.index',
+                        'module_key' => 'apartment_housekeeping',
+                        'actions' => ['access', 'create', 'assign', 'checklist', 'complete'],
+                    ],
+                    [
+                        'name' => 'Maintenance',
+                        'route_name' => 'apartments.maintenance.index',
+                        'module_key' => 'apartment_maintenance',
+                        'actions' => ['access', 'create', 'edit'],
+                    ],
+                    [
+                        'name' => 'Reports',
+                        'route_name' => 'apartments.reports.dashboard',
+                        'module_key' => 'apartment_reports',
+                        'actions' => ['dashboard'],
+                    ],
+                ],
             ],
         ];
     }

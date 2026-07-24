@@ -13,6 +13,7 @@ import ReservationDetail from "./pages/ReservationDetail";
 import Rooms from "./pages/Rooms";
 import POS from "./pages/POS";
 import KOT from "./pages/KOT";
+import Tables from "./pages/Tables";
 import MenuAdmin from "./pages/MenuAdmin";
 import Inventory from "./pages/Inventory";
 import Venues from "./pages/Venues";
@@ -38,6 +39,19 @@ import VenueInquiry from "./pages/VenueInquiry";
 import AccountProfile from "./pages/account/Profile";
 import AccountPassword from "./pages/account/Password";
 import AccountTwoFactor from "./pages/account/TwoFactor";
+import ApartmentProperties from "./pages/apartments/Properties";
+import ApartmentUnitTypes from "./pages/apartments/UnitTypes";
+import ApartmentUnits from "./pages/apartments/Units";
+import ApartmentCustomers from "./pages/apartments/Customers";
+import ApartmentBookings from "./pages/apartments/Bookings";
+import ApartmentBookingDetail from "./pages/apartments/BookingDetail";
+import ApartmentLeases from "./pages/apartments/Leases";
+import ApartmentLeaseDetail from "./pages/apartments/LeaseDetail";
+import ApartmentSales from "./pages/apartments/Sales";
+import ApartmentSaleDetail from "./pages/apartments/SaleDetail";
+import ApartmentHousekeeping from "./pages/apartments/Housekeeping";
+import ApartmentMaintenance from "./pages/apartments/Maintenance";
+import ApartmentReports from "./pages/apartments/Reports";
 
 /**
  * Gate a route on a `module_key.action` permission (or any-of an array) —
@@ -72,6 +86,7 @@ export default function App() {
           <Route path="/rooms" element={<Guard permission="hotel_rooms.access"><Rooms /></Guard>} />
           <Route path="/pos" element={<Guard permission="hotel_orders.access"><POS /></Guard>} />
           <Route path="/kot" element={<Guard permission="hotel_orders.access"><KOT /></Guard>} />
+          <Route path="/tables" element={<Guard permission="hotel_dining_tables.access"><Tables /></Guard>} />
           <Route path="/menu" element={<Guard permission="hotel_menu_items.access"><MenuAdmin /></Guard>} />
           <Route path="/inventory" element={<Guard permission="hotel_ingredients.access"><Inventory /></Guard>} />
           <Route path="/venues" element={<Guard permission="hotel_venues.access"><Venues /></Guard>} />
@@ -93,6 +108,19 @@ export default function App() {
           <Route path="/account" element={<Guard><AccountProfile /></Guard>} />
           <Route path="/account/password" element={<Guard><AccountPassword /></Guard>} />
           <Route path="/account/two-factor" element={<Guard><AccountTwoFactor /></Guard>} />
+          <Route path="/apartments/properties" element={<Guard permission="apartment_properties.access"><ApartmentProperties /></Guard>} />
+          <Route path="/apartments/unit-types" element={<Guard permission="apartment_unit_types.access"><ApartmentUnitTypes /></Guard>} />
+          <Route path="/apartments/units" element={<Guard permission="apartment_units.access"><ApartmentUnits /></Guard>} />
+          <Route path="/apartments/customers" element={<Guard permission="apartment_customers.access"><ApartmentCustomers /></Guard>} />
+          <Route path="/apartments/bookings" element={<Guard permission="apartment_bookings.access"><ApartmentBookings /></Guard>} />
+          <Route path="/apartments/bookings/:id" element={<Guard permission="apartment_bookings.view"><ApartmentBookingDetail /></Guard>} />
+          <Route path="/apartments/leases" element={<Guard permission="apartment_leases.access"><ApartmentLeases /></Guard>} />
+          <Route path="/apartments/leases/:id" element={<Guard permission="apartment_leases.view"><ApartmentLeaseDetail /></Guard>} />
+          <Route path="/apartments/sales" element={<Guard permission="apartment_sales.access"><ApartmentSales /></Guard>} />
+          <Route path="/apartments/sales/:id" element={<Guard permission="apartment_sales.view"><ApartmentSaleDetail /></Guard>} />
+          <Route path="/apartments/housekeeping" element={<Guard permission="apartment_housekeeping.access"><ApartmentHousekeeping /></Guard>} />
+          <Route path="/apartments/maintenance" element={<Guard permission="apartment_maintenance.access"><ApartmentMaintenance /></Guard>} />
+          <Route path="/apartments/reports" element={<Guard permission="apartment_reports.dashboard"><ApartmentReports /></Guard>} />
           <Route path="/integrations" element={<Guard fullAdminOnly><Integrations /></Guard>} />
           <Route path="/payroll" element={<Guard permission="hotel_payroll.view"><Payroll /></Guard>} />
           <Route path="/audit-log" element={<Guard permission="audit_logs.access"><AuditLog /></Guard>} />

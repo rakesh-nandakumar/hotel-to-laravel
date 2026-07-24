@@ -4,10 +4,14 @@ namespace App\Http\Controllers\Hotel;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Hotel\ApplyOrderDiscountRequest;
+use App\Http\Requests\Hotel\AssignDeliveryRiderRequest;
+use App\Http\Requests\Hotel\MergeOrdersRequest;
 use App\Http\Requests\Hotel\RefundOrderRequest;
 use App\Http\Requests\Hotel\SettleOrderRequest;
+use App\Http\Requests\Hotel\SplitOrderRequest;
 use App\Http\Requests\Hotel\StoreOrderItemsRequest;
 use App\Http\Requests\Hotel\StoreOrderRequest;
+use App\Http\Requests\Hotel\UpdateOrderDeliveryStatusRequest;
 use App\Http\Requests\Hotel\UpdateOrderKotStatusRequest;
 use App\Http\Requests\Hotel\VoidOrderItemRequest;
 use App\Http\Requests\Hotel\VoidOrderRequest;
@@ -24,8 +28,8 @@ use Illuminate\Http\Response;
 class OrderController extends Controller
 {
     private const WITH_FULL = [
-        'items', 'room:id,number', 'reservation:id,code,guest_id', 'reservation.guest:id,name', 'staff:id,name', 'payments',
-        'status', 'type', 'kotStatus', 'diningMode',
+        'items.modifiers', 'room:id,number', 'diningTable:id,table_no', 'reservation:id,code,guest_id', 'reservation.guest:id,name',
+        'staff:id,name', 'payments.kind', 'payments.method', 'status', 'type', 'kotStatus', 'diningMode', 'deliveryStatus', 'deliveryRider:id,name',
     ];
 
     public function __construct(private readonly OrderService $orders, private readonly PdfService $pdf) {}
@@ -50,7 +54,7 @@ class OrderController extends Controller
     public function kot(): JsonResponse
     {
         $orders = Order::query()
-            ->with(self::WITH_FULL)
+            ->with([...self::WITH_FULL, 'items.menuItem.category.kitchenStation'])
             ->whereHas('status', fn ($q) => $q->where('code', '!=', OrderStatus::VOID))
             ->whereHas('kotStatus', fn ($q) => $q->whereIn('code', [KotStatus::NEW, KotStatus::PREPARING, KotStatus::READY]))
             ->where('created_at', '>=', now()->subDay())
@@ -116,6 +120,40 @@ class OrderController extends Controller
     public function chargeToRoom(Request $request, Order $order): JsonResponse
     {
         return response()->json(['order' => $this->orders->chargeToRoom($order, $request->user()->id)]);
+    }
+
+    /** Active delivery orders — dispatch board. */
+    public function deliveries(): JsonResponse
+    {
+        $orders = Order::query()->with(self::WITH_FULL)
+            ->whereHas('type', fn ($q) => $q->where('code', 'delivery'))
+            ->statusIn([OrderStatus::OPEN, OrderStatus::PARKED])
+            ->latest()
+            ->get();
+
+        return response()->json(['orders' => $orders]);
+    }
+
+    public function assignDeliveryRider(AssignDeliveryRiderRequest $request, Order $order): JsonResponse
+    {
+        return response()->json(['order' => $this->orders->assignDeliveryRider($order, $request->validated('rider_id'))]);
+    }
+
+    public function updateDeliveryStatus(UpdateOrderDeliveryStatusRequest $request, Order $order): JsonResponse
+    {
+        return response()->json(['order' => $this->orders->updateDeliveryStatus($order, $request->validated('status'))]);
+    }
+
+    /** Split into N child bills — e.g. a table wants separate checks. */
+    public function split(SplitOrderRequest $request, Order $order): JsonResponse
+    {
+        return response()->json(['orders' => $this->orders->splitBill($order, $request->validated('groups'), $request->user()->id)]);
+    }
+
+    /** Fold other open orders' items into this one — e.g. combining two tabs. */
+    public function merge(MergeOrdersRequest $request, Order $order): JsonResponse
+    {
+        return response()->json(['order' => $this->orders->mergeOrders($order, $request->validated('order_ids'), $request->user()->id)]);
     }
 
     public function void(VoidOrderRequest $request, Order $order): JsonResponse

@@ -18,6 +18,12 @@ class Order extends Model
         'order_status_id',
         'kot_status_id',
         'room_id',
+        'dining_table_id',
+        'delivery_address',
+        'delivery_phone',
+        'delivery_rider_id',
+        'delivery_status_id',
+        'parent_order_id',
         'reservation_id',
         'customer_name',
         'notes',
@@ -68,6 +74,32 @@ class Order extends Model
     public function room(): BelongsTo
     {
         return $this->belongsTo(Room::class);
+    }
+
+    public function diningTable(): BelongsTo
+    {
+        return $this->belongsTo(DiningTable::class, 'dining_table_id');
+    }
+
+    public function deliveryRider(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'delivery_rider_id');
+    }
+
+    public function deliveryStatus(): BelongsTo
+    {
+        return $this->belongsTo(Lookup::class, 'delivery_status_id');
+    }
+
+    public function parentOrder(): BelongsTo
+    {
+        return $this->belongsTo(Order::class, 'parent_order_id');
+    }
+
+    /** Child orders created by OrderService::splitBill(), or the orders folded into this one by mergeOrders(). */
+    public function childOrders(): HasMany
+    {
+        return $this->hasMany(Order::class, 'parent_order_id');
     }
 
     public function reservation(): BelongsTo

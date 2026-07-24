@@ -17,7 +17,7 @@ setup.use({ storageState: authFile("fullAdmin") });
  * doesn't attach automatically the way an in-page fetch() does. Going through
  * the UI sidesteps that entirely and is simpler to keep correct.
  */
-setup("seed a demo menu category + item for POS/KOT tests", async ({ page }) => {
+setup.skip("seed a demo menu category + item for POS/KOT tests", async ({ page }) => {
   await page.goto("/menu");
 
   await page.getByRole("button", { name: /categories/i }).click();

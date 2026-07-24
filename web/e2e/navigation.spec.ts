@@ -10,7 +10,9 @@ test.use({ storageState: authFile("fullAdmin") });
 // crash (missing eager-loaded relation) across the WHOLE app in one pass,
 // not just the one page a developer happened to click into.
 const ROUTES: [string, string | RegExp][] = [
-  ["/", /dashboard/i],
+  // Dashboard's <h1> is a time-of-day greeting, never the literal word
+  // "dashboard" — match the greeting itself so a real render crash still fails this.
+  ["/", /good (morning|afternoon|evening)/i],
   ["/reservations", /reservations/i],
   ["/calendar", /calendar/i],
   ["/rooms", /rooms/i],
@@ -19,7 +21,8 @@ const ROUTES: [string, string | RegExp][] = [
   ["/kot", /kitchen/i],
   ["/menu", /menu/i],
   ["/inventory", /inventory/i],
-  ["/venues", /venues/i],
+  // Venues' <h1> is this hotel's own venue branding line, not the word "venues".
+  ["/venues", /wedding halls/i],
   ["/housekeeping", /housekeeping/i],
   ["/laundry", /laundry/i],
   ["/maintenance", /maintenance/i],
@@ -35,6 +38,16 @@ const ROUTES: [string, string | RegExp][] = [
   ["/roles", /role/i],
   ["/audit-log", /audit/i],
   ["/integrations", /integration/i],
+  ["/apartments/properties", /propert/i],
+  ["/apartments/unit-types", /unit types/i],
+  ["/apartments/units", /units/i],
+  ["/apartments/customers", /customers/i],
+  ["/apartments/bookings", /bookings/i],
+  ["/apartments/leases", /leases/i],
+  ["/apartments/sales", /sales/i],
+  ["/apartments/housekeeping", /housekeeping/i],
+  ["/apartments/maintenance", /maintenance/i],
+  ["/apartments/reports", /reports/i],
 ];
 
 for (const [path, heading] of ROUTES) {

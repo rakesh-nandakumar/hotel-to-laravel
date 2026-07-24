@@ -7,14 +7,19 @@ import { ImageDropUpload } from "../components/ImageUpload";
 import { useAuth } from "../lib/auth";
 import clsx from "clsx";
 
-type Cat = { id: number; name: string; sort_order: number; is_minibar: boolean; active: boolean; items_count: number };
+type Cat = { id: number; name: string; sort_order: number; is_minibar: boolean; active: boolean; items_count: number; kitchen_station: { code: string; name: string } | null };
 type Ingredient = { id: number; name: string; unit: string };
+type Modifier = { id: number; name: string; price_delta: number };
+type ModifierGroup = { id: number; name: string; is_required: boolean; max_select: number; modifiers: Modifier[] };
 type Item = {
   id: number; item_no?: number | null; name: string; price: number; sold_out: boolean; active: boolean; description: string;
   image?: string | null;
   category: { id: number; name: string };
   recipe: { ingredient_id: number; qty: number; ingredient: { name: string; unit: string } }[];
+  modifier_groups: ModifierGroup[];
 };
+
+const KITCHEN_STATIONS = ["kitchen", "bar", "dessert"] as const;
 type ItemsPage = { menu_items: { data: Item[]; current_page: number; per_page: number; total: number }; stats: { on_menu: number; sold_out: number; archived: number } };
 
 export default function MenuAdmin() {
@@ -227,6 +232,15 @@ function CategoryManager({ cats, canCreate, canEdit, canDelete, onChanged }: { c
                 />
                 <Badge>{c.items_count} items</Badge>
                 {c.is_minibar && <Badge color="purple">minibar</Badge>}
+                <select
+                  className="input !w-28 !py-1.5 !text-xs"
+                  disabled={!canEdit}
+                  defaultValue={c.kitchen_station?.code ?? ""}
+                  onChange={(e) => put(`/menu/categories/${c.id}`, { kitchen_station: e.target.value || null }).then(onChanged).catch((err) => setError(err.message))}
+                >
+                  <option value="">No station</option>
+                  {KITCHEN_STATIONS.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
                 {canDelete && (
                   <button
                     className={clsx("btn-ghost !p-1.5", c.items_count > 0 ? "cursor-not-allowed text-slate-200" : "text-red-400 hover:text-red-600")}
@@ -338,8 +352,93 @@ function ItemEditor({ item, cats, ingredients, onClose }: { item: Item | null; c
           <button className="btn-secondary w-full" onClick={() => setRecipe([...recipe, { ingredientId: "", qty: "" }])}>+ Add ingredient</button>
         </div>
       </div>
+      {item && <ModifierGroupsEditor item={item} />}
       <ErrorText error={error} />
       <button className="btn-primary mt-4 w-full" disabled={!f.name.trim() || toCents(f.price) <= 0} onClick={save}>Save item</button>
     </Modal>
+  );
+}
+
+// ── Modifier groups (Size, Spice level, Extras…) — only editable on an existing item ──
+function ModifierGroupsEditor({ item }: { item: Item }) {
+  const [groups, setGroups] = useState(item.modifier_groups);
+  const [newGroup, setNewGroup] = useState({ name: "", required: false, maxSelect: "1" });
+  const [newModifier, setNewModifier] = useState<Record<number, { name: string; priceDelta: string }>>({});
+  const [error, setError] = useState("");
+
+  const addGroup = () =>
+    post<{ modifier_group: ModifierGroup }>(`/menu/items/${item.id}/modifier-groups`, {
+      name: newGroup.name.trim(), is_required: newGroup.required, max_select: parseInt(newGroup.maxSelect) || 1,
+    })
+      .then((r) => { setGroups([...groups, { ...r.modifier_group, modifiers: [] }]); setNewGroup({ name: "", required: false, maxSelect: "1" }); })
+      .catch((e) => setError(e.message));
+
+  const removeGroup = (id: number) =>
+    api(`/menu/modifier-groups/${id}`, { method: "DELETE" }).then(() => setGroups(groups.filter((g) => g.id !== id))).catch((e) => setError(e.message));
+
+  const addModifier = (group: ModifierGroup) => {
+    const draft = newModifier[group.id] ?? { name: "", priceDelta: "0" };
+    if (!draft.name.trim()) return;
+    post<{ modifier: Modifier }>(`/menu/modifier-groups/${group.id}/modifiers`, { name: draft.name.trim(), price_delta: toCents(draft.priceDelta || "0") })
+      .then((r) => {
+        setGroups(groups.map((g) => (g.id === group.id ? { ...g, modifiers: [...g.modifiers, r.modifier] } : g)));
+        setNewModifier({ ...newModifier, [group.id]: { name: "", priceDelta: "0" } });
+      })
+      .catch((e) => setError(e.message));
+  };
+
+  const removeModifier = (group: ModifierGroup, modifierId: number) =>
+    api(`/menu/modifiers/${modifierId}`, { method: "DELETE" })
+      .then(() => setGroups(groups.map((g) => (g.id === group.id ? { ...g, modifiers: g.modifiers.filter((m) => m.id !== modifierId) } : g))))
+      .catch((e) => setError(e.message));
+
+  return (
+    <div className="mt-3">
+      <div className="label">Modifiers (Size, Spice level, Extras…) — shown as a picker in POS before adding to cart</div>
+      <div className="space-y-2">
+        {groups.map((g) => (
+          <div key={g.id} className="rounded-lg bg-slate-50 p-2.5">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-bold">{g.name}</span>
+              {g.is_required && <Badge color="amber">required</Badge>}
+              <Badge>up to {g.max_select}</Badge>
+              <button className="btn-ghost ml-auto !p-1 text-red-400 hover:text-red-600" onClick={() => removeGroup(g.id)}><Trash2 size={13} /></button>
+            </div>
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {g.modifiers.map((m) => (
+                <span key={m.id} className="flex items-center gap-1 rounded-full bg-white px-2.5 py-1 text-xs shadow-sm">
+                  {m.name}{m.price_delta !== 0 && ` (${m.price_delta > 0 ? "+" : ""}${lkr(m.price_delta)})`}
+                  <button className="text-slate-300 hover:text-red-500" onClick={() => removeModifier(g, m.id)}>✕</button>
+                </span>
+              ))}
+            </div>
+            <div className="mt-1.5 flex gap-1.5">
+              <input
+                className="input !py-1 text-xs"
+                placeholder="Option name (e.g. Large)"
+                value={newModifier[g.id]?.name ?? ""}
+                onChange={(e) => setNewModifier({ ...newModifier, [g.id]: { name: e.target.value, priceDelta: newModifier[g.id]?.priceDelta ?? "0" } })}
+              />
+              <input
+                className="input !w-24 !py-1 text-xs"
+                placeholder="+LKR"
+                value={newModifier[g.id]?.priceDelta ?? ""}
+                onChange={(e) => setNewModifier({ ...newModifier, [g.id]: { name: newModifier[g.id]?.name ?? "", priceDelta: e.target.value } })}
+              />
+              <button className="btn-secondary !py-1 text-xs" onClick={() => addModifier(g)}>Add option</button>
+            </div>
+          </div>
+        ))}
+        <div className="flex flex-wrap items-center gap-1.5 border-t border-slate-100 pt-2">
+          <input className="input !py-1.5 text-xs" placeholder="New group (e.g. Size)" value={newGroup.name} onChange={(e) => setNewGroup({ ...newGroup, name: e.target.value })} />
+          <input className="input !w-20 !py-1.5 text-xs" placeholder="Max" inputMode="numeric" value={newGroup.maxSelect} onChange={(e) => setNewGroup({ ...newGroup, maxSelect: e.target.value })} />
+          <label className="flex items-center gap-1 text-xs font-semibold">
+            <input type="checkbox" checked={newGroup.required} onChange={(e) => setNewGroup({ ...newGroup, required: e.target.checked })} /> Required
+          </label>
+          <button className="btn-secondary !py-1.5 text-xs" disabled={!newGroup.name.trim()} onClick={addGroup}>+ Add group</button>
+        </div>
+      </div>
+      <ErrorText error={error} />
+    </div>
   );
 }

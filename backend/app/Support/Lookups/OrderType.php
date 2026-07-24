@@ -7,4 +7,6 @@ class OrderType
     public const ROOM_GUEST = 'room_guest';
 
     public const WALKIN = 'walkin';
+
+    public const DELIVERY = 'delivery';
 }

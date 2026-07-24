@@ -77,6 +77,14 @@ writeFileSync(sqlitePath, "");
 
 buildEnvTesting();
 
+// CACHE_STORE=file above persists on disk across separate runs of this script,
+// but migrate:fresh resets every table's auto-increment counter — including
+// lookups, which App\Models\Lookup::id() caches forever by (type, code). A
+// stale cached id from a previous run can silently resolve to a DIFFERENT
+// row after reseeding (e.g. if a seeder's insertion order changed), corrupting
+// any record that stores that id. Clearing first guarantees this env's cache
+// always starts empty, same as the fresh DB it's paired with.
+run("php", ["artisan", "cache:clear"]);
 run("php", ["artisan", "migrate:fresh", "--seed", "--force"]);
 
 console.log(`[prepare-backend] starting php artisan serve on port ${backendPort}`);

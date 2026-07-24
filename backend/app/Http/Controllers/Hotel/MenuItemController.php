@@ -28,7 +28,11 @@ class MenuItemController extends Controller
             'categories' => MenuCategory::query()
                 ->where('active', true)
                 ->orderBy('sort_order')
-                ->with(['items' => fn ($q) => $q->where('active', true)->orderBy('item_no')->orderBy('name')])
+                ->with([
+                    'kitchenStation',
+                    'items' => fn ($q) => $q->where('active', true)->orderBy('item_no')->orderBy('name')
+                        ->with(['modifierGroups' => fn ($g) => $g->orderBy('sort_order')->with(['modifiers' => fn ($m) => $m->where('active', true)->orderBy('sort_order')])]),
+                ])
                 ->get(),
         ]);
     }
@@ -36,7 +40,7 @@ class MenuItemController extends Controller
     public function index(Request $request): JsonResponse
     {
         $query = MenuItem::query()
-            ->with(['category', 'recipe.ingredient'])
+            ->with(['category', 'recipe.ingredient', 'modifierGroups' => fn ($g) => $g->orderBy('sort_order')->with(['modifiers' => fn ($m) => $m->orderBy('sort_order')])])
             ->orderBy('item_no')
             ->orderBy('name');
 

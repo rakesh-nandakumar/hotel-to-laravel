@@ -19,15 +19,20 @@ class StoreOrderRequest extends FormRequest
     {
         return [
             'client_key' => ['nullable', 'string', 'max:100'],
-            'type' => ['required', 'string', Rule::in(['room_guest', 'walkin'])],
+            'type' => ['required', 'string', Rule::in(['room_guest', 'walkin', 'delivery'])],
             'dining_mode' => ['nullable', 'string', Rule::in(['dine_in', 'takeaway'])],
             'room_id' => ['required_if:type,room_guest', 'nullable', 'integer', 'exists:rooms,id'],
+            'dining_table_id' => ['nullable', 'integer', 'exists:dining_tables,id'],
+            'delivery_address' => ['required_if:type,delivery', 'nullable', 'string', 'max:500'],
+            'delivery_phone' => ['required_if:type,delivery', 'nullable', 'string', 'max:30'],
             'customer_name' => ['nullable', 'string', 'max:150'],
             'notes' => ['nullable', 'string', 'max:1000'],
             'items' => ['required', 'array', 'min:1'],
             'items.*.menu_item_id' => ['required', 'integer', 'exists:pos_menu_items,id'],
             'items.*.qty' => ['required', 'integer', 'min:1'],
             'items.*.notes' => ['nullable', 'string', 'max:500'],
+            'items.*.modifier_ids' => ['nullable', 'array'],
+            'items.*.modifier_ids.*' => ['integer', 'exists:menu_item_modifiers,id'],
         ];
     }
 }

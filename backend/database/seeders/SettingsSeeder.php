@@ -109,6 +109,25 @@ class SettingsSeeder extends Seeder
             // ── Inventory ────────────────────────────────────────────────────
             ['key' => 'inventory.expiry_warn_days', 'value' => 3, 'type' => SettingType::NUMBER, 'category' => 'inventory', 'label' => 'Expiry Warning Window (days)'],
 
+            // ── Apartments ───────────────────────────────────────────────────
+            ['key' => 'apartment.deposit_pct', 'value' => 20, 'type' => SettingType::PERCENT, 'category' => 'apartments', 'label' => 'Booking Deposit %'],
+            ['key' => 'apartment.vat_pct', 'value' => 0, 'type' => SettingType::PERCENT, 'category' => 'apartments', 'label' => 'VAT %'],
+            ['key' => 'apartment.service_charge_pct', 'value' => 0, 'type' => SettingType::PERCENT, 'category' => 'apartments', 'label' => 'Service Charge %'],
+            ['key' => 'apartment.late_checkout_surcharge', 'value' => 0, 'type' => SettingType::MONEY, 'category' => 'apartments', 'label' => 'Late Check-out Surcharge (LKR cents)'],
+            ['key' => 'apartment.weekly_stay_threshold_nights', 'value' => 7, 'type' => SettingType::NUMBER, 'category' => 'apartments', 'label' => 'Weekly Rate Threshold (nights)', 'hint' => 'Stays at or beyond this length are priced off the unit type\'s weekly rate.'],
+            ['key' => 'apartment.monthly_stay_threshold_nights', 'value' => 28, 'type' => SettingType::NUMBER, 'category' => 'apartments', 'label' => 'Monthly Rate Threshold (nights)', 'hint' => 'Stays at or beyond this length are priced off the unit type\'s monthly rate.'],
+            ['key' => 'apartment.sale_reservation_hold_days', 'value' => 14, 'type' => SettingType::NUMBER, 'category' => 'apartments', 'label' => 'Sale Reservation Hold (days)', 'hint' => 'Default option-hold length before an unsigned reservation auto-releases.'],
+            ['key' => 'apartment.sale_deposit_forfeit_pct', 'value' => 100, 'type' => SettingType::PERCENT, 'category' => 'apartments', 'label' => 'Sale Cancellation Deposit Forfeit %', 'hint' => 'Portion of the reservation deposit kept by the business if the buyer cancels.'],
+            [
+                'key' => 'apartment.cancellation_rules', 'type' => SettingType::JSON, 'category' => 'apartments',
+                'label' => 'Cancellation Refund Tiers', 'hint' => 'Most-generous rule the booking still qualifies for wins.',
+                'value' => [
+                    ['daysBefore' => 7, 'refundPct' => 100],
+                    ['daysBefore' => 3, 'refundPct' => 50],
+                    ['daysBefore' => 0, 'refundPct' => 0],
+                ],
+            ],
+
             // ── Integrations (System Admin only) ────────────────────────────
             ['key' => 'integrations.whatsapp_enabled', 'value' => false, 'type' => SettingType::BOOLEAN, 'category' => 'integrations', 'label' => 'WhatsApp Enabled'],
             ['key' => 'integrations.whatsapp_api_url', 'value' => '', 'type' => SettingType::TEXT, 'category' => 'integrations', 'label' => 'WhatsApp Cloud API URL'],

@@ -3,15 +3,19 @@
 namespace App\Services\Hotel;
 
 use App\Events\Hotel\RealtimeUpdate;
+use App\Models\Hotel\DiningTable;
 use App\Models\Hotel\FolioLine;
 use App\Models\Hotel\MenuItem;
+use App\Models\Hotel\MenuItemModifier;
 use App\Models\Hotel\Order;
 use App\Models\Hotel\OrderItem;
+use App\Models\Hotel\OrderItemModifier;
 use App\Models\Hotel\Payment;
 use App\Models\Hotel\Reservation;
 use App\Models\Lookup;
 use App\Services\AuditLog;
 use App\Services\Settings;
+use App\Support\Lookups\DeliveryStatus;
 use App\Support\Lookups\DiningMode;
 use App\Support\Lookups\KotStatus;
 use App\Support\Lookups\LineSource;
@@ -20,7 +24,9 @@ use App\Support\Lookups\OrderStatus;
 use App\Support\Lookups\OrderType;
 use App\Support\Lookups\PaymentKind;
 use App\Support\Lookups\PaymentMethod;
+use App\Support\Lookups\TableStatus;
 use App\Support\RealtimeEvent;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -31,8 +37,8 @@ use Illuminate\Validation\ValidationException;
 class OrderService
 {
     private const WITH_FULL = [
-        'items', 'room:id,number', 'reservation:id,code,guest_id', 'reservation.guest:id,name', 'staff:id,name', 'payments',
-        'status', 'type', 'kotStatus', 'diningMode',
+        'items.modifiers', 'room:id,number', 'diningTable:id,table_no', 'reservation:id,code,guest_id', 'reservation.guest:id,name',
+        'staff:id,name', 'payments.kind', 'payments.method', 'status', 'type', 'kotStatus', 'diningMode', 'deliveryStatus', 'deliveryRider:id,name',
     ];
 
     public function __construct(
@@ -53,12 +59,23 @@ class OrderService
             }
         }
 
-        // Room service is always dine-in — takeaway only applies to walk-ins.
+        // Room service and delivery are never "dine-in" in the table sense —
+        // takeaway/delivery share the no-service-charge tax treatment (recompute()).
         $diningMode = $data['type'] === OrderType::ROOM_GUEST ? DiningMode::DINE_IN : ($data['dining_mode'] ?? DiningMode::DINE_IN);
 
         $reservationId = null;
         if ($data['type'] === OrderType::ROOM_GUEST) {
             $reservationId = $this->reservations->findCheckedInReservationForRoom($data['room_id'])->id;
+        }
+
+        $table = null;
+        if (! empty($data['dining_table_id'])) {
+            $table = DiningTable::query()->findOrFail($data['dining_table_id']);
+            if ($table->status->code !== TableStatus::FREE) {
+                throw ValidationException::withMessages([
+                    'dining_table_id' => "Table {$table->table_no} is already {$table->status->code}.",
+                ]);
+            }
         }
 
         $menuItems = MenuItem::query()->whereIn('id', collect($data['items'])->pluck('menu_item_id'))->get()->keyBy('id');
@@ -73,7 +90,7 @@ class OrderService
         }
 
         try {
-            $order = DB::transaction(function () use ($data, $diningMode, $reservationId, $menuItems, $staffId) {
+            $order = DB::transaction(function () use ($data, $diningMode, $reservationId, $menuItems, $table, $staffId) {
                 $order = Order::create([
                     'client_key' => $data['client_key'] ?? null,
                     'order_type_id' => Lookup::id(LookupType::ORDER_TYPE, $data['type']),
@@ -81,6 +98,12 @@ class OrderService
                     'order_status_id' => Lookup::id(LookupType::ORDER_STATUS, OrderStatus::OPEN),
                     'kot_status_id' => Lookup::id(LookupType::KOT_STATUS, KotStatus::NEW),
                     'room_id' => $data['room_id'] ?? null,
+                    'dining_table_id' => $table?->id,
+                    'delivery_address' => $data['type'] === OrderType::DELIVERY ? $data['delivery_address'] : null,
+                    'delivery_phone' => $data['type'] === OrderType::DELIVERY ? ($data['delivery_phone'] ?? null) : null,
+                    'delivery_status_id' => $data['type'] === OrderType::DELIVERY
+                        ? Lookup::id(LookupType::DELIVERY_STATUS, DeliveryStatus::PENDING)
+                        : null,
                     'reservation_id' => $reservationId,
                     'customer_name' => $data['customer_name'] ?? null,
                     'notes' => $data['notes'] ?? null,
@@ -89,12 +112,11 @@ class OrderService
                 ]);
 
                 foreach ($data['items'] as $line) {
-                    $menuItem = $menuItems->get($line['menu_item_id']);
-                    $order->items()->create([
-                        'menu_item_id' => $menuItem->id, 'name' => $menuItem->name, 'qty' => $line['qty'],
-                        'unit_price' => $menuItem->price, 'amount' => $menuItem->price * $line['qty'],
-                        'notes' => $line['notes'] ?? null,
-                    ]);
+                    $this->addOrderItem($order, $menuItems->get($line['menu_item_id']), $line);
+                }
+
+                if ($table) {
+                    $table->update(['table_status_id' => Lookup::id(LookupType::TABLE_STATUS, TableStatus::OCCUPIED)]);
                 }
 
                 foreach ($data['items'] as $line) {
@@ -131,7 +153,7 @@ class OrderService
         foreach ($items as $line) {
             $menuItem = $menuItems->get($line['menu_item_id']);
             if (! $menuItem || $menuItem->sold_out) {
-                throw ValidationException::withMessages(['items' => '"'.($menuItem->name ?? 'item')."\" is unavailable."]);
+                throw ValidationException::withMessages(['items' => '"'.($menuItem->name ?? 'item').'" is unavailable.']);
             }
         }
 
@@ -139,11 +161,7 @@ class OrderService
             $order = DB::transaction(function () use ($order, $items, $menuItems) {
                 foreach ($items as $line) {
                     $menuItem = $menuItems->get($line['menu_item_id']);
-                    $order->items()->create([
-                        'menu_item_id' => $menuItem->id, 'name' => $menuItem->name, 'qty' => $line['qty'],
-                        'unit_price' => $menuItem->price, 'amount' => $menuItem->price * $line['qty'],
-                        'notes' => $line['notes'] ?? null,
-                    ]);
+                    $this->addOrderItem($order, $menuItem, $line);
                     $this->inventory->deductStock($menuItem, $line['qty']);
                 }
                 $soldOut = $this->inventory->autoSoldOutSweep($menuItems->keys()->all());
@@ -293,6 +311,7 @@ class OrderService
         }
 
         $order->update(['order_status_id' => Lookup::id(LookupType::ORDER_STATUS, OrderStatus::SETTLED), 'settled_at' => now()]);
+        $this->freeTableToCleaning($order);
 
         if ($order->reservation?->guest_id) {
             $this->billing->accrueLoyalty($order->reservation->guest_id, $order->total, 'ORDER', $order->id, $staffId);
@@ -365,6 +384,7 @@ class OrderService
                 }
             }
             $order->update(['order_status_id' => Lookup::id(LookupType::ORDER_STATUS, OrderStatus::VOID), 'void_reason' => $reason]);
+            $this->freeTableToCleaning($order);
         });
 
         AuditLog::record('order.voided', $order, ['reason' => $reason, 'restocked' => $restock]);
@@ -385,14 +405,153 @@ class OrderService
         ]);
     }
 
+    /** Dispatch — assigns/reassigns the rider; bumps PENDING straight to OUT_FOR_DELIVERY. */
+    public function assignDeliveryRider(Order $order, int $riderId): Order
+    {
+        $order->loadMissing('type', 'deliveryStatus');
+        if ($order->type->code !== OrderType::DELIVERY) {
+            throw ValidationException::withMessages(['order' => 'Not a delivery order.']);
+        }
+
+        $update = ['delivery_rider_id' => $riderId];
+        if ($order->deliveryStatus?->code === DeliveryStatus::PENDING) {
+            $update['delivery_status_id'] = Lookup::id(LookupType::DELIVERY_STATUS, DeliveryStatus::OUT_FOR_DELIVERY);
+        }
+        $order->update($update);
+
+        AuditLog::record('order.delivery_rider_assigned', $order, ['rider_id' => $riderId]);
+        broadcast(new RealtimeUpdate(RealtimeEvent::ORDERS, ['order_id' => $order->id]));
+
+        return $order->load(self::WITH_FULL);
+    }
+
+    public function updateDeliveryStatus(Order $order, string $status): Order
+    {
+        $order->loadMissing('type');
+        if ($order->type->code !== OrderType::DELIVERY) {
+            throw ValidationException::withMessages(['order' => 'Not a delivery order.']);
+        }
+
+        $order->update(['delivery_status_id' => Lookup::id(LookupType::DELIVERY_STATUS, $status)]);
+
+        AuditLog::record('order.delivery_status_changed', $order, ['status' => $status]);
+        broadcast(new RealtimeUpdate(RealtimeEvent::ORDERS, ['order_id' => $order->id]));
+
+        return $order->load(self::WITH_FULL);
+    }
+
+    /**
+     * Divide an open order's items into N new child orders — e.g. a table of
+     * 4 wants 4 separate bills. Every non-voided item must end up in exactly
+     * one group; the original is marked SPLIT and left with nothing owing
+     * (its items now belong to the children), so `sum(child.total)` always
+     * equals what the parent's total was immediately before the split.
+     *
+     * @param  list<list<int>>  $groups  each inner list is a set of order_item ids
+     * @return Collection<int, Order>
+     */
+    public function splitBill(Order $order, array $groups, int $staffId): Collection
+    {
+        $order->loadMissing('status', 'items');
+
+        if (! in_array($order->status->code, [OrderStatus::OPEN, OrderStatus::PARKED], true)) {
+            throw ValidationException::withMessages(['order' => "Cannot split a {$order->status->code} order."]);
+        }
+
+        $liveItemIds = $order->items->where('voided', false)->pluck('id');
+        $groupedIds = collect($groups)->flatten();
+
+        if ($groupedIds->count() !== $groupedIds->unique()->count()) {
+            throw ValidationException::withMessages(['groups' => 'Each item can only appear in one split group.']);
+        }
+        if ($groupedIds->sort()->values()->all() !== $liveItemIds->sort()->values()->all()) {
+            throw ValidationException::withMessages(['groups' => 'Every item on the bill must be assigned to exactly one split group.']);
+        }
+
+        $children = DB::transaction(function () use ($order, $groups, $staffId) {
+            $children = collect($groups)->map(function (array $itemIds) use ($order, $staffId) {
+                $child = Order::create([
+                    'parent_order_id' => $order->id,
+                    'order_type_id' => $order->order_type_id,
+                    'dining_mode_id' => $order->dining_mode_id,
+                    'order_status_id' => Lookup::id(LookupType::ORDER_STATUS, OrderStatus::OPEN),
+                    'kot_status_id' => $order->kot_status_id,
+                    'room_id' => $order->room_id,
+                    'dining_table_id' => $order->dining_table_id,
+                    'reservation_id' => $order->reservation_id,
+                    'customer_name' => $order->customer_name,
+                    'staff_id' => $staffId,
+                    'discount' => 0,
+                ]);
+
+                OrderItem::whereIn('id', $itemIds)->update(['order_id' => $child->id]);
+
+                return $this->recompute($child);
+            });
+
+            $order->update(['order_status_id' => Lookup::id(LookupType::ORDER_STATUS, OrderStatus::SPLIT)]);
+            $this->recompute($order);
+
+            return $children;
+        });
+
+        AuditLog::record('order.split', $order, ['child_order_ids' => $children->pluck('id')->all()]);
+        broadcast(new RealtimeUpdate(RealtimeEvent::KOT, ['order_id' => $order->id]));
+
+        return $children->map(fn (Order $c) => $c->load(self::WITH_FULL));
+    }
+
+    /**
+     * Fold one or more other open orders' items into $order (e.g. a table
+     * asks to combine separate tabs into one bill). The folded-in orders are
+     * marked MERGED and point back at $order via parent_order_id; if any of
+     * them was holding its own table, that table frees up to CLEANING since
+     * its tab no longer exists independently.
+     */
+    public function mergeOrders(Order $order, array $sourceOrderIds, int $staffId): Order
+    {
+        $order->loadMissing('status');
+        if (! in_array($order->status->code, [OrderStatus::OPEN, OrderStatus::PARKED], true)) {
+            throw ValidationException::withMessages(['order' => "Cannot merge into a {$order->status->code} order."]);
+        }
+
+        $sources = Order::query()->whereIn('id', $sourceOrderIds)->where('id', '!=', $order->id)
+            ->with('status', 'diningTable')->get();
+
+        foreach ($sources as $source) {
+            if (! in_array($source->status->code, [OrderStatus::OPEN, OrderStatus::PARKED], true)) {
+                throw ValidationException::withMessages(['order_ids' => "Order #{$source->id} is {$source->status->code} — cannot merge it."]);
+            }
+        }
+
+        DB::transaction(function () use ($order, $sources) {
+            foreach ($sources as $source) {
+                OrderItem::where('order_id', $source->id)->update(['order_id' => $order->id]);
+                $source->update([
+                    'order_status_id' => Lookup::id(LookupType::ORDER_STATUS, OrderStatus::MERGED),
+                    'parent_order_id' => $order->id,
+                ]);
+                $this->freeTableToCleaning($source);
+            }
+
+            $this->recompute($order);
+        });
+
+        AuditLog::record('order.merged', $order, ['merged_order_ids' => $sources->pluck('id')->all(), 'staff_id' => $staffId]);
+        broadcast(new RealtimeUpdate(RealtimeEvent::KOT, ['order_id' => $order->id]));
+
+        return $order->load(self::WITH_FULL);
+    }
+
     /** Recompute order money fields from its non-voided items + current tax settings. */
     public function recompute(Order $order): Order
     {
-        $order->loadMissing('items', 'diningMode');
+        $order->loadMissing('items', 'diningMode', 'type');
 
         $subtotal = (int) $order->items->where('voided', false)->sum('amount');
-        // Takeaway is exempt from service charge (no table service) — VAT still applies.
-        $scPct = $order->diningMode->code === DiningMode::TAKEAWAY ? 0.0 : Settings::num('billing.service_charge_pct', 0);
+        // Takeaway and delivery are exempt from service charge (no table service) — VAT still applies.
+        $noServiceCharge = $order->diningMode->code === DiningMode::TAKEAWAY || $order->type->code === OrderType::DELIVERY;
+        $scPct = $noServiceCharge ? 0.0 : Settings::num('billing.service_charge_pct', 0);
         $vatPct = Settings::num('billing.vat_pct', 0);
 
         $totals = $this->billing->calcOrderTotals($subtotal, $order->discount, $scPct, $vatPct);
@@ -411,6 +570,79 @@ class OrderService
 
         return (int) $order->payments->filter(fn (Payment $p) => $p->kind->code !== PaymentKind::REFUND)->sum('amount')
             - (int) $order->payments->filter(fn (Payment $p) => $p->kind->code === PaymentKind::REFUND)->sum('amount');
+    }
+
+    /**
+     * Create one order item priced off the menu item plus any chosen
+     * modifiers, and snapshot those modifiers onto it — shared by create()
+     * and addItems() so the pricing/validation logic exists in exactly one place.
+     *
+     * @param  array{menu_item_id: int, qty: int, notes?: string, modifier_ids?: list<int>}  $line
+     */
+    private function addOrderItem(Order $order, MenuItem $menuItem, array $line): OrderItem
+    {
+        $modifiers = $this->resolveModifiers($menuItem, $line['modifier_ids'] ?? []);
+        $unitPrice = $menuItem->price + (int) $modifiers->sum('price_delta');
+
+        $item = $order->items()->create([
+            'menu_item_id' => $menuItem->id, 'name' => $menuItem->name, 'qty' => $line['qty'],
+            'unit_price' => $unitPrice, 'amount' => $unitPrice * $line['qty'],
+            'notes' => $line['notes'] ?? null,
+        ]);
+
+        foreach ($modifiers as $modifier) {
+            OrderItemModifier::create([
+                'order_item_id' => $item->id, 'menu_item_modifier_id' => $modifier->id,
+                'name' => $modifier->name, 'price_delta' => $modifier->price_delta,
+            ]);
+        }
+
+        return $item;
+    }
+
+    /**
+     * Validate the chosen modifier ids belong to this menu item, respect
+     * each group's max_select, and satisfy every required group.
+     *
+     * @param  list<int>  $modifierIds
+     * @return Collection<int, MenuItemModifier>
+     */
+    private function resolveModifiers(MenuItem $menuItem, array $modifierIds): Collection
+    {
+        $groups = $menuItem->modifierGroups()->with('modifiers')->get();
+        if ($groups->isEmpty()) {
+            return collect();
+        }
+
+        $allowedIds = $groups->flatMap(fn ($g) => $g->modifiers->pluck('id'));
+        $selected = MenuItemModifier::query()->whereIn('id', $modifierIds)->where('active', true)->get();
+
+        if ($selected->pluck('id')->diff($allowedIds)->isNotEmpty()) {
+            throw ValidationException::withMessages(['items' => "One or more modifiers don't belong to \"{$menuItem->name}\"."]);
+        }
+
+        foreach ($groups as $group) {
+            $chosenInGroup = $selected->whereIn('id', $group->modifiers->pluck('id'));
+            if ($group->is_required && $chosenInGroup->isEmpty()) {
+                throw ValidationException::withMessages(['items' => "\"{$menuItem->name}\" requires a choice for \"{$group->name}\"."]);
+            }
+            if ($chosenInGroup->count() > $group->max_select) {
+                throw ValidationException::withMessages(['items' => "\"{$group->name}\" allows at most {$group->max_select} choice(s)."]);
+            }
+        }
+
+        return $selected;
+    }
+
+    /** Dine-in orders holding a table free it to CLEANING once settled/voided — staff marks it Free after wiping down, mirroring Room's turnover pattern. */
+    private function freeTableToCleaning(Order $order): void
+    {
+        $order->loadMissing('diningTable');
+        if (! $order->diningTable) {
+            return;
+        }
+
+        $order->diningTable->update(['table_status_id' => Lookup::id(LookupType::TABLE_STATUS, TableStatus::CLEANING)]);
     }
 
     /**
@@ -454,7 +686,7 @@ class OrderService
     }
 
     /**
-     * @param  \Illuminate\Support\Collection<int, MenuItem>  $menuItems
+     * @param  Collection<int, MenuItem>  $menuItems
      */
     private function markSoldOutAfterFailure(InsufficientStockException $e, $menuItems): never
     {

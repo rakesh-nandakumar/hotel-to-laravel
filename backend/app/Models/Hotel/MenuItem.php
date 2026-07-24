@@ -58,6 +58,11 @@ class MenuItem extends Model
         return $this->hasMany(OrderItem::class);
     }
 
+    public function modifierGroups(): HasMany
+    {
+        return $this->hasMany(MenuItemModifierGroup::class);
+    }
+
     /**
      * @param  Builder<MenuItem>  $query
      */

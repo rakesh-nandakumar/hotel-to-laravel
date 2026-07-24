@@ -21,6 +21,8 @@ class StoreOrderItemsRequest extends FormRequest
             'items.*.menu_item_id' => ['required', 'integer', 'exists:pos_menu_items,id'],
             'items.*.qty' => ['required', 'integer', 'min:1'],
             'items.*.notes' => ['nullable', 'string', 'max:500'],
+            'items.*.modifier_ids' => ['nullable', 'array'],
+            'items.*.modifier_ids.*' => ['integer', 'exists:menu_item_modifiers,id'],
         ];
     }
 }

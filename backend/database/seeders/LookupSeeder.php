@@ -3,12 +3,23 @@
 namespace Database\Seeders;
 
 use App\Models\Lookup;
+use App\Support\Lookups\ApartmentBookingChannel;
+use App\Support\Lookups\ApartmentBookingStatus;
+use App\Support\Lookups\ApartmentLeaseStatus;
+use App\Support\Lookups\ApartmentLedgerStatus;
+use App\Support\Lookups\ApartmentLineSource;
+use App\Support\Lookups\ApartmentListingType;
+use App\Support\Lookups\ApartmentSaleStatus;
+use App\Support\Lookups\ApartmentUnitStatus;
+use App\Support\Lookups\ApartmentUtilityType;
 use App\Support\Lookups\BookingChannel;
 use App\Support\Lookups\CheckKind;
+use App\Support\Lookups\DeliveryStatus;
 use App\Support\Lookups\DiningMode;
 use App\Support\Lookups\DurationType;
 use App\Support\Lookups\FolioStatus;
 use App\Support\Lookups\FolioType;
+use App\Support\Lookups\KitchenStation;
 use App\Support\Lookups\KotStatus;
 use App\Support\Lookups\LineSource;
 use App\Support\Lookups\LookupType;
@@ -22,6 +33,7 @@ use App\Support\Lookups\PaymentMethod;
 use App\Support\Lookups\PayrollStatus;
 use App\Support\Lookups\ReservationStatus;
 use App\Support\Lookups\RoomStatus;
+use App\Support\Lookups\TableStatus;
 use App\Support\Lookups\TaskStatus;
 use App\Support\Lookups\VenueBookingStatus;
 use Illuminate\Database\Seeder;
@@ -57,6 +69,8 @@ class LookupSeeder extends Seeder
             [OrderStatus::SETTLED, 'Settled', 'green'],
             [OrderStatus::CHARGED_TO_ROOM, 'Charged to Room', 'purple'],
             [OrderStatus::VOID, 'Void', 'red'],
+            [OrderStatus::SPLIT, 'Split', 'slate'],
+            [OrderStatus::MERGED, 'Merged', 'slate'],
         ]);
 
         $this->seedType(LookupType::KOT_STATUS, [
@@ -170,6 +184,102 @@ class LookupSeeder extends Seeder
         $this->seedType(LookupType::ORDER_TYPE, [
             [OrderType::ROOM_GUEST, 'Room Guest', 'blue'],
             [OrderType::WALKIN, 'Walk-in', 'slate'],
+            [OrderType::DELIVERY, 'Delivery', 'purple'],
+        ]);
+
+        $this->seedType(LookupType::TABLE_STATUS, [
+            [TableStatus::FREE, 'Free', 'green'],
+            [TableStatus::OCCUPIED, 'Occupied', 'blue'],
+            [TableStatus::RESERVED, 'Reserved', 'orange'],
+            [TableStatus::CLEANING, 'Cleaning', 'gray'],
+        ]);
+
+        $this->seedType(LookupType::DELIVERY_STATUS, [
+            [DeliveryStatus::PENDING, 'Pending', 'gray'],
+            [DeliveryStatus::OUT_FOR_DELIVERY, 'Out for Delivery', 'blue'],
+            [DeliveryStatus::DELIVERED, 'Delivered', 'green'],
+            [DeliveryStatus::FAILED, 'Failed', 'red'],
+        ]);
+
+        $this->seedType(LookupType::KITCHEN_STATION, [
+            [KitchenStation::KITCHEN, 'Kitchen', 'orange'],
+            [KitchenStation::BAR, 'Bar', 'purple'],
+            [KitchenStation::DESSERT, 'Dessert', 'pink'],
+        ]);
+
+        $this->seedType(LookupType::APARTMENT_LISTING_TYPE, [
+            [ApartmentListingType::RENTAL, 'Rental', 'blue'],
+            [ApartmentListingType::SALE, 'For Sale', 'purple'],
+        ]);
+
+        $this->seedType(LookupType::APARTMENT_UNIT_STATUS, [
+            [ApartmentUnitStatus::AVAILABLE, 'Available', 'green'],
+            [ApartmentUnitStatus::OCCUPIED, 'Occupied', 'blue'],
+            [ApartmentUnitStatus::DIRTY, 'Dirty', 'orange'],
+            [ApartmentUnitStatus::RESERVED, 'Reserved', 'orange'],
+            [ApartmentUnitStatus::MAINTENANCE, 'Maintenance', 'red'],
+            [ApartmentUnitStatus::BLOCKED, 'Blocked', 'gray'],
+            [ApartmentUnitStatus::SOLD, 'Sold', 'slate'],
+            [ApartmentUnitStatus::OFF_MARKET, 'Off Market', 'gray'],
+        ]);
+
+        $this->seedType(LookupType::APARTMENT_LEDGER_STATUS, [
+            [ApartmentLedgerStatus::OPEN, 'Open', 'blue'],
+            [ApartmentLedgerStatus::SETTLED, 'Settled', 'green'],
+            [ApartmentLedgerStatus::VOID, 'Void', 'red'],
+        ]);
+
+        $this->seedType(LookupType::APARTMENT_LINE_SOURCE, [
+            [ApartmentLineSource::RENT, 'Rent', 'blue'],
+            [ApartmentLineSource::CLEANING_FEE, 'Cleaning Fee', 'orange'],
+            [ApartmentLineSource::EXTRA_GUEST_FEE, 'Extra Guest Fee', 'orange'],
+            [ApartmentLineSource::UTILITY, 'Utility', 'slate'],
+            [ApartmentLineSource::SURCHARGE, 'Surcharge', 'gray'],
+            [ApartmentLineSource::SERVICE_CHARGE, 'Service Charge', 'gray'],
+            [ApartmentLineSource::VAT, 'VAT', 'gray'],
+            [ApartmentLineSource::DISCOUNT, 'Discount', 'green'],
+            [ApartmentLineSource::DAMAGE, 'Damage', 'red'],
+            [ApartmentLineSource::ADJUSTMENT, 'Adjustment', 'gray'],
+            [ApartmentLineSource::INSTALLMENT, 'Installment', 'purple'],
+        ]);
+
+        $this->seedType(LookupType::APARTMENT_BOOKING_STATUS, [
+            [ApartmentBookingStatus::PENDING, 'Pending', 'gray'],
+            [ApartmentBookingStatus::CONFIRMED, 'Confirmed', 'blue'],
+            [ApartmentBookingStatus::CHECKED_IN, 'Checked In', 'green'],
+            [ApartmentBookingStatus::CHECKED_OUT, 'Checked Out', 'slate'],
+            [ApartmentBookingStatus::CANCELLED, 'Cancelled', 'red'],
+            [ApartmentBookingStatus::NO_SHOW, 'No Show', 'orange'],
+        ]);
+
+        $this->seedType(LookupType::APARTMENT_BOOKING_CHANNEL, [
+            [ApartmentBookingChannel::DIRECT, 'Direct', 'blue'],
+            [ApartmentBookingChannel::AIRBNB, 'Airbnb', 'red'],
+            [ApartmentBookingChannel::BOOKING_COM, 'Booking.com', 'blue'],
+            [ApartmentBookingChannel::AGENT, 'Agent', 'purple'],
+            [ApartmentBookingChannel::WALK_IN, 'Walk-in', 'slate'],
+        ]);
+
+        $this->seedType(LookupType::APARTMENT_LEASE_STATUS, [
+            [ApartmentLeaseStatus::DRAFT, 'Draft', 'gray'],
+            [ApartmentLeaseStatus::ACTIVE, 'Active', 'green'],
+            [ApartmentLeaseStatus::RENEWED, 'Renewed', 'blue'],
+            [ApartmentLeaseStatus::TERMINATED, 'Terminated', 'red'],
+            [ApartmentLeaseStatus::ENDED, 'Ended', 'slate'],
+        ]);
+
+        $this->seedType(LookupType::APARTMENT_UTILITY_TYPE, [
+            [ApartmentUtilityType::ELECTRICITY, 'Electricity', 'orange'],
+            [ApartmentUtilityType::WATER, 'Water', 'blue'],
+            [ApartmentUtilityType::GAS, 'Gas', 'red'],
+        ]);
+
+        $this->seedType(LookupType::APARTMENT_SALE_STATUS, [
+            [ApartmentSaleStatus::INQUIRY, 'Inquiry', 'gray'],
+            [ApartmentSaleStatus::RESERVED, 'Reserved', 'orange'],
+            [ApartmentSaleStatus::AGREEMENT_SIGNED, 'Agreement Signed', 'blue'],
+            [ApartmentSaleStatus::COMPLETED, 'Completed', 'green'],
+            [ApartmentSaleStatus::CANCELLED, 'Cancelled', 'red'],
         ]);
     }
 

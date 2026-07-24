@@ -48,4 +48,28 @@ class LookupType
     public const DINING_MODE = 'dining_mode';
 
     public const ORDER_TYPE = 'order_type';
+
+    public const APARTMENT_LISTING_TYPE = 'apartment_listing_type';
+
+    public const APARTMENT_UNIT_STATUS = 'apartment_unit_status';
+
+    public const APARTMENT_LEDGER_STATUS = 'apartment_ledger_status';
+
+    public const APARTMENT_LINE_SOURCE = 'apartment_line_source';
+
+    public const APARTMENT_BOOKING_STATUS = 'apartment_booking_status';
+
+    public const APARTMENT_BOOKING_CHANNEL = 'apartment_booking_channel';
+
+    public const APARTMENT_LEASE_STATUS = 'apartment_lease_status';
+
+    public const APARTMENT_UTILITY_TYPE = 'apartment_utility_type';
+
+    public const APARTMENT_SALE_STATUS = 'apartment_sale_status';
+
+    public const TABLE_STATUS = 'table_status';
+
+    public const DELIVERY_STATUS = 'delivery_status';
+
+    public const KITCHEN_STATION = 'kitchen_station';
 }

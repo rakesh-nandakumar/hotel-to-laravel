@@ -14,9 +14,10 @@ type KotOrder = {
   id: number; type: { code: string }; dining_mode?: { code: string }; kot_status: { code: string }; notes?: string;
   created_at: string;
   room?: { number: string } | null;
+  dining_table?: { table_no: string } | null;
   reservation?: { guest: { name: string } } | null;
   customer_name?: string;
-  items: { id: number; name: string; qty: number; notes?: string; voided: boolean }[];
+  items: { id: number; name: string; qty: number; notes?: string; voided: boolean; menu_item?: { category?: { kitchen_station?: { code: string; name: string } | null } | null } | null }[];
 };
 type RecentOrder = {
   id: number; type: { code: string }; kot_status: { code: string }; created_at: string;
@@ -109,6 +110,7 @@ export default function KOT() {
   const [fullscreen, setFullscreen] = useState(false);
   const [now, setNow] = useState(Date.now());
   const [clock, setClock] = useState(new Date());
+  const [station, setStation] = useState<string>("ALL");
   const containerRef = useRef<HTMLDivElement>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const seenIds = useRef<Set<number>>(new Set());
@@ -217,7 +219,20 @@ export default function KOT() {
     else document.exitFullscreen().catch(() => {});
   };
 
-  const queue = orders ?? [];
+  const allOrders = orders ?? [];
+  const stations = useMemo(() => {
+    const map = new Map<string, string>();
+    allOrders.forEach((o) => o.items.forEach((i) => {
+      const s = i.menu_item?.category?.kitchen_station;
+      if (s) map.set(s.code, s.name);
+    }));
+    return [...map.entries()];
+  }, [allOrders]);
+  // Ticket shows on a station's board if it has at least one item for that station
+  // (an order can span stations, e.g. a burger + a cocktail — each station just
+  // needs to see its own items are in flight; unrouted items with no category
+  // station always show on every board so nothing silently gets missed).
+  const queue = station === "ALL" ? allOrders : allOrders.filter((o) => o.items.some((i) => !i.menu_item?.category?.kitchen_station || i.menu_item.category.kitchen_station.code === station));
   const avgWait = useMemo(() => {
     const waiting = queue.filter((o) => o.kot_status.code !== "ready");
     if (waiting.length === 0) return 0;
@@ -240,6 +255,25 @@ export default function KOT() {
             {queue.length} ticket{queue.length === 1 ? "" : "s"} in queue{avgWait > 0 && ` · avg wait ${avgWait}m`}
           </p>
         </div>
+        {stations.length > 0 && (
+          <div className={clsx("flex gap-1 rounded-xl p-1", light ? "bg-slate-100" : "bg-slate-900")}>
+            <button
+              onClick={() => setStation("ALL")}
+              className={clsx("rounded-lg px-3 py-1.5 text-xs font-bold transition", station === "ALL" ? "bg-brand-600 text-white" : T.neutralBtn)}
+            >
+              All stations
+            </button>
+            {stations.map(([code, name]) => (
+              <button
+                key={code}
+                onClick={() => setStation(code)}
+                className={clsx("rounded-lg px-3 py-1.5 text-xs font-bold transition", station === code ? "bg-brand-600 text-white" : T.neutralBtn)}
+              >
+                {name}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="ml-auto flex items-center gap-4">
           <div className="hidden text-right sm:block">
             <div className={clsx("font-mono text-2xl font-black tabular-nums leading-none", T.clockMain)}>
@@ -312,9 +346,19 @@ export default function KOT() {
                       <div className={clsx("mt-1 flex items-center gap-1.5 text-sm font-bold", T.roomLabel)}>
                         {o.type.code === "room_guest" ? <BedDouble size={14} className="shrink-0 text-sky-400" /> : <Utensils size={14} className="shrink-0 opacity-60" />}
                         <span className="truncate">{label}</span>
+                        {o.dining_table && (
+                          <span className="ml-auto flex shrink-0 items-center gap-1 rounded-full bg-sky-500/20 px-2 py-0.5 text-[10px] font-black uppercase text-sky-500">
+                            Table {o.dining_table.table_no}
+                          </span>
+                        )}
                         {o.type.code === "walkin" && o.dining_mode?.code === "takeaway" && (
                           <span className="ml-auto flex shrink-0 items-center gap-1 rounded-full bg-purple-500/20 px-2 py-0.5 text-[10px] font-black uppercase text-purple-500">
                             <ShoppingBag size={10} /> Takeaway
+                          </span>
+                        )}
+                        {o.type.code === "delivery" && (
+                          <span className="ml-auto flex shrink-0 items-center gap-1 rounded-full bg-purple-500/20 px-2 py-0.5 text-[10px] font-black uppercase text-purple-500">
+                            Delivery
                           </span>
                         )}
                       </div>

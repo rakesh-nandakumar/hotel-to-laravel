@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Minus, Plus, Printer, Send, PauseCircle, PlayCircle, BedDouble, User, RefreshCw,
-  Search, StickyNote, Trash2, UtensilsCrossed, Timer, ShoppingBag,
+  Search, StickyNote, Trash2, UtensilsCrossed, Timer, ShoppingBag, Bike, Split, Combine,
 } from "lucide-react";
-import { api, openPdf, post } from "../lib/api";
+import { api, openPdf, post, put } from "../lib/api";
 import { posRequest } from "../lib/offline";
 import { lkr, toCents, useFetch, useSettings, usd } from "../lib/util";
 import { Badge, Card, Empty, ErrorText, Field, Modal, statusColor, Tabs } from "../components/ui";
@@ -12,22 +12,33 @@ import { useToast } from "../lib/toast";
 import { useAuth } from "../lib/auth";
 import clsx from "clsx";
 
-type MenuItem = { id: number; item_no?: number | null; name: string; price: number; sold_out: boolean; description: string; image?: string | null };
+type Modifier = { id: number; name: string; price_delta: number };
+type ModifierGroup = { id: number; name: string; is_required: boolean; max_select: number; modifiers: Modifier[] };
+type MenuItem = {
+  id: number; item_no?: number | null; name: string; price: number; sold_out: boolean; description: string; image?: string | null;
+  modifier_groups?: ModifierGroup[];
+};
 type MenuCat = { id: number; name: string; is_minibar: boolean; items: MenuItem[] };
 type BoardRoom = { id: number; number: string; status: { code: string }; occupant: { code: string; guest: { name: string } } | null };
+type DiningTable = { id: number; table_no: string; capacity: number; status: { code: string }; area: { name: string } | null };
+type StaffLite = { id: number; name: string };
 type Order = {
   id: number; type: { code: string }; dining_mode: { code: string }; status: { code: string }; kot_status: { code: string }; created_at: string;
   customer_name?: string; subtotal: number; discount: number; discount_reason?: string; service_charge: number; vat: number; total: number;
   room?: { id: number; number: string } | null;
+  dining_table?: { id: number; table_no: string } | null;
+  delivery_address?: string | null; delivery_phone?: string | null;
+  delivery_status?: { code: string } | null; delivery_rider?: { id: number; name: string } | null;
   reservation?: { code: string; guest: { id: number; name: string } } | null;
-  items: { id: number; name: string; qty: number; unit_price: number; amount: number; voided: boolean }[];
+  items: { id: number; name: string; qty: number; unit_price: number; amount: number; voided: boolean; modifiers?: { id: number; name: string; price_delta: number }[] }[];
   payments: { id: number; method: { code: string }; amount: number; kind: { code: string } }[];
   staff: { name: string };
 };
 
-type CartLine = { menuItemId: number; name: string; price: number; qty: number; notes?: string };
+type CartLine = { key: string; menuItemId: number; name: string; price: number; qty: number; notes?: string; modifierIds: number[] };
 
 const PAY_METHODS = ["cash", "card", "lankaqr", "bank_transfer"] as const;
+const DELIVERY_STEPS = ["pending", "out_for_delivery", "delivered", "failed"] as const;
 
 const minsAgo = (iso: string) => Math.max(0, Math.round((Date.now() - +new Date(iso)) / 60000));
 
@@ -37,6 +48,7 @@ export default function POS() {
   const [view, setView] = useState<"new" | "open">(canCreate ? "new" : "open");
   const { data: menuData, reload: reloadMenu } = useFetch<{ categories: MenuCat[] }>("/menu/full");
   const { data: roomsData } = useFetch<{ rooms: BoardRoom[] }>("/rooms");
+  const { data: tablesData, reload: reloadTables } = useFetch<{ dining_tables: DiningTable[] }>("/dining-tables");
   const { data: activeData, reload: reloadActive } = useFetch<{ orders: Order[] }>("/orders?scope=active");
   const { data: todaysData, reload: reloadToday } = useFetch<{ orders: Order[] }>("/orders?scope=today");
   const menu = menuData?.categories;
@@ -61,6 +73,8 @@ export default function POS() {
       s.off("orders", orders);
     };
   }, [reloadMenu, reloadActive, reloadToday]);
+
+  const freeTables = (tablesData?.dining_tables ?? []).filter((t) => t.status.code === "free");
 
   // cache for offline reloads
   useEffect(() => {
@@ -97,36 +111,47 @@ export default function POS() {
         <NewOrder
           menu={menuData_}
           rooms={occupiedRooms}
+          tables={freeTables}
           usdRate={usdRate}
           scPct={num("billing.service_charge_pct", 0)}
           vatPct={num("billing.vat_pct", 0)}
           onDone={() => {
             reloadActive();
             reloadToday();
+            reloadTables();
             setView("open");
           }}
         />
       ) : (
-        <OpenOrders active={active ?? []} todays={todays ?? []} usdRate={usdRate} reload={() => { reloadActive(); reloadToday(); }} />
+        <OpenOrders
+          active={active ?? []}
+          todays={todays ?? []}
+          usdRate={usdRate}
+          reload={() => { reloadActive(); reloadToday(); reloadTables(); }}
+        />
       )}
     </div>
   );
 }
 
 // ── New order ─────────────────────────────────────────────────────────────────
-function NewOrder({ menu, rooms, usdRate, scPct, vatPct, onDone }: {
-  menu: MenuCat[]; rooms: BoardRoom[]; usdRate: number; scPct: number; vatPct: number; onDone: () => void;
+function NewOrder({ menu, rooms, tables, usdRate, scPct, vatPct, onDone }: {
+  menu: MenuCat[]; rooms: BoardRoom[]; tables: DiningTable[]; usdRate: number; scPct: number; vatPct: number; onDone: () => void;
 }) {
   const toast = useToast();
   const [catId, setCatId] = useState<string>("ALL");
   const [q, setQ] = useState("");
   const [cart, setCart] = useState<CartLine[]>([]);
-  const [type, setType] = useState<"walkin" | "room_guest">("walkin");
+  const [type, setType] = useState<"walkin" | "room_guest" | "delivery">("walkin");
   const [diningMode, setDiningMode] = useState<"dine_in" | "takeaway">("dine_in");
   const [roomId, setRoomId] = useState("");
+  const [tableId, setTableId] = useState("");
+  const [deliveryAddress, setDeliveryAddress] = useState("");
+  const [deliveryPhone, setDeliveryPhone] = useState("");
   const [customerName, setCustomerName] = useState("");
   const [notes, setNotes] = useState("");
-  const [noteFor, setNoteFor] = useState<number | null>(null); // cart line note editor
+  const [noteFor, setNoteFor] = useState<string | null>(null); // cart line note editor (by CartLine.key)
+  const [pickerItem, setPickerItem] = useState<MenuItem | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [queuedMsg, setQueuedMsg] = useState("");
@@ -143,21 +168,29 @@ function NewOrder({ menu, rooms, usdRate, scPct, vatPct, onDone }: {
   }, [menu, allItems, catId, q]);
 
   const subtotal = cart.reduce((s, l) => s + l.price * l.qty, 0);
-  // Takeaway is exempt from service charge — no table service (VAT still applies)
-  const takeaway = type === "walkin" && diningMode === "takeaway";
+  // Takeaway and delivery are exempt from service charge — no table service (VAT still applies)
+  const takeaway = (type === "walkin" && diningMode === "takeaway") || type === "delivery";
   const sc = takeaway ? 0 : Math.round((subtotal * scPct) / 100);
   const vat = Math.round(((subtotal + sc) * vatPct) / 100);
   const itemCount = cart.reduce((s, l) => s + l.qty, 0);
 
-  const add = (item: MenuItem) => {
+  const add = (item: MenuItem, modifierIds: number[] = [], unitPrice?: number) => {
+    const key = `${item.id}:${[...modifierIds].sort((a, b) => a - b).join(",")}`;
+    const price = unitPrice ?? item.price;
+    const modLabel = (item.modifier_groups ?? [])
+      .flatMap((g) => g.modifiers)
+      .filter((m) => modifierIds.includes(m.id))
+      .map((m) => m.name)
+      .join(", ");
     setCart((c) => {
-      const existing = c.find((l) => l.menuItemId === item.id);
-      if (existing) return c.map((l) => (l.menuItemId === item.id ? { ...l, qty: l.qty + 1 } : l));
-      return [...c, { menuItemId: item.id, name: item.name, price: item.price, qty: 1 }];
+      const existing = c.find((l) => l.key === key);
+      if (existing) return c.map((l) => (l.key === key ? { ...l, qty: l.qty + 1 } : l));
+      return [...c, { key, menuItemId: item.id, name: modLabel ? `${item.name} (${modLabel})` : item.name, price, qty: 1, modifierIds }];
     });
   };
-  const setQty = (id: number, qty: number) =>
-    setCart((c) => (qty <= 0 ? c.filter((l) => l.menuItemId !== id) : c.map((l) => (l.menuItemId === id ? { ...l, qty } : l))));
+  const tryAdd = (item: MenuItem) => ((item.modifier_groups?.length ?? 0) > 0 ? setPickerItem(item) : add(item));
+  const setQty = (key: string, qty: number) =>
+    setCart((c) => (qty <= 0 ? c.filter((l) => l.key !== key) : c.map((l) => (l.key === key ? { ...l, qty } : l))));
 
   const quickAdd = () => {
     const no = parseInt(quickNo);
@@ -166,7 +199,7 @@ function NewOrder({ menu, rooms, usdRate, scPct, vatPct, onDone }: {
     if (!item) return setError(`No menu item #${no}`);
     if (item.sold_out) return setError(`#${no} ${item.name} is sold out`);
     setError("");
-    add(item);
+    tryAdd(item);
     setQuickNo("");
   };
 
@@ -174,6 +207,7 @@ function NewOrder({ menu, rooms, usdRate, scPct, vatPct, onDone }: {
     setError("");
     if (cart.length === 0) return setError("Add items first");
     if (type === "room_guest" && !roomId) return setError("Select the guest's room");
+    if (type === "delivery" && (!deliveryAddress.trim() || !deliveryPhone.trim())) return setError("Delivery address and phone are required");
     // Open the slip's tab synchronously, in direct response to this click — opening it later, after the
     // order-creation request resolves, would fall outside the browser's popup-blocker gesture window.
     const slipTab = type === "walkin" ? window.open("", "_blank") : null;
@@ -184,14 +218,20 @@ function NewOrder({ menu, rooms, usdRate, scPct, vatPct, onDone }: {
         type,
         dining_mode: type === "walkin" ? diningMode : undefined,
         room_id: type === "room_guest" ? Number(roomId) : undefined,
-        customer_name: type === "walkin" ? customerName || undefined : undefined,
+        dining_table_id: type === "walkin" && diningMode === "dine_in" && tableId ? Number(tableId) : undefined,
+        delivery_address: type === "delivery" ? deliveryAddress.trim() : undefined,
+        delivery_phone: type === "delivery" ? deliveryPhone.trim() : undefined,
+        customer_name: type !== "room_guest" ? customerName || undefined : undefined,
         notes: notes || undefined,
-        items: cart.map((l) => ({ menu_item_id: l.menuItemId, qty: l.qty, notes: l.notes })),
+        items: cart.map((l) => ({ menu_item_id: l.menuItemId, qty: l.qty, notes: l.notes, modifier_ids: l.modifierIds.length ? l.modifierIds : undefined })),
       });
       setCart([]);
       setCustomerName("");
       setNotes("");
       setDiningMode("dine_in");
+      setTableId("");
+      setDeliveryAddress("");
+      setDeliveryPhone("");
       if ((res as { queued?: boolean }).queued) {
         slipTab?.close();
         setQueuedMsg("No connection — order saved and will sync to the kitchen automatically when back online. Print the slip from Open Orders after sync.");
@@ -241,12 +281,12 @@ function NewOrder({ menu, rooms, usdRate, scPct, vatPct, onDone }: {
         {/* Item grid */}
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
           {gridItems.map((item) => {
-            const inCart = cart.find((l) => l.menuItemId === item.id);
+            const inCart = cart.filter((l) => l.menuItemId === item.id).reduce((s, l) => s + l.qty, 0);
             return (
               <button
                 key={item.id}
                 disabled={item.sold_out}
-                onClick={() => add(item)}
+                onClick={() => tryAdd(item)}
                 className={clsx(
                   "card relative p-3 text-left transition",
                   item.sold_out ? "opacity-40" : "hover:-translate-y-0.5 hover:shadow-md active:scale-[.98]",
@@ -256,7 +296,7 @@ function NewOrder({ menu, rooms, usdRate, scPct, vatPct, onDone }: {
                 {item.image && <img src={item.image} alt="" className="mb-2 aspect-square w-full rounded-lg object-cover" />}
                 <div className="flex items-start justify-between gap-1">
                   {item.item_no != null && <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] font-black text-slate-500">#{item.item_no}</span>}
-                  {inCart && <span className="rounded-full bg-brand-600 px-1.5 py-0.5 text-[10px] font-black text-white">{inCart.qty}</span>}
+                  {inCart > 0 && <span className="rounded-full bg-brand-600 px-1.5 py-0.5 text-[10px] font-black text-white">{inCart}</span>}
                 </div>
                 <div className="mt-1 text-sm font-bold leading-tight">{item.name}</div>
                 <div className="mt-1 text-sm font-semibold text-brand-600">{lkr(item.price)}</div>
@@ -282,21 +322,32 @@ function NewOrder({ menu, rooms, usdRate, scPct, vatPct, onDone }: {
           />
         </div>
         <div className="mb-3 flex gap-1 rounded-xl bg-slate-100 p-1">
-          <button className={clsx("flex-1 rounded-lg px-2 py-1.5 text-sm font-semibold", type === "walkin" ? "bg-white shadow-sm" : "text-slate-500")} onClick={() => setType("walkin")}>
+          <button className={clsx("flex-1 rounded-lg px-1.5 py-1.5 text-xs font-semibold sm:text-sm", type === "walkin" ? "bg-white shadow-sm" : "text-slate-500")} onClick={() => setType("walkin")}>
             <User size={14} className="mr-1 inline" /> Walk-in
           </button>
-          <button className={clsx("flex-1 rounded-lg px-2 py-1.5 text-sm font-semibold", type === "room_guest" ? "bg-white shadow-sm" : "text-slate-500")} onClick={() => setType("room_guest")}>
-            <BedDouble size={14} className="mr-1 inline" /> Room guest
+          <button className={clsx("flex-1 rounded-lg px-1.5 py-1.5 text-xs font-semibold sm:text-sm", type === "room_guest" ? "bg-white shadow-sm" : "text-slate-500")} onClick={() => setType("room_guest")}>
+            <BedDouble size={14} className="mr-1 inline" /> Room
+          </button>
+          <button className={clsx("flex-1 rounded-lg px-1.5 py-1.5 text-xs font-semibold sm:text-sm", type === "delivery" ? "bg-white shadow-sm" : "text-slate-500")} onClick={() => setType("delivery")}>
+            <Bike size={14} className="mr-1 inline" /> Delivery
           </button>
         </div>
-        {type === "room_guest" ? (
+        {type === "room_guest" && (
           <select className="input mb-3" value={roomId} onChange={(e) => setRoomId(e.target.value)}>
             <option value="">Select occupied room…</option>
             {rooms.map((r) => (
               <option key={r.id} value={r.id}>Room {r.number} — {r.occupant?.guest.name}</option>
             ))}
           </select>
-        ) : (
+        )}
+        {type === "delivery" && (
+          <div className="mb-3 space-y-2">
+            <input className="input" placeholder="Customer name" value={customerName} onChange={(e) => setCustomerName(e.target.value)} />
+            <input className="input" placeholder="Delivery address *" value={deliveryAddress} onChange={(e) => setDeliveryAddress(e.target.value)} />
+            <input className="input" placeholder="Delivery phone *" value={deliveryPhone} onChange={(e) => setDeliveryPhone(e.target.value)} />
+          </div>
+        )}
+        {type === "walkin" && (
           <>
             <div className="mb-3 flex gap-1 rounded-xl bg-slate-100 p-1">
               <button
@@ -307,11 +358,19 @@ function NewOrder({ menu, rooms, usdRate, scPct, vatPct, onDone }: {
               </button>
               <button
                 className={clsx("flex-1 rounded-lg px-2 py-1.5 text-xs font-semibold", diningMode === "takeaway" ? "bg-white shadow-sm" : "text-slate-500")}
-                onClick={() => setDiningMode("takeaway")}
+                onClick={() => { setDiningMode("takeaway"); setTableId(""); }}
               >
                 <ShoppingBag size={13} className="mr-1 inline" /> Takeaway
               </button>
             </div>
+            {diningMode === "dine_in" && tables.length > 0 && (
+              <select className="input mb-3" value={tableId} onChange={(e) => setTableId(e.target.value)}>
+                <option value="">No table (label only)</option>
+                {tables.map((t) => (
+                  <option key={t.id} value={t.id}>Table {t.table_no}{t.area ? ` — ${t.area.name}` : ""} (seats {t.capacity})</option>
+                ))}
+              </select>
+            )}
             <input className="input mb-3" placeholder="Customer / table label (optional)" value={customerName} onChange={(e) => setCustomerName(e.target.value)} />
           </>
         )}
@@ -327,7 +386,7 @@ function NewOrder({ menu, rooms, usdRate, scPct, vatPct, onDone }: {
               </button>
             </div>
             {cart.map((l) => (
-              <div key={l.menuItemId}>
+              <div key={l.key}>
                 <div className="flex items-center gap-2 text-sm">
                   <div className="min-w-0 flex-1">
                     <div className="truncate font-semibold">{l.name}</div>
@@ -336,22 +395,22 @@ function NewOrder({ menu, rooms, usdRate, scPct, vatPct, onDone }: {
                   <button
                     className={clsx("btn-ghost !p-1", l.notes ? "text-amber-500" : "text-slate-300")}
                     title={l.notes ? `Note: ${l.notes}` : "Add kitchen note for this item"}
-                    onClick={() => setNoteFor(noteFor === l.menuItemId ? null : l.menuItemId)}
+                    onClick={() => setNoteFor(noteFor === l.key ? null : l.key)}
                   >
                     <StickyNote size={13} />
                   </button>
-                  <button className="btn-secondary !p-1" onClick={() => setQty(l.menuItemId, l.qty - 1)}><Minus size={13} /></button>
+                  <button className="btn-secondary !p-1" onClick={() => setQty(l.key, l.qty - 1)}><Minus size={13} /></button>
                   <span className="w-6 text-center font-bold">{l.qty}</span>
-                  <button className="btn-secondary !p-1" onClick={() => setQty(l.menuItemId, l.qty + 1)}><Plus size={13} /></button>
+                  <button className="btn-secondary !p-1" onClick={() => setQty(l.key, l.qty + 1)}><Plus size={13} /></button>
                   <span className="w-20 text-right font-semibold">{lkr(l.price * l.qty)}</span>
                 </div>
-                {noteFor === l.menuItemId && (
+                {noteFor === l.key && (
                   <input
                     className="input mt-1 !py-1 text-xs"
                     placeholder="e.g. extra spicy, no onions…"
                     value={l.notes ?? ""}
                     autoFocus
-                    onChange={(e) => setCart(cart.map((x) => (x.menuItemId === l.menuItemId ? { ...x, notes: e.target.value || undefined } : x)))}
+                    onChange={(e) => setCart(cart.map((x) => (x.key === l.key ? { ...x, notes: e.target.value || undefined } : x)))}
                     onKeyDown={(e) => e.key === "Enter" && setNoteFor(null)}
                     onBlur={() => setNoteFor(null)}
                   />
@@ -366,7 +425,7 @@ function NewOrder({ menu, rooms, usdRate, scPct, vatPct, onDone }: {
         <div className="mt-3 space-y-1 border-t border-slate-100 pt-3 text-sm">
           <div className="flex justify-between"><span>Subtotal</span><span>{lkr(subtotal)}</span></div>
           {scPct > 0 && !takeaway && <div className="flex justify-between text-slate-500"><span>Service charge {scPct}%</span><span>{lkr(sc)}</span></div>}
-          {scPct > 0 && takeaway && <div className="flex justify-between text-emerald-600"><span>Service charge</span><span>waived (takeaway)</span></div>}
+          {scPct > 0 && takeaway && <div className="flex justify-between text-emerald-600"><span>Service charge</span><span>waived ({type === "delivery" ? "delivery" : "takeaway"})</span></div>}
           {vatPct > 0 && <div className="flex justify-between text-slate-500"><span>VAT {vatPct}%</span><span>{lkr(vat)}</span></div>}
           <div className="flex justify-between text-base font-extrabold"><span>Total</span><span>{lkr(subtotal + sc + vat)}</span></div>
           {usdRate > 0 && subtotal > 0 && <div className="text-right text-xs text-slate-400">{usd(subtotal + sc + vat, usdRate)}</div>}
@@ -378,12 +437,72 @@ function NewOrder({ menu, rooms, usdRate, scPct, vatPct, onDone }: {
           <Send size={16} /> Send to kitchen{type === "walkin" ? " + print slip" : ""}
         </button>
       </div>
+      {pickerItem && (
+        <ModifierPickerModal
+          item={pickerItem}
+          onAdd={(modifierIds, unitPrice) => add(pickerItem, modifierIds, unitPrice)}
+          onClose={() => setPickerItem(null)}
+        />
+      )}
     </div>
   );
 }
 
+/** Required-group + max-select picker for an item with modifier groups (Size, Spice level, Extras…). */
+function ModifierPickerModal({ item, onAdd, onClose }: { item: MenuItem; onAdd: (modifierIds: number[], unitPrice: number) => void; onClose: () => void }) {
+  const groups = item.modifier_groups ?? [];
+  const [selected, setSelected] = useState<Record<number, number[]>>({});
+
+  const toggle = (group: ModifierGroup, modifierId: number) => {
+    setSelected((s) => {
+      const cur = s[group.id] ?? [];
+      if (cur.includes(modifierId)) return { ...s, [group.id]: cur.filter((id) => id !== modifierId) };
+      if (group.max_select <= 1) return { ...s, [group.id]: [modifierId] };
+      if (cur.length >= group.max_select) return s;
+      return { ...s, [group.id]: [...cur, modifierId] };
+    });
+  };
+
+  const chosenIds = Object.values(selected).flat();
+  const chosenModifiers = groups.flatMap((g) => g.modifiers).filter((m) => chosenIds.includes(m.id));
+  const unitPrice = item.price + chosenModifiers.reduce((s, m) => s + m.price_delta, 0);
+  const allRequiredSatisfied = groups.every((g) => !g.is_required || (selected[g.id]?.length ?? 0) > 0);
+
+  return (
+    <Modal open onClose={onClose} title={item.name}>
+      <div className="space-y-4">
+        {groups.map((g) => (
+          <div key={g.id}>
+            <div className="label">{g.name}{g.is_required && " *"}{g.max_select > 1 && ` — choose up to ${g.max_select}`}</div>
+            <div className="mt-1 flex flex-wrap gap-1.5">
+              {g.modifiers.map((m) => (
+                <button
+                  key={m.id}
+                  className={clsx(
+                    "rounded-full px-3 py-1.5 text-xs font-semibold transition",
+                    (selected[g.id] ?? []).includes(m.id) ? "bg-brand-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                  )}
+                  onClick={() => toggle(g, m.id)}
+                >
+                  {m.name}{m.price_delta !== 0 && ` (${m.price_delta > 0 ? "+" : "-"}${lkr(Math.abs(m.price_delta))})`}
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+        <div className="flex justify-between border-t border-slate-100 pt-3 text-sm font-bold">
+          <span>Price</span><span>{lkr(unitPrice)}</span>
+        </div>
+        <button className="btn-primary w-full !py-3" disabled={!allRequiredSatisfied} onClick={() => onAdd(chosenIds, unitPrice)}>
+          Add to cart — {lkr(unitPrice)}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
 // ── Open orders ───────────────────────────────────────────────────────────────
-type OrderFilter = "ALL" | "OPEN" | "PARKED" | "ROOM" | "WALKIN";
+type OrderFilter = "ALL" | "OPEN" | "PARKED" | "ROOM" | "WALKIN" | "DELIVERY";
 
 function OpenOrders({ active, todays, usdRate, reload }: { active: Order[]; todays: Order[]; usdRate: number; reload: () => void }) {
   const [selected, setSelected] = useState<number | null>(null);
@@ -396,6 +515,7 @@ function OpenOrders({ active, todays, usdRate, reload }: { active: Order[]; toda
     if (filter === "PARKED") list = list.filter((o) => o.status.code === "parked");
     if (filter === "ROOM") list = list.filter((o) => o.type.code === "room_guest");
     if (filter === "WALKIN") list = list.filter((o) => o.type.code === "walkin");
+    if (filter === "DELIVERY") list = list.filter((o) => o.type.code === "delivery");
     if (q.trim()) {
       const needle = q.toLowerCase();
       list = list.filter(
@@ -417,6 +537,7 @@ function OpenOrders({ active, todays, usdRate, reload }: { active: Order[]; toda
     { id: "PARKED", label: "Parked" },
     { id: "ROOM", label: "Rooms" },
     { id: "WALKIN", label: "Walk-ins" },
+    { id: "DELIVERY", label: "Delivery" },
   ];
 
   return (
@@ -443,7 +564,7 @@ function OpenOrders({ active, todays, usdRate, reload }: { active: Order[]; toda
       <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
         {shown.map((o) => {
           const mins = minsAgo(o.created_at);
-          const paid = o.payments.filter((p) => p.kind.code !== "refund").reduce((s, p) => s + p.amount, 0);
+          const paid = o.payments.filter((p) => p.kind?.code !== "refund").reduce((s, p) => s + p.amount, 0);
           const kotColor = o.kot_status.code === "new" ? "bg-red-400" : o.kot_status.code === "preparing" ? "bg-amber-400" : o.kot_status.code === "ready" ? "bg-emerald-500" : "bg-slate-300";
           return (
             <button key={o.id} className="card relative overflow-hidden p-3 pl-4 text-left transition hover:-translate-y-0.5 hover:shadow-md" onClick={() => setSelected(o.id)}>
@@ -454,10 +575,16 @@ function OpenOrders({ active, todays, usdRate, reload }: { active: Order[]; toda
                   <Badge color={statusColor(o.kot_status.code)}>{o.kot_status.code.toUpperCase()}</Badge>
                   {o.status.code === "parked" && <Badge color="amber">PARKED</Badge>}
                   {o.type.code === "walkin" && o.dining_mode.code === "takeaway" && <Badge color="purple">TAKEAWAY</Badge>}
+                  {o.type.code === "delivery" && <Badge color="purple">{o.delivery_status?.code.toUpperCase().replace(/_/g, " ") ?? "DELIVERY"}</Badge>}
+                  {o.dining_table && <Badge color="blue">TABLE {o.dining_table.table_no}</Badge>}
                 </div>
               </div>
               <div className="mt-1 truncate text-sm font-semibold text-slate-700">
-                {o.type.code === "room_guest" ? `Room ${o.room?.number} — ${o.reservation?.guest.name ?? ""}` : o.customer_name || "Walk-in"}
+                {o.type.code === "room_guest"
+                  ? `Room ${o.room?.number} — ${o.reservation?.guest.name ?? ""}`
+                  : o.type.code === "delivery"
+                    ? `${o.customer_name || "Delivery"} — ${o.delivery_address ?? ""}`
+                    : o.customer_name || "Walk-in"}
               </div>
               <div className="mt-0.5 truncate text-xs text-slate-400">
                 {o.items.filter((i) => !i.voided).slice(0, 3).map((i) => `${i.qty}× ${i.name}`).join(", ")}
@@ -497,6 +624,7 @@ function OpenOrders({ active, todays, usdRate, reload }: { active: Order[]; toda
         <OrderModal
           orderId={selected}
           usdRate={usdRate}
+          mergeCandidates={active.filter((o) => o.id !== selected && ["open", "parked"].includes(o.status.code))}
           onClose={() => {
             setSelected(null);
             reload();
@@ -508,7 +636,7 @@ function OpenOrders({ active, todays, usdRate, reload }: { active: Order[]; toda
 }
 
 // ── Order detail modal ────────────────────────────────────────────────────────
-function OrderModal({ orderId, usdRate, onClose }: { orderId: number; usdRate: number; onClose: () => void }) {
+function OrderModal({ orderId, usdRate, mergeCandidates, onClose }: { orderId: number; usdRate: number; mergeCandidates: Order[]; onClose: () => void }) {
   const { data, reload } = useFetch<{ order: Order }>(`/orders/${orderId}`);
   const order = data?.order;
   const { can } = useAuth();
@@ -518,9 +646,11 @@ function OrderModal({ orderId, usdRate, onClose }: { orderId: number; usdRate: n
   const [discountOpen, setDiscountOpen] = useState(false);
   const [reasonAction, setReasonAction] = useState<"void" | "refund" | null>(null);
   const [voidingItem, setVoidingItem] = useState<Order["items"][number] | null>(null);
+  const [splitOpen, setSplitOpen] = useState(false);
+  const [mergeOpen, setMergeOpen] = useState(false);
 
   if (!order) return null;
-  const paid = order.payments.filter((p) => p.kind.code !== "refund").reduce((s, p) => s + p.amount, 0) - order.payments.filter((p) => p.kind.code === "refund").reduce((s, p) => s + p.amount, 0);
+  const paid = order.payments.filter((p) => p.kind?.code !== "refund").reduce((s, p) => s + p.amount, 0) - order.payments.filter((p) => p.kind?.code === "refund").reduce((s, p) => s + p.amount, 0);
   const due = order.total - paid;
   const isDone = order.status.code === "settled" || order.status.code === "charged_to_room" || order.status.code === "void";
   const kitchenBusy = order.kot_status.code === "preparing" || order.kot_status.code === "ready";
@@ -545,8 +675,19 @@ function OrderModal({ orderId, usdRate, onClose }: { orderId: number; usdRate: n
         <Badge color={statusColor(order.status.code)}>{order.status.code.toUpperCase()}</Badge>
         <Badge color={statusColor(order.kot_status.code)}>KOT: {order.kot_status.code.toUpperCase()}</Badge>
         {order.type.code === "walkin" && <Badge color={order.dining_mode.code === "takeaway" ? "purple" : "slate"}>{order.dining_mode.code === "takeaway" ? "TAKEAWAY" : "DINE-IN"}</Badge>}
+        {order.type.code === "delivery" && order.delivery_status && <Badge color="purple">{order.delivery_status.code.toUpperCase().replace(/_/g, " ")}</Badge>}
+        {order.dining_table && <Badge color="blue">TABLE {order.dining_table.table_no}</Badge>}
         <span className="text-xs text-slate-400">taken by {order.staff.name} · {minsAgo(order.created_at)}m ago</span>
       </div>
+      {order.type.code === "delivery" && (
+        <div className="mb-2 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
+          <div>{order.delivery_address}{order.delivery_phone ? ` · ${order.delivery_phone}` : ""}</div>
+          {order.delivery_rider && <div className="mt-0.5 font-semibold">Rider: {order.delivery_rider.name}</div>}
+        </div>
+      )}
+      {order.type.code === "delivery" && !isDone && can("hotel_orders.delivery_dispatch") && (
+        <DeliveryDispatch order={order} onChanged={() => { reload(); setError(""); }} onError={setError} />
+      )}
       <div className="divide-y divide-slate-100 text-sm">
         {order.items.map((i) => (
           <div key={i.id} className={clsx("flex items-center justify-between gap-2 py-1.5", i.voided && "text-slate-300 line-through")}>
@@ -569,7 +710,9 @@ function OrderModal({ orderId, usdRate, onClose }: { orderId: number; usdRate: n
         <div className="flex justify-between"><span>Subtotal</span><span>{lkr(order.subtotal)}</span></div>
         {order.discount > 0 && <div className="flex justify-between text-red-600"><span>Discount ({order.discount_reason})</span><span>-{lkr(order.discount)}</span></div>}
         {order.service_charge > 0 && <div className="flex justify-between"><span>Service charge</span><span>{lkr(order.service_charge)}</span></div>}
-        {order.service_charge === 0 && order.dining_mode.code === "takeaway" && <div className="flex justify-between text-emerald-600"><span>Service charge</span><span>waived (takeaway)</span></div>}
+        {order.service_charge === 0 && (order.dining_mode.code === "takeaway" || order.type.code === "delivery") && (
+          <div className="flex justify-between text-emerald-600"><span>Service charge</span><span>waived ({order.type.code === "delivery" ? "delivery" : "takeaway"})</span></div>
+        )}
         {order.vat > 0 && <div className="flex justify-between"><span>VAT</span><span>{lkr(order.vat)}</span></div>}
         <div className="flex justify-between text-base font-extrabold">
           <span>Total</span>
@@ -598,6 +741,12 @@ function OrderModal({ orderId, usdRate, onClose }: { orderId: number; usdRate: n
               </button>
             )}
             {can("hotel_orders.discount") && <button className="btn-secondary" onClick={() => setDiscountOpen(true)}>Discount (manager)</button>}
+            {can("hotel_orders.split") && order.items.filter((i) => !i.voided).length > 1 && (
+              <button className="btn-secondary" onClick={() => setSplitOpen(true)}><Split size={15} /> Split bill</button>
+            )}
+            {can("hotel_orders.merge") && mergeCandidates.length > 0 && (
+              <button className="btn-secondary" onClick={() => setMergeOpen(true)}><Combine size={15} /> Merge orders</button>
+            )}
             {can("hotel_orders.hold") && (order.status.code === "parked" ? (
               <button className="btn-secondary" onClick={() => act(() => api(`/orders/${order.id}/resume`, { method: "PUT", body: {} }))}>
                 <PlayCircle size={15} /> Resume
@@ -691,6 +840,129 @@ function OrderModal({ orderId, usdRate, onClose }: { orderId: number; usdRate: n
           onClose={() => setReasonAction(null)}
         />
       )}
+      {splitOpen && (
+        <SplitBillModal
+          order={order}
+          onDone={async (groups) => {
+            const ok = await act(() => post(`/orders/${order.id}/split`, { groups }));
+            if (ok) toast.info(`Order #${order.id} split into ${groups.length} bills`);
+            setSplitOpen(false);
+          }}
+          onClose={() => setSplitOpen(false)}
+        />
+      )}
+      {mergeOpen && (
+        <MergeOrdersModal
+          order={order}
+          candidates={mergeCandidates}
+          onDone={async (orderIds) => {
+            const ok = await act(() => post(`/orders/${order.id}/merge`, { order_ids: orderIds }));
+            if (ok) toast.success(`Merged ${orderIds.length} order(s) into #${order.id}`);
+            setMergeOpen(false);
+          }}
+          onClose={() => setMergeOpen(false)}
+        />
+      )}
+    </Modal>
+  );
+}
+
+/** Rider assignment + delivery status stepper for a delivery order. */
+function DeliveryDispatch({ order, onChanged, onError }: { order: Order; onChanged: () => void; onError: (m: string) => void }) {
+  const { data } = useFetch<{ staff: StaffLite[] }>("/staff");
+  const staff = data?.staff ?? [];
+  const status = order.delivery_status?.code ?? "pending";
+  const stepIdx = DELIVERY_STEPS.indexOf(status as (typeof DELIVERY_STEPS)[number]);
+
+  const setStatus = (s: string) =>
+    put(`/orders/${order.id}/delivery/status`, { status: s }).then(onChanged).catch((e) => onError(e.message));
+
+  return (
+    <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg bg-purple-50 px-3 py-2 text-xs">
+      <select
+        className="input !w-40 !py-1"
+        value={order.delivery_rider?.id ?? ""}
+        onChange={(e) => e.target.value && put(`/orders/${order.id}/delivery/rider`, { rider_id: Number(e.target.value) }).then(onChanged).catch((err) => onError(err.message))}
+      >
+        <option value="">Assign rider…</option>
+        {staff.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+      </select>
+      <div className="flex gap-1">
+        {DELIVERY_STEPS.filter((s) => s !== "failed").map((s, i) => (
+          <button
+            key={s}
+            className={clsx("rounded-full px-2.5 py-1 font-semibold", i === stepIdx ? "bg-purple-600 text-white" : i < stepIdx ? "bg-purple-200 text-purple-700" : "bg-white text-slate-500")}
+            onClick={() => setStatus(s)}
+          >
+            {s.replace(/_/g, " ")}
+          </button>
+        ))}
+        <button className="rounded-full bg-white px-2.5 py-1 font-semibold text-red-500" onClick={() => setStatus("failed")}>failed</button>
+      </div>
+    </div>
+  );
+}
+
+/** Assign each item to a check number; groups with 2+ checks become separate child orders. */
+function SplitBillModal({ order, onDone, onClose }: { order: Order; onDone: (groups: number[][]) => void; onClose: () => void }) {
+  const items = order.items.filter((i) => !i.voided);
+  const [checks, setChecks] = useState<Record<number, number>>(() => Object.fromEntries(items.map((i) => [i.id, 1])));
+  const maxCheck = Math.max(1, ...Object.values(checks));
+
+  const submit = () => {
+    const groups: number[][] = [];
+    for (let c = 1; c <= maxCheck; c++) {
+      const ids = items.filter((i) => checks[i.id] === c).map((i) => i.id);
+      if (ids.length) groups.push(ids);
+    }
+    onDone(groups);
+  };
+
+  return (
+    <Modal open onClose={onClose} title="Split bill into separate checks">
+      <div className="space-y-2">
+        {items.map((i) => (
+          <div key={i.id} className="flex items-center justify-between gap-2 text-sm">
+            <span className="min-w-0 flex-1 truncate">{i.qty}× {i.name}</span>
+            <span className="w-20 text-right">{lkr(i.amount)}</span>
+            <select className="input !w-28 !py-1" value={checks[i.id]} onChange={(e) => setChecks({ ...checks, [i.id]: Number(e.target.value) })}>
+              {Array.from({ length: Math.max(2, maxCheck + 1) }, (_, idx) => idx + 1).map((n) => (
+                <option key={n} value={n}>Check {n}</option>
+              ))}
+            </select>
+          </div>
+        ))}
+        <button className="btn-primary w-full !py-3" disabled={maxCheck < 2} onClick={submit}>
+          Split into {maxCheck} checks
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+/** Fold other open/parked orders' items into this one. */
+function MergeOrdersModal({ order, candidates, onDone, onClose }: { order: Order; candidates: Order[]; onDone: (orderIds: number[]) => void; onClose: () => void }) {
+  const [selected, setSelected] = useState<number[]>([]);
+
+  return (
+    <Modal open onClose={onClose} title={`Merge into order #${order.id}`}>
+      <div className="space-y-2">
+        {candidates.map((o) => (
+          <label key={o.id} className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-slate-50">
+            <input
+              type="checkbox"
+              checked={selected.includes(o.id)}
+              onChange={(e) => setSelected(e.target.checked ? [...selected, o.id] : selected.filter((id) => id !== o.id))}
+            />
+            <span className="min-w-0 flex-1 truncate">#{o.id} — {o.customer_name || (o.type.code === "room_guest" ? `Room ${o.room?.number}` : "Walk-in")}</span>
+            <span className="font-semibold">{lkr(o.total)}</span>
+          </label>
+        ))}
+        {candidates.length === 0 && <Empty text="No other open orders to merge" />}
+        <button className="btn-primary w-full !py-3" disabled={selected.length === 0} onClick={() => onDone(selected)}>
+          Merge {selected.length || ""} order{selected.length === 1 ? "" : "s"}
+        </button>
+      </div>
     </Modal>
   );
 }

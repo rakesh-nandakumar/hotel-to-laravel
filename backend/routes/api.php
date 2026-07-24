@@ -1,5 +1,16 @@
 <?php
 
+use App\Http\Controllers\Apartment\BookingController as ApartmentBookingController;
+use App\Http\Controllers\Apartment\CustomerController as ApartmentCustomerController;
+use App\Http\Controllers\Apartment\HousekeepingTaskController as ApartmentHousekeepingTaskController;
+use App\Http\Controllers\Apartment\LeaseController as ApartmentLeaseController;
+use App\Http\Controllers\Apartment\LedgerController as ApartmentLedgerController;
+use App\Http\Controllers\Apartment\MaintenanceIssueController as ApartmentMaintenanceIssueController;
+use App\Http\Controllers\Apartment\PropertyController as ApartmentPropertyController;
+use App\Http\Controllers\Apartment\ReportController as ApartmentReportController;
+use App\Http\Controllers\Apartment\SaleController as ApartmentSaleController;
+use App\Http\Controllers\Apartment\UnitController as ApartmentUnitController;
+use App\Http\Controllers\Apartment\UnitTypeController as ApartmentUnitTypeController;
 use App\Http\Controllers\Api\MeController;
 use App\Http\Controllers\AuditLogController;
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
@@ -16,6 +27,8 @@ use App\Http\Controllers\BranchContextController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\Hotel\AttendanceController;
 use App\Http\Controllers\Hotel\CorporateAccountController;
+use App\Http\Controllers\Hotel\DiningAreaController;
+use App\Http\Controllers\Hotel\DiningTableController;
 use App\Http\Controllers\Hotel\FolioController;
 use App\Http\Controllers\Hotel\GuestController;
 use App\Http\Controllers\Hotel\HousekeepingTaskController;
@@ -24,6 +37,7 @@ use App\Http\Controllers\Hotel\LaundryController;
 use App\Http\Controllers\Hotel\MaintenanceIssueController;
 use App\Http\Controllers\Hotel\MenuCategoryController;
 use App\Http\Controllers\Hotel\MenuItemController;
+use App\Http\Controllers\Hotel\MenuItemModifierController;
 use App\Http\Controllers\Hotel\NotificationController;
 use App\Http\Controllers\Hotel\OrderController;
 use App\Http\Controllers\Hotel\PackageController;
@@ -249,6 +263,34 @@ Route::middleware(['auth', 'check_active'])->group(function () {
             ->name('rooms.update-status');
     });
 
+    // ── Restaurant floor plan (dining areas + tables) ───────────────────────
+    Route::prefix('dining-areas')->name('hotel.dining-areas.')->group(function () {
+        Route::get('/', [DiningAreaController::class, 'index'])
+            ->middleware('can_do:hotel_dining_tables.access')
+            ->name('index');
+        Route::post('/', [DiningAreaController::class, 'store'])
+            ->middleware('can_do:hotel_dining_tables.create')
+            ->name('store');
+        Route::put('{diningArea}', [DiningAreaController::class, 'update'])
+            ->middleware('can_do:hotel_dining_tables.edit')
+            ->name('update');
+    });
+
+    Route::prefix('dining-tables')->name('hotel.dining-tables.')->group(function () {
+        Route::get('/', [DiningTableController::class, 'index'])
+            ->middleware('can_do:hotel_dining_tables.access')
+            ->name('index');
+        Route::post('/', [DiningTableController::class, 'store'])
+            ->middleware('can_do:hotel_dining_tables.create')
+            ->name('store');
+        Route::put('{diningTable}', [DiningTableController::class, 'update'])
+            ->middleware('can_do:hotel_dining_tables.edit')
+            ->name('update');
+        Route::put('{diningTable}/status', [DiningTableController::class, 'updateStatus'])
+            ->middleware('can_do:hotel_dining_tables.edit_status')
+            ->name('update-status');
+    });
+
     // ── Guests ────────────────────────────────────────────────────────────────
     Route::prefix('guests')->name('hotel.guests.')->group(function () {
         Route::get('/', [GuestController::class, 'index'])
@@ -396,6 +438,26 @@ Route::middleware(['auth', 'check_active'])->group(function () {
         Route::put('items/{menuItem}/sold-out', [MenuItemController::class, 'toggleSoldOut'])
             ->middleware('can_do:hotel_menu_items.sold_out')
             ->name('items.sold-out');
+
+        // ── Item modifiers (Size/Spice/Extras…) ──
+        Route::post('items/{menuItem}/modifier-groups', [MenuItemModifierController::class, 'storeGroup'])
+            ->middleware('can_do:hotel_menu_items.edit')
+            ->name('items.modifier-groups.store');
+        Route::put('modifier-groups/{modifierGroup}', [MenuItemModifierController::class, 'updateGroup'])
+            ->middleware('can_do:hotel_menu_items.edit')
+            ->name('modifier-groups.update');
+        Route::delete('modifier-groups/{modifierGroup}', [MenuItemModifierController::class, 'destroyGroup'])
+            ->middleware('can_do:hotel_menu_items.edit')
+            ->name('modifier-groups.destroy');
+        Route::post('modifier-groups/{modifierGroup}/modifiers', [MenuItemModifierController::class, 'storeModifier'])
+            ->middleware('can_do:hotel_menu_items.edit')
+            ->name('modifier-groups.modifiers.store');
+        Route::put('modifiers/{modifier}', [MenuItemModifierController::class, 'updateModifier'])
+            ->middleware('can_do:hotel_menu_items.edit')
+            ->name('modifiers.update');
+        Route::delete('modifiers/{modifier}', [MenuItemModifierController::class, 'destroyModifier'])
+            ->middleware('can_do:hotel_menu_items.edit')
+            ->name('modifiers.destroy');
     });
 
     // ── Ingredients & Stock ───────────────────────────────────────────────────
@@ -429,6 +491,9 @@ Route::middleware(['auth', 'check_active'])->group(function () {
         Route::get('kot', [OrderController::class, 'kot'])
             ->middleware('can_do:hotel_orders.access')
             ->name('kot');
+        Route::get('deliveries', [OrderController::class, 'deliveries'])
+            ->middleware('can_do:hotel_orders.access')
+            ->name('deliveries');
 
         Route::get('/', [OrderController::class, 'index'])
             ->middleware('can_do:hotel_orders.access')
@@ -463,6 +528,19 @@ Route::middleware(['auth', 'check_active'])->group(function () {
         Route::post('{order}/charge-to-room', [OrderController::class, 'chargeToRoom'])
             ->middleware('can_do:hotel_orders.charge_to_room')
             ->name('charge-to-room');
+
+        Route::put('{order}/delivery/rider', [OrderController::class, 'assignDeliveryRider'])
+            ->middleware('can_do:hotel_orders.delivery_dispatch')
+            ->name('delivery.rider');
+        Route::put('{order}/delivery/status', [OrderController::class, 'updateDeliveryStatus'])
+            ->middleware('can_do:hotel_orders.delivery_dispatch')
+            ->name('delivery.status');
+        Route::post('{order}/split', [OrderController::class, 'split'])
+            ->middleware('can_do:hotel_orders.split')
+            ->name('split');
+        Route::post('{order}/merge', [OrderController::class, 'merge'])
+            ->middleware('can_do:hotel_orders.merge')
+            ->name('merge');
         Route::post('{order}/void', [OrderController::class, 'void'])
             ->middleware('can_do:hotel_orders.void')
             ->name('void');
@@ -736,5 +814,195 @@ Route::middleware(['auth', 'check_active'])->group(function () {
         Route::put('{setting}', [SettingController::class, 'update'])
             ->middleware('can_do:hotel_settings.update')
             ->name('update');
+    });
+
+    // ── Apartments (separate domain — see App\Models\Apartment) ────────────────
+    Route::prefix('apartments')->name('apartments.')->group(function () {
+        Route::prefix('properties')->name('properties.')->group(function () {
+            Route::get('/', [ApartmentPropertyController::class, 'index'])
+                ->middleware('can_do:apartment_properties.access')
+                ->name('index');
+            Route::post('/', [ApartmentPropertyController::class, 'store'])
+                ->middleware('can_do:apartment_properties.create')
+                ->name('store');
+            Route::put('{property}', [ApartmentPropertyController::class, 'update'])
+                ->middleware('can_do:apartment_properties.edit')
+                ->name('update');
+        });
+
+        Route::prefix('unit-types')->name('unit-types.')->group(function () {
+            Route::get('/', [ApartmentUnitTypeController::class, 'index'])
+                ->middleware('can_do:apartment_unit_types.access')
+                ->name('index');
+            Route::post('/', [ApartmentUnitTypeController::class, 'store'])
+                ->middleware('can_do:apartment_unit_types.create')
+                ->name('store');
+            Route::put('{unitType}', [ApartmentUnitTypeController::class, 'update'])
+                ->middleware('can_do:apartment_unit_types.edit')
+                ->name('update');
+            Route::post('{unitType}/seasonal', [ApartmentUnitTypeController::class, 'storeSeasonalRate'])
+                ->middleware('can_do:apartment_unit_types.edit')
+                ->name('seasonal.store');
+            Route::delete('seasonal/{seasonalRate}', [ApartmentUnitTypeController::class, 'destroySeasonalRate'])
+                ->middleware('can_do:apartment_unit_types.edit')
+                ->name('seasonal.destroy');
+        });
+
+        Route::prefix('units')->name('units.')->group(function () {
+            Route::get('/', [ApartmentUnitController::class, 'index'])
+                ->middleware('can_do:apartment_units.access')
+                ->name('index');
+            Route::post('/', [ApartmentUnitController::class, 'store'])
+                ->middleware('can_do:apartment_units.create')
+                ->name('store');
+            Route::put('{unit}', [ApartmentUnitController::class, 'update'])
+                ->middleware('can_do:apartment_units.edit')
+                ->name('update');
+            Route::put('{unit}/status', [ApartmentUnitController::class, 'updateStatus'])
+                ->middleware('can_do:apartment_units.edit_status')
+                ->name('update-status');
+        });
+
+        Route::prefix('customers')->name('customers.')->group(function () {
+            Route::get('/', [ApartmentCustomerController::class, 'index'])
+                ->middleware('can_do:apartment_customers.access')
+                ->name('index');
+            Route::post('/', [ApartmentCustomerController::class, 'store'])
+                ->middleware('can_do:apartment_customers.create')
+                ->name('store');
+            Route::get('{customer}', [ApartmentCustomerController::class, 'show'])
+                ->middleware('can_do:apartment_customers.view')
+                ->name('show');
+            Route::put('{customer}', [ApartmentCustomerController::class, 'update'])
+                ->middleware('can_do:apartment_customers.edit')
+                ->name('update');
+        });
+
+        Route::prefix('bookings')->name('bookings.')->group(function () {
+            Route::get('availability', [ApartmentBookingController::class, 'availability'])
+                ->middleware('can_do:apartment_bookings.access')
+                ->name('availability');
+            Route::get('calendar', [ApartmentBookingController::class, 'calendar'])
+                ->middleware('can_do:apartment_bookings.access')
+                ->name('calendar');
+            Route::get('/', [ApartmentBookingController::class, 'index'])
+                ->middleware('can_do:apartment_bookings.access')
+                ->name('index');
+            Route::post('/', [ApartmentBookingController::class, 'store'])
+                ->middleware('can_do:apartment_bookings.create')
+                ->name('store');
+            Route::get('{booking}', [ApartmentBookingController::class, 'show'])
+                ->middleware('can_do:apartment_bookings.view')
+                ->name('show');
+            Route::post('{booking}/check-in', [ApartmentBookingController::class, 'checkIn'])
+                ->middleware('can_do:apartment_bookings.check_in')
+                ->name('check-in');
+            Route::get('{booking}/checkout-quote', [ApartmentBookingController::class, 'checkoutQuote'])
+                ->middleware('can_do:apartment_bookings.checkout')
+                ->name('checkout-quote');
+            Route::post('{booking}/checkout', [ApartmentBookingController::class, 'checkout'])
+                ->middleware('can_do:apartment_bookings.checkout')
+                ->name('checkout');
+            Route::post('{booking}/cancel', [ApartmentBookingController::class, 'cancel'])
+                ->middleware('can_do:apartment_bookings.cancel')
+                ->name('cancel');
+        });
+
+        Route::prefix('leases')->name('leases.')->group(function () {
+            Route::get('/', [ApartmentLeaseController::class, 'index'])
+                ->middleware('can_do:apartment_leases.access')
+                ->name('index');
+            Route::post('/', [ApartmentLeaseController::class, 'store'])
+                ->middleware('can_do:apartment_leases.create')
+                ->name('store');
+            Route::get('{lease}', [ApartmentLeaseController::class, 'show'])
+                ->middleware('can_do:apartment_leases.view')
+                ->name('show');
+            Route::post('{lease}/renew', [ApartmentLeaseController::class, 'renew'])
+                ->middleware('can_do:apartment_leases.renew')
+                ->name('renew');
+            Route::post('{lease}/terminate', [ApartmentLeaseController::class, 'terminate'])
+                ->middleware('can_do:apartment_leases.terminate')
+                ->name('terminate');
+            Route::post('{lease}/utility-readings', [ApartmentLeaseController::class, 'storeUtilityReading'])
+                ->middleware('can_do:apartment_leases.utility_reading')
+                ->name('utility-readings.store');
+        });
+
+        Route::prefix('sales')->name('sales.')->group(function () {
+            Route::get('/', [ApartmentSaleController::class, 'index'])
+                ->middleware('can_do:apartment_sales.access')
+                ->name('index');
+            Route::post('/', [ApartmentSaleController::class, 'store'])
+                ->middleware('can_do:apartment_sales.create')
+                ->name('store');
+            Route::get('{sale}', [ApartmentSaleController::class, 'show'])
+                ->middleware('can_do:apartment_sales.view')
+                ->name('show');
+            Route::post('{sale}/reserve', [ApartmentSaleController::class, 'reserve'])
+                ->middleware('can_do:apartment_sales.reserve')
+                ->name('reserve');
+            Route::post('{sale}/sign-agreement', [ApartmentSaleController::class, 'signAgreement'])
+                ->middleware('can_do:apartment_sales.sign_agreement')
+                ->name('sign-agreement');
+            Route::post('{sale}/complete', [ApartmentSaleController::class, 'complete'])
+                ->middleware('can_do:apartment_sales.complete')
+                ->name('complete');
+            Route::post('{sale}/cancel', [ApartmentSaleController::class, 'cancel'])
+                ->middleware('can_do:apartment_sales.cancel')
+                ->name('cancel');
+        });
+
+        Route::prefix('ledgers')->name('ledgers.')->group(function () {
+            Route::get('{ledger}', [ApartmentLedgerController::class, 'show'])
+                ->middleware('can_do:apartment_ledgers.view')
+                ->name('show');
+            Route::post('{ledger}/lines', [ApartmentLedgerController::class, 'addLine'])
+                ->middleware('can_do:apartment_ledgers.add_line')
+                ->name('lines.store');
+            Route::delete('lines/{line}', [ApartmentLedgerController::class, 'voidLine'])
+                ->middleware('can_do:apartment_ledgers.void_line')
+                ->name('lines.void');
+            Route::post('{ledger}/payment', [ApartmentLedgerController::class, 'payment'])
+                ->middleware('can_do:apartment_ledgers.payment')
+                ->name('payment');
+            Route::post('{ledger}/refund', [ApartmentLedgerController::class, 'refund'])
+                ->middleware('can_do:apartment_ledgers.refund')
+                ->name('refund');
+        });
+
+        Route::prefix('housekeeping')->name('housekeeping.')->group(function () {
+            Route::get('tasks', [ApartmentHousekeepingTaskController::class, 'index'])
+                ->middleware('can_do:apartment_housekeeping.access')
+                ->name('tasks.index');
+            Route::post('tasks', [ApartmentHousekeepingTaskController::class, 'store'])
+                ->middleware('can_do:apartment_housekeeping.create')
+                ->name('tasks.store');
+            Route::put('tasks/{task}/assign', [ApartmentHousekeepingTaskController::class, 'assign'])
+                ->middleware('can_do:apartment_housekeeping.assign')
+                ->name('tasks.assign');
+            Route::put('tasks/{task}/checklist', [ApartmentHousekeepingTaskController::class, 'updateChecklist'])
+                ->middleware('can_do:apartment_housekeeping.checklist')
+                ->name('tasks.checklist');
+            Route::post('tasks/{task}/complete', [ApartmentHousekeepingTaskController::class, 'complete'])
+                ->middleware('can_do:apartment_housekeeping.complete')
+                ->name('tasks.complete');
+        });
+
+        Route::prefix('maintenance')->name('maintenance.')->group(function () {
+            Route::get('/', [ApartmentMaintenanceIssueController::class, 'index'])
+                ->middleware('can_do:apartment_maintenance.access')
+                ->name('index');
+            Route::post('/', [ApartmentMaintenanceIssueController::class, 'store'])
+                ->middleware('can_do:apartment_maintenance.create')
+                ->name('store');
+            Route::put('{issue}', [ApartmentMaintenanceIssueController::class, 'update'])
+                ->middleware('can_do:apartment_maintenance.edit')
+                ->name('update');
+        });
+
+        Route::get('reports/dashboard', [ApartmentReportController::class, 'dashboard'])
+            ->middleware('can_do:apartment_reports.dashboard')
+            ->name('reports.dashboard');
     });
 });

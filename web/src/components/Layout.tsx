@@ -39,6 +39,14 @@ import {
   Search,
   PanelLeftClose,
   PanelLeft,
+  Building,
+  Rows3,
+  Home,
+  UserSquare2,
+  CalendarClock,
+  FileSignature,
+  HandCoins,
+  Grid2x2,
 } from "lucide-react";
 import { useAuth } from "../lib/auth";
 import { useBranding, brandInitials } from "../lib/branding";
@@ -114,6 +122,12 @@ const SECTIONS: Section[] = [
         label: "Kitchen (KOT)",
         icon: <ChefHat size={18} />,
         permission: "hotel_orders.access",
+      },
+      {
+        to: "/tables",
+        label: "Tables",
+        icon: <Grid2x2 size={18} />,
+        permission: "hotel_dining_tables.access",
       },
       {
         to: "/menu",
@@ -214,6 +228,71 @@ const SECTIONS: Section[] = [
         label: "Settings",
         icon: <SettingsIcon size={18} />,
         permission: "hotel_settings.access",
+      },
+    ],
+  },
+  {
+    title: "Apartments",
+    items: [
+      {
+        to: "/apartments/properties",
+        label: "Properties",
+        icon: <Building size={18} />,
+        permission: "apartment_properties.access",
+      },
+      {
+        to: "/apartments/unit-types",
+        label: "Unit Types",
+        icon: <Rows3 size={18} />,
+        permission: "apartment_unit_types.access",
+      },
+      {
+        to: "/apartments/units",
+        label: "Units",
+        icon: <Home size={18} />,
+        permission: "apartment_units.access",
+      },
+      {
+        to: "/apartments/customers",
+        label: "Customers",
+        icon: <UserSquare2 size={18} />,
+        permission: "apartment_customers.access",
+      },
+      {
+        to: "/apartments/bookings",
+        label: "Bookings",
+        icon: <CalendarClock size={18} />,
+        permission: "apartment_bookings.access",
+      },
+      {
+        to: "/apartments/leases",
+        label: "Leases",
+        icon: <FileSignature size={18} />,
+        permission: "apartment_leases.access",
+      },
+      {
+        to: "/apartments/sales",
+        label: "Sales",
+        icon: <HandCoins size={18} />,
+        permission: "apartment_sales.access",
+      },
+      {
+        to: "/apartments/housekeeping",
+        label: "Housekeeping",
+        icon: <Sparkles size={18} />,
+        permission: "apartment_housekeeping.access",
+      },
+      {
+        to: "/apartments/maintenance",
+        label: "Maintenance",
+        icon: <Wrench size={18} />,
+        permission: "apartment_maintenance.access",
+      },
+      {
+        to: "/apartments/reports",
+        label: "Reports",
+        icon: <BarChart3 size={18} />,
+        permission: "apartment_reports.dashboard",
       },
     ],
   },

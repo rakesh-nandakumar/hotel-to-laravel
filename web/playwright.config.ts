@@ -25,6 +25,14 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   reporter: [["list"], ["html", { open: "never" }]],
   timeout: 30_000,
+  // `php artisan serve` (single-threaded, APP_DEBUG=true, no opcache) is
+  // noticeably slower than a production server under this suite's sustained
+  // request volume — individual API round-trips can exceed the 5s default,
+  // which was intermittently failing otherwise-correct assertions across
+  // several long, multi-step apartment specs.
+  expect: {
+    timeout: 10_000,
+  },
   use: {
     baseURL: FRONTEND_URL,
     trace: "retain-on-failure",
