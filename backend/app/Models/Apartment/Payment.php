@@ -3,6 +3,7 @@
 namespace App\Models\Apartment;
 
 use App\Models\Lookup;
+use App\Models\TillSession;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -20,6 +21,7 @@ class Payment extends Model
         'reason',
         'ledger_id',
         'staff_id',
+        'till_session_id',
     ];
 
     protected function casts(): array
@@ -47,5 +49,10 @@ class Payment extends Model
     public function staff(): BelongsTo
     {
         return $this->belongsTo(User::class, 'staff_id');
+    }
+
+    public function tillSession(): BelongsTo
+    {
+        return $this->belongsTo(TillSession::class);
     }
 }

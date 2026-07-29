@@ -41,6 +41,16 @@ export function todayStr(offsetDays = 0): string {
   return d.toISOString().slice(0, 10);
 }
 
+/** Client-side CSV export — every Reports page uses this, no backend round trip. */
+export function downloadCsv(filename: string, rows: (string | number)[][]) {
+  const csv = rows.map((r) => r.map((v) => (typeof v === "string" && /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v)).join(",")).join("\n");
+  const blob = new Blob([csv], { type: "text/csv" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+}
+
 /** Small data-fetch hook with manual reload. */
 export function useFetch<T>(path: string | null, deps: unknown[] = []) {
   const [data, setData] = useState<T | null>(null);
@@ -96,4 +106,14 @@ export function useSettings() {
     str: (key: string, fallback = "") => (typeof map.get(key) === "string" ? (map.get(key) as string) : fallback),
     bool: (key: string, fallback = false) => (typeof map.get(key) === "boolean" ? (map.get(key) as boolean) : fallback),
   };
+}
+
+/**
+ * Mirrors the backend's Settings::depositAmount() — a deposit/advance that's
+ * either a percentage of the total or a flat LKR-cents figure, capped to the
+ * total. Used to preview the suggested deposit before submitting a booking.
+ */
+export function depositAmount(total: number, mode: string, pct: number, fixed: number): number {
+  if (mode === "fixed") return Math.min(Math.round(fixed), total);
+  return Math.round((total * pct) / 100);
 }

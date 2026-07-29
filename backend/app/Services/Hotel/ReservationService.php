@@ -94,8 +94,7 @@ class ReservationService
                 $stayTotal += $pkg->price_per_person_per_night * $data['adults'] * $nightCount;
             }
 
-            $depositPct = Settings::num('billing.room_deposit_pct', 20);
-            $depositDue = (int) round($stayTotal * $depositPct / 100);
+            $depositDue = Settings::depositAmount($stayTotal, 'billing.room_deposit_mode', 'billing.room_deposit_pct', 'billing.room_deposit_fixed', 20);
 
             $group = null;
             if (! empty($data['group'])) {

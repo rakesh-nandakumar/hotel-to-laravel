@@ -43,6 +43,7 @@ function makeRentalUnit(array $unitTypeOverrides = [], array $unitOverrides = []
 
 it('books a unit, checks the customer in and out, and settles the ledger', function () {
     $manager = staffWithRole('Manager');
+    openTillFor($manager);
     $unit = makeRentalUnit();
 
     $book = $this->actingAs($manager)->postJson('/api/apartments/bookings', [
@@ -134,6 +135,7 @@ it('prices a long stay off the weekly/monthly tier instead of the nightly rate',
 
 it('refunds according to the cancellation policy tiers', function () {
     $manager = staffWithRole('Manager');
+    openTillFor($manager);
     $unit = makeRentalUnit();
 
     $book = $this->actingAs($manager)->postJson('/api/apartments/bookings', [

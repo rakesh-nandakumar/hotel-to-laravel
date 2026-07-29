@@ -6,7 +6,8 @@ import { api, ApiFail } from "../lib/api";
 import { landingPath } from "../lib/landing";
 import { resetSocket } from "../lib/socket";
 import { ErrorText } from "../components/ui";
-import { Delete, KeyRound, Building2 } from "lucide-react";
+import { BrandLogo } from "../components/BrandLogo";
+import { Delete, KeyRound } from "lucide-react";
 
 type Screen = "password" | "pin" | "two-factor" | "otp";
 
@@ -101,17 +102,7 @@ export default function Login() {
           }}
         />
         <div className="relative z-10 flex flex-col items-center gap-5 text-center">
-          <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-2xl bg-white/10 shadow-2xl ring-1 ring-white/10">
-            {branding.logo ? (
-              <img
-                src={branding.logo}
-                alt={branding.name}
-                className="h-full w-full"
-              />
-            ) : (
-              <Building2 className="h-10 w-10 text-white" />
-            )}
-          </div>
+          <BrandLogo logo={branding.logo} name={branding.name} size="xl" />
           <div>
             <h1 className="text-3xl font-black tracking-tight">
               {branding.name}

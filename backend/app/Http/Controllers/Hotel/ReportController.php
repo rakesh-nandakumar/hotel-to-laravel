@@ -90,4 +90,79 @@ class ReportController extends Controller
 
         return $this->pdf->posReport($this->reports->computePos($from, $to));
     }
+
+    /** RevPAR / ADR / occupancy over a date range. */
+    public function revpar(Request $request): JsonResponse
+    {
+        $from = $request->query('from', today()->subDays(29)->toDateString());
+        $to = $request->query('to', today()->toDateString());
+
+        return response()->json($this->reports->computeRevPar($from, $to));
+    }
+
+    /** Reservations & revenue by booking channel. */
+    public function channelMix(Request $request): JsonResponse
+    {
+        $from = $request->query('from', today()->subDays(29)->toDateString());
+        $to = $request->query('to', today()->toDateString());
+
+        return response()->json($this->reports->computeChannelMix($from, $to));
+    }
+
+    /** Cancelled reservations & no-shows over a date range. */
+    public function cancellations(Request $request): JsonResponse
+    {
+        $from = $request->query('from', today()->subDays(29)->toDateString());
+        $to = $request->query('to', today()->toDateString());
+
+        return response()->json($this->reports->computeCancellations($from, $to));
+    }
+
+    /** Top guests by spend, repeat-guest rate, loyalty points issued/redeemed. */
+    public function guestLoyalty(Request $request): JsonResponse
+    {
+        $from = $request->query('from', today()->subDays(29)->toDateString());
+        $to = $request->query('to', today()->toDateString());
+
+        return response()->json($this->reports->computeGuestLoyalty($from, $to));
+    }
+
+    /** Corporate account AR snapshot — outstanding balance, aging, credit utilization. */
+    public function corporateAr(): JsonResponse
+    {
+        return response()->json($this->reports->computeCorporateAr());
+    }
+
+    /** Housekeeping & maintenance SLA — counts by status, avg turnaround/resolution time. */
+    public function opsSla(Request $request): JsonResponse
+    {
+        $from = $request->query('from', today()->subDays(29)->toDateString());
+        $to = $request->query('to', today()->toDateString());
+
+        return response()->json($this->reports->computeOpsSla($from, $to));
+    }
+
+    /** Payroll labor-cost breakdown for one month, plus a month-over-month trend. */
+    public function payrollCost(Request $request): JsonResponse
+    {
+        return response()->json($this->reports->computePayrollCost($request->query('month', today()->format('Y-m'))));
+    }
+
+    /** Venue/banquet bookings & revenue over a date range. */
+    public function venues(Request $request): JsonResponse
+    {
+        $from = $request->query('from', today()->subDays(29)->toDateString());
+        $to = $request->query('to', today()->toDateString());
+
+        return response()->json($this->reports->computeVenues($from, $to));
+    }
+
+    /** Laundry revenue over a date range. */
+    public function laundry(Request $request): JsonResponse
+    {
+        $from = $request->query('from', today()->subDays(29)->toDateString());
+        $to = $request->query('to', today()->toDateString());
+
+        return response()->json($this->reports->computeLaundry($from, $to));
+    }
 }

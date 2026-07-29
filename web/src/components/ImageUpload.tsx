@@ -85,7 +85,9 @@ export function ImageDropUpload({
         )}
       >
         {value ? (
-          <img src={value} alt="Preview" className={previewClassName} />
+          <div className="flex max-h-24 items-center justify-center rounded-xl bg-white p-2 shadow-sm ring-1 ring-slate-200 overflow-hidden">
+            <img src={value} alt="Preview" className={previewClassName} />
+          </div>
         ) : (
           <ImageIcon className="h-8 w-8 text-slate-300" />
         )}

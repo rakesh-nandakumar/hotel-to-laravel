@@ -77,6 +77,7 @@ it('sends a pre-arrival reminder for a reservation checking in tomorrow, without
 
 it('sends venue pre-event and payment reminders, skipping bookings already paid in full', function () {
     $manager = staffWithRole('Manager');
+    openTillFor($manager);
     $venue = testVenueForNotifications();
 
     $tomorrowBooking = $this->actingAs($manager)->postJson('/api/venues/bookings', [

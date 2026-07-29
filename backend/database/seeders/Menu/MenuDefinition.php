@@ -141,6 +141,13 @@ class MenuDefinition
                 'actions' => ['access', 'create', 'edit', 'edit_status'],
             ],
             [
+                'name' => 'QR Ordering',
+                'icon' => 'qr-code',
+                'route_name' => 'hotel.qr-ordering.index',
+                'module_key' => 'hotel_qr_ordering',
+                'actions' => ['access', 'create', 'edit', 'regenerate'],
+            ],
+            [
                 'name' => 'Housekeeping',
                 'icon' => 'sparkles',
                 'route_name' => 'hotel.housekeeping.tasks.index',
@@ -180,11 +187,11 @@ class MenuDefinition
                 ],
             ],
             [
-                'name' => 'Shifts',
+                'name' => 'Till',
                 'icon' => 'clock',
-                'route_name' => 'hotel.shifts.index',
-                'module_key' => 'hotel_shifts',
-                'actions' => ['access', 'open', 'close', 'close_any'],
+                'route_name' => 'till.current',
+                'module_key' => 'till',
+                'actions' => ['access', 'open', 'close', 'close_any', 'cash_in', 'cash_out', 'manage'],
             ],
             [
                 'name' => 'Attendance',
@@ -219,7 +226,23 @@ class MenuDefinition
                 'icon' => 'bar-chart-3',
                 'route_name' => 'hotel.reports.dashboard',
                 'module_key' => 'hotel_reports',
-                'actions' => ['dashboard', 'daily', 'monthly', 'pos', 'night_audit_run', 'night_audit_view'],
+                // 'pos' deliberately lives under 'restaurant_reports' now — the POS
+                // sales card moved to the Restaurant Reports hub, not this one.
+                'actions' => [
+                    'dashboard', 'daily', 'monthly', 'night_audit_run', 'night_audit_view',
+                    'revpar', 'channel_mix', 'cancellations', 'guest_loyalty', 'corporate_ar',
+                    'ops_sla', 'payroll_cost', 'venues', 'laundry',
+                ],
+            ],
+            [
+                'name' => 'Restaurant Reports',
+                'icon' => 'chart-line',
+                'route_name' => 'hotel.reports.pos',
+                'module_key' => 'restaurant_reports',
+                'actions' => [
+                    'pos', 'menu_performance', 'modifiers', 'discounts_voids', 'table_server',
+                    'delivery_performance', 'kitchen_ticket_time', 'shift_sales', 'food_cost',
+                ],
             ],
             [
                 'name' => 'Staff PIN Unlock',
@@ -303,7 +326,10 @@ class MenuDefinition
                         'name' => 'Reports',
                         'route_name' => 'apartments.reports.dashboard',
                         'module_key' => 'apartment_reports',
-                        'actions' => ['dashboard'],
+                        'actions' => [
+                            'dashboard', 'occupancy_trend', 'revenue_channel', 'rent_roll',
+                            'sales_pipeline', 'utilities', 'ops_sla',
+                        ],
                     ],
                 ],
             ],

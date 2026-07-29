@@ -152,6 +152,7 @@ it('blocks check-in when the guest has no ID number on file', function () {
 
 it('checks out with exact payment: settles the folio, dirties the room, and creates a housekeeping task', function () {
     $manager = staffWithRole('Manager');
+    openTillFor($manager);
     ['room' => $room, 'check_in' => $checkIn, 'check_out' => $checkOut] = bookTwoPersonRoom();
     $guest = Guest::factory()->create();
 
@@ -199,6 +200,7 @@ it('rejects checkout when payment is short of the balance due', function () {
 
 it('is replay-safe: a failed payment after tax lines commit never double-taxes on retry', function () {
     $manager = staffWithRole('Manager');
+    openTillFor($manager);
     ['room' => $room, 'check_in' => $checkIn, 'check_out' => $checkOut] = bookTwoPersonRoom();
     $guest = Guest::factory()->create();
     Settings::set('billing.service_charge_pct', 10);
@@ -229,6 +231,7 @@ it('is replay-safe: a failed payment after tax lines commit never double-taxes o
 
 it('cancels a reservation more than 7 days out with a full refund per policy', function () {
     $manager = staffWithRole('Manager');
+    openTillFor($manager);
     $room = Room::query()->where('number', '102')->firstOrFail();
     $guest = Guest::factory()->create();
     $checkIn = now()->addDays(10)->toDateString();
@@ -250,6 +253,7 @@ it('cancels a reservation more than 7 days out with a full refund per policy', f
 
 it('cancels a reservation inside the final tier with no refund', function () {
     $manager = staffWithRole('Manager');
+    openTillFor($manager);
     $room = Room::query()->where('number', '102')->firstOrFail();
     $guest = Guest::factory()->create();
     $checkIn = now()->addDay()->toDateString();
@@ -313,6 +317,7 @@ it('adds and voids a manual folio line', function () {
 
 it('records a folio payment and caps a refund at the net amount paid', function () {
     $manager = staffWithRole('Manager');
+    openTillFor($manager);
     ['room' => $room, 'check_in' => $checkIn, 'check_out' => $checkOut] = bookTwoPersonRoom();
     $guest = Guest::factory()->create();
 

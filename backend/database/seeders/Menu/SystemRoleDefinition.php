@@ -44,7 +44,7 @@ class SystemRoleDefinition
                     'hotel_laundry' => ['access', 'create', 'edit', 'charge'],
                     'hotel_venues' => ['access', 'edit'],
                     'hotel_venue_bookings' => ['access', 'view', 'create', 'edit', 'confirm', 'complete', 'cancel'],
-                    'hotel_shifts' => ['access', 'open', 'close', 'close_any'],
+                    'till' => ['access', 'open', 'close', 'close_any', 'cash_in', 'cash_out', 'manage'],
                     'hotel_attendance' => ['access', 'on_duty', 'view_all', 'export'],
                     'hotel_visitors' => ['access', 'create', 'sign_out'],
                     // hotel_notifications.test is deliberately NOT granted to any named
@@ -52,7 +52,17 @@ class SystemRoleDefinition
                     // only, no OWNER bypass), reachable here only via Full Administrator's
                     // is_full_admin bypass.
                     'hotel_notifications' => ['access', 'run_scheduled'],
-                    'hotel_reports' => ['dashboard', 'daily', 'monthly', 'pos', 'night_audit_run', 'night_audit_view'],
+                    // payroll_cost is deliberately excluded here — Manager never sees
+                    // labor-cost reports, mirroring hotel_payroll being Owner-only below.
+                    'hotel_reports' => [
+                        'dashboard', 'daily', 'monthly', 'night_audit_run', 'night_audit_view',
+                        'revpar', 'channel_mix', 'cancellations', 'guest_loyalty', 'corporate_ar',
+                        'ops_sla', 'venues', 'laundry',
+                    ],
+                    'restaurant_reports' => [
+                        'pos', 'menu_performance', 'modifiers', 'discounts_voids', 'table_server',
+                        'delivery_performance', 'kitchen_ticket_time', 'shift_sales', 'food_cost',
+                    ],
                     'hotel_staff' => ['set_pin'],
                     'hotel_settings' => ['access', 'update'],
                     'apartment_properties' => ['access', 'create', 'edit'],
@@ -65,7 +75,7 @@ class SystemRoleDefinition
                     'apartment_ledgers' => ['view', 'add_line', 'void_line', 'payment', 'refund'],
                     'apartment_housekeeping' => ['access', 'create', 'assign', 'checklist', 'complete'],
                     'apartment_maintenance' => ['access', 'create', 'edit'],
-                    'apartment_reports' => ['dashboard'],
+                    'apartment_reports' => ['dashboard', 'occupancy_trend', 'revenue_channel', 'rent_roll', 'sales_pipeline', 'utilities', 'ops_sla'],
                 ],
             ],
             'Auditor' => [
@@ -106,14 +116,22 @@ class SystemRoleDefinition
                     'hotel_laundry' => ['access', 'create', 'edit', 'charge'],
                     'hotel_venues' => ['access', 'edit'],
                     'hotel_venue_bookings' => ['access', 'view', 'create', 'edit', 'confirm', 'complete', 'cancel'],
-                    'hotel_shifts' => ['access', 'open', 'close', 'close_any'],
+                    'till' => ['access', 'open', 'close', 'close_any', 'cash_in', 'cash_out', 'manage'],
                     'hotel_attendance' => ['access', 'on_duty', 'view_all', 'export'],
                     // Payroll is OWNER-only — Node explicitly excludes Manager here
                     // (router.use(requireRole("OWNER"))), unlike every other module.
                     'hotel_payroll' => ['manage_pay', 'view', 'generate', 'adjust_line', 'finalize', 'delete_run', 'mark_paid', 'export', 'payslip'],
                     'hotel_visitors' => ['access', 'create', 'sign_out'],
                     'hotel_notifications' => ['access', 'run_scheduled'],
-                    'hotel_reports' => ['dashboard', 'daily', 'monthly', 'pos', 'night_audit_run', 'night_audit_view'],
+                    'hotel_reports' => [
+                        'dashboard', 'daily', 'monthly', 'night_audit_run', 'night_audit_view',
+                        'revpar', 'channel_mix', 'cancellations', 'guest_loyalty', 'corporate_ar',
+                        'ops_sla', 'payroll_cost', 'venues', 'laundry',
+                    ],
+                    'restaurant_reports' => [
+                        'pos', 'menu_performance', 'modifiers', 'discounts_voids', 'table_server',
+                        'delivery_performance', 'kitchen_ticket_time', 'shift_sales', 'food_cost',
+                    ],
                     'hotel_staff' => ['set_pin'],
                     'hotel_settings' => ['access', 'update'],
                     'apartment_properties' => ['access', 'create', 'edit'],
@@ -126,7 +144,7 @@ class SystemRoleDefinition
                     'apartment_ledgers' => ['view', 'add_line', 'void_line', 'payment', 'refund'],
                     'apartment_housekeeping' => ['access', 'create', 'assign', 'checklist', 'complete'],
                     'apartment_maintenance' => ['access', 'create', 'edit'],
-                    'apartment_reports' => ['dashboard'],
+                    'apartment_reports' => ['dashboard', 'occupancy_trend', 'revenue_channel', 'rent_roll', 'sales_pipeline', 'utilities', 'ops_sla'],
                 ],
             ],
             'Housekeeper' => [

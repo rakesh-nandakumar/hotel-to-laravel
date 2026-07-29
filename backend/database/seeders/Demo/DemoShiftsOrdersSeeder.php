@@ -2,20 +2,22 @@
 
 namespace Database\Seeders\Demo;
 
+use App\Models\Branch;
 use App\Models\Hotel\Ingredient;
 use App\Models\Hotel\MenuItem;
 use App\Models\Hotel\Order;
-use App\Models\Hotel\Shift;
+use App\Models\Till;
 use App\Models\User;
 use App\Services\Hotel\InventoryService;
 use App\Services\Hotel\OrderService;
-use App\Services\Hotel\ShiftService;
+use App\Services\TillService;
 use App\Support\Lookups\DiningMode;
 use App\Support\Lookups\KotStatus;
 use App\Support\Lookups\OrderType;
 use App\Support\Lookups\PaymentMethod;
 use Carbon\Carbon;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Collection;
 
 /**
  * General restaurant floor activity — walk-in/dine-in/takeaway orders,
@@ -27,11 +29,13 @@ use Illuminate\Database\Seeder;
  */
 class DemoShiftsOrdersSeeder extends Seeder
 {
-    private ShiftService $shifts;
+    private TillService $till;
 
     private OrderService $orders;
 
     private InventoryService $inventory;
+
+    private int $tillId;
 
     /** @var list<int> */
     private array $menuItemIds;
@@ -47,9 +51,12 @@ class DemoShiftsOrdersSeeder extends Seeder
             return; // already seeded
         }
 
-        $this->shifts = app(ShiftService::class);
+        $this->till = app(TillService::class);
         $this->orders = app(OrderService::class);
         $this->inventory = app(InventoryService::class);
+        $this->tillId = Till::query()->value('id') ?? Till::create([
+            'branch_id' => Branch::query()->value('id'), 'name' => 'Main Till',
+        ])->id;
         $this->menuItemIds = MenuItem::query()->pluck('id')->all();
         $this->staffIds = User::query()->where('status', User::STATUS_ACTIVE)->pluck('id')->all();
         $this->today = Carbon::today();
@@ -72,7 +79,7 @@ class DemoShiftsOrdersSeeder extends Seeder
         }
     }
 
-    private function restock(\Illuminate\Support\Collection $ingredients): void
+    private function restock(Collection $ingredients): void
     {
         foreach ($ingredients as $ingredient) {
             $topUp = round($ingredient->stock_qty * fake()->randomFloat(2, 0.12, 0.25), 2);
@@ -90,11 +97,11 @@ class DemoShiftsOrdersSeeder extends Seeder
 
         $this->at($day->copy()->setTime(8, 0));
         try {
-            $shift = $this->shifts->openShift($staffId, random_int(50, 150) * 100);
+            $session = $this->till->openTill($this->tillId, $staffId, random_int(50, 150) * 100);
         } catch (\Throwable) {
-            return; // staff already has an open shift somehow — skip this day rather than crash the run
+            return; // staff already has an open till session somehow — skip this day rather than crash the run
         }
-        $shift->update(['opened_at' => Carbon::now()]);
+        $session->update(['opened_at' => Carbon::now()]);
 
         $isToday = $dayOffset === 0;
         $orderCount = $isToday ? random_int(4, 8) : random_int(3, 6);
@@ -106,12 +113,11 @@ class DemoShiftsOrdersSeeder extends Seeder
 
         if ($closeShift) {
             $this->at($day->copy()->setTime(22, 30));
-            $cash = $this->shifts->cashForShift($shift->fresh());
-            $expected = $shift->opening_cash + $cash['cash_in'] - $cash['cash_out'];
+            $expected = $this->till->expectedBalance($session->fresh());
             $closingCash = max(0, $expected + random_int(-500, 500));
 
             try {
-                $this->shifts->closeShift($shift->fresh(), $closingCash, 'End-of-day reconciliation.', User::find($staffId));
+                $this->till->closeTill($session->fresh(), $closingCash, 'End-of-day reconciliation.', User::find($staffId));
             } catch (\Throwable) {
             }
         }

@@ -35,6 +35,8 @@ use App\Support\Lookups\ReservationStatus;
 use App\Support\Lookups\RoomStatus;
 use App\Support\Lookups\TableStatus;
 use App\Support\Lookups\TaskStatus;
+use App\Support\Lookups\TillMovementType;
+use App\Support\Lookups\TillSessionStatus;
 use App\Support\Lookups\VenueBookingStatus;
 use Illuminate\Database\Seeder;
 
@@ -272,6 +274,21 @@ class LookupSeeder extends Seeder
             [ApartmentUtilityType::ELECTRICITY, 'Electricity', 'orange'],
             [ApartmentUtilityType::WATER, 'Water', 'blue'],
             [ApartmentUtilityType::GAS, 'Gas', 'red'],
+        ]);
+
+        $this->seedType(LookupType::TILL_SESSION_STATUS, [
+            [TillSessionStatus::OPEN, 'Open', 'green'],
+            [TillSessionStatus::CLOSED, 'Closed', 'slate'],
+        ]);
+
+        $this->seedType(LookupType::TILL_MOVEMENT_TYPE, [
+            [TillMovementType::OPENING_BALANCE, 'Opening Balance', 'blue'],
+            [TillMovementType::CASH_IN, 'Cash In', 'green'],
+            [TillMovementType::CASH_OUT, 'Cash Out', 'red'],
+            [TillMovementType::REFUND, 'Refund', 'orange'],
+            [TillMovementType::EXPENSE, 'Expense', 'red'],
+            [TillMovementType::TRANSFER, 'Transfer', 'purple'],
+            [TillMovementType::CLOSING_ADJUSTMENT, 'Closing Adjustment', 'gray'],
         ]);
 
         $this->seedType(LookupType::APARTMENT_SALE_STATUS, [

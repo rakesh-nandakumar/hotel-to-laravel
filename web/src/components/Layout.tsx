@@ -47,9 +47,11 @@ import {
   FileSignature,
   HandCoins,
   Grid2x2,
+  QrCode,
 } from "lucide-react";
 import { useAuth } from "../lib/auth";
 import { useBranding, brandInitials } from "../lib/branding";
+import { BrandLogo } from "./BrandLogo";
 import { onQueueChange, queuedCount, flushQueue } from "../lib/offline";
 import Clock from "./Clock";
 import GlobalRealtimeNotifications from "./GlobalRealtimeNotifications";
@@ -130,6 +132,12 @@ const SECTIONS: Section[] = [
         permission: "hotel_dining_tables.access",
       },
       {
+        to: "/qr-ordering",
+        label: "QR Ordering",
+        icon: <QrCode size={18} />,
+        permission: "hotel_qr_ordering.access",
+      },
+      {
         to: "/menu",
         label: "Menu",
         icon: <ClipboardList size={18} />,
@@ -140,6 +148,12 @@ const SECTIONS: Section[] = [
         label: "Inventory",
         icon: <Package size={18} />,
         permission: "hotel_ingredients.access",
+      },
+      {
+        to: "/restaurant/reports",
+        label: "Reports",
+        icon: <BarChart3 size={18} />,
+        permission: "restaurant_reports.pos",
       },
     ],
   },
@@ -193,10 +207,10 @@ const SECTIONS: Section[] = [
     title: "Money & Admin",
     items: [
       {
-        to: "/shifts",
-        label: "Cash / Shifts",
+        to: "/till",
+        label: "Till",
         icon: <Banknote size={18} />,
-        permission: "hotel_shifts.access",
+        permission: "till.access",
       },
       {
         to: "/corporate",
@@ -624,26 +638,10 @@ export default function Layout({ children }: { children: ReactNode }) {
         )}
       >
         {mini ? (
-          branding.logo ? (
-            <img
-              src={branding.logo}
-              alt={branding.name}
-              className="h-9 w-9 rounded-lg bg-white/10 object-contain p-1"
-            />
-          ) : (
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-600 text-sm font-black text-white">
-              {brandInitials(branding.name)}
-            </div>
-          )
+          <BrandLogo logo={branding.logo} name={branding.name} size="sm" />
         ) : (
           <>
-            {branding.logo && (
-              <img
-                src={branding.logo}
-                alt=""
-                className="h-10 w-10 shrink-0 rounded-lg bg-white/10"
-              />
-            )}
+            <BrandLogo logo={branding.logo} name={branding.name} size="md" />
             <div className="min-w-0">
               <div className="truncate text-lg font-black leading-tight text-white">
                 {branding.name}

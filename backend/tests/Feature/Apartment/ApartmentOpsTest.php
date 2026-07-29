@@ -36,6 +36,7 @@ function makeOpsUnit(): Unit
 
 it('sends a unit dirty and creates a turnover task on booking checkout, then completing the checklist frees it', function () {
     $manager = staffWithRole('Manager');
+    openTillFor($manager);
     $unit = makeOpsUnit();
 
     $booking = $this->actingAs($manager)->postJson('/api/apartments/bookings', [

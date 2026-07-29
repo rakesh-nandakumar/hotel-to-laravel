@@ -193,6 +193,81 @@ export function Stat({ label, value, sub, color }: { label: string; value: React
   );
 }
 
+/** One entry in a domain's report catalog, rendered as a card on its Reports hub. */
+export type ReportDef = { key: string; label: string; description: string; icon: ReactNode; permission?: string };
+
+/** Card-grid "browse all reports" landing page — shared by the Hotel/Restaurant/Apartments Reports hubs. */
+export function ReportGrid({ reports, onSelect }: { reports: ReportDef[]; onSelect: (key: string) => void }) {
+  if (reports.length === 0) return <Empty text="No reports available for your role" />;
+  return (
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      {reports.map((r) => (
+        <button
+          key={r.key}
+          onClick={() => onSelect(r.key)}
+          className="card flex items-start gap-3 p-4 text-left transition hover:-translate-y-0.5 hover:shadow-md"
+        >
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-600">{r.icon}</span>
+          <span className="min-w-0">
+            <span className="block text-sm font-bold text-slate-800">{r.label}</span>
+            <span className="mt-0.5 block text-xs leading-snug text-slate-500">{r.description}</span>
+          </span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** Generic column/row table — most reports are "totals grouped by a dimension". */
+export type TableColumn<T> = { key: string; label: string; align?: "right" | "center"; render?: (row: T) => ReactNode };
+
+export function SimpleTable<T>({ columns, rows, rowKey, empty }: { columns: TableColumn<T>[]; rows: T[]; rowKey: (row: T, i: number) => string | number; empty?: string }) {
+  if (rows.length === 0) return <Empty text={empty ?? "No data"} />;
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-slate-100 text-left text-[11px] font-bold uppercase tracking-wide text-slate-400">
+            {columns.map((c) => (
+              <th key={c.key} className={clsx("px-3 py-2", c.align === "right" && "text-right", c.align === "center" && "text-center")}>{c.label}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-50">
+          {rows.map((row, i) => (
+            <tr key={rowKey(row, i)} className="hover:bg-slate-50">
+              {columns.map((c) => (
+                <td key={c.key} className={clsx("px-3 py-2", c.align === "right" && "text-right tabular-nums", c.align === "center" && "text-center")}>
+                  {c.render ? c.render(row) : String((row as Record<string, unknown>)[c.key] ?? "")}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/** Shared from/to date-range control — every report in the new catalog is date-ranged. */
+export function DateRangeBar({
+  from, to, onFrom, onTo, maxTo, presets,
+}: {
+  from: string; to: string; onFrom: (d: string) => void; onTo: (d: string) => void; maxTo?: string;
+  presets?: { label: string; onClick: () => void }[];
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {presets?.map((p) => (
+        <button key={p.label} className="btn-secondary !py-1.5 text-xs" onClick={p.onClick}>{p.label}</button>
+      ))}
+      <input type="date" className="input !w-40" value={from} max={to} onChange={(e) => onFrom(e.target.value)} />
+      <span className="text-xs text-slate-400">to</span>
+      <input type="date" className="input !w-40" value={to} max={maxTo} onChange={(e) => onTo(e.target.value)} />
+    </div>
+  );
+}
+
 export function Tabs<T extends string>({ tabs, active, onChange }: { tabs: { id: T; label: string }[]; active: T; onChange: (t: T) => void }) {
   return (
     <div className="flex flex-wrap gap-1 rounded-xl bg-slate-200/70 p-1">

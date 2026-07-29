@@ -24,7 +24,7 @@ type DiningTable = { id: number; table_no: string; capacity: number; status: { c
 type StaffLite = { id: number; name: string };
 type Order = {
   id: number; type: { code: string }; dining_mode: { code: string }; status: { code: string }; kot_status: { code: string }; created_at: string;
-  customer_name?: string; subtotal: number; discount: number; discount_reason?: string; service_charge: number; vat: number; total: number;
+  customer_name?: string; placed_via_qr?: boolean; subtotal: number; discount: number; discount_reason?: string; service_charge: number; vat: number; total: number;
   room?: { id: number; number: string } | null;
   dining_table?: { id: number; table_no: string } | null;
   delivery_address?: string | null; delivery_phone?: string | null;
@@ -32,7 +32,7 @@ type Order = {
   reservation?: { code: string; guest: { id: number; name: string } } | null;
   items: { id: number; name: string; qty: number; unit_price: number; amount: number; voided: boolean; modifiers?: { id: number; name: string; price_delta: number }[] }[];
   payments: { id: number; method: { code: string }; amount: number; kind: { code: string } }[];
-  staff: { name: string };
+  staff: { name: string } | null;
 };
 
 type CartLine = { key: string; menuItemId: number; name: string; price: number; qty: number; notes?: string; modifierIds: number[] };
@@ -577,6 +577,7 @@ function OpenOrders({ active, todays, usdRate, reload }: { active: Order[]; toda
                   {o.type.code === "walkin" && o.dining_mode.code === "takeaway" && <Badge color="purple">TAKEAWAY</Badge>}
                   {o.type.code === "delivery" && <Badge color="purple">{o.delivery_status?.code.toUpperCase().replace(/_/g, " ") ?? "DELIVERY"}</Badge>}
                   {o.dining_table && <Badge color="blue">TABLE {o.dining_table.table_no}</Badge>}
+                  {o.placed_via_qr && <Badge color="brand">SELF-ORDER</Badge>}
                 </div>
               </div>
               <div className="mt-1 truncate text-sm font-semibold text-slate-700">
@@ -677,7 +678,8 @@ function OrderModal({ orderId, usdRate, mergeCandidates, onClose }: { orderId: n
         {order.type.code === "walkin" && <Badge color={order.dining_mode.code === "takeaway" ? "purple" : "slate"}>{order.dining_mode.code === "takeaway" ? "TAKEAWAY" : "DINE-IN"}</Badge>}
         {order.type.code === "delivery" && order.delivery_status && <Badge color="purple">{order.delivery_status.code.toUpperCase().replace(/_/g, " ")}</Badge>}
         {order.dining_table && <Badge color="blue">TABLE {order.dining_table.table_no}</Badge>}
-        <span className="text-xs text-slate-400">taken by {order.staff.name} · {minsAgo(order.created_at)}m ago</span>
+        {order.placed_via_qr && <Badge color="brand">SELF-ORDER</Badge>}
+        <span className="text-xs text-slate-400">taken by {order.staff?.name ?? "guest (QR)"} · {minsAgo(order.created_at)}m ago</span>
       </div>
       {order.type.code === "delivery" && (
         <div className="mb-2 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">

@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Plus, Search, Users } from "lucide-react";
 import { post } from "../lib/api";
-import { useFetch, usePagedFetch, lkr, todayStr, fmtDate, toCents, useSettings } from "../lib/util";
+import { useFetch, usePagedFetch, lkr, todayStr, fmtDate, toCents, useSettings, depositAmount } from "../lib/util";
 import { Badge, Card, Empty, ErrorText, Field, Modal, Pagination, statusColor, Tabs } from "../components/ui";
 import { useToast } from "../lib/toast";
 import { useAuth } from "../lib/auth";
@@ -255,7 +255,7 @@ export function NewBooking({
   // for a bigger page so this dropdown isn't silently missing accounts.
   const { data: corpResp } = useFetch<{ corporate_accounts: { data: Corp[] } }>("/corporate?page_size=100");
   const corps = corpResp?.corporate_accounts.data;
-  const { num } = useSettings();
+  const { num, str } = useSettings();
   const toast = useToast();
 
   const [selRooms, setSelRooms] = useState<number[]>(initial?.roomIds ?? []);
@@ -279,8 +279,10 @@ export function NewBooking({
   let estTotal = chosen.reduce((s, r) => s + r.stay_total, 0);
   if (corp) estTotal = Math.round(estTotal * (1 - corp.discount_pct / 100));
   if (pkg) estTotal += pkg.price_per_person_per_night * parseInt(form.adults || "1") * nightsCount;
+  const depositMode = str("billing.room_deposit_mode", "percentage");
   const depositPct = num("billing.room_deposit_pct", 20);
-  const suggestedDeposit = Math.round((estTotal * depositPct) / 100);
+  const depositFixed = num("billing.room_deposit_fixed", 0);
+  const suggestedDeposit = depositAmount(estTotal, depositMode, depositPct, depositFixed);
 
   const create = async () => {
     setError("");
@@ -420,7 +422,9 @@ export function NewBooking({
           <span className="font-semibold">Estimated stay total</span>
           <span className="text-lg font-extrabold text-brand-700">{lkr(estTotal)}</span>
         </div>
-        <div className="mt-1 text-xs text-slate-500">Advance deposit ({depositPct}%): <b>{lkr(suggestedDeposit)}</b></div>
+        <div className="mt-1 text-xs text-slate-500">
+          Advance deposit ({depositMode === "fixed" ? "fixed" : `${depositPct}%`}): <b>{lkr(suggestedDeposit)}</b>
+        </div>
         <label className="mt-2 flex items-center gap-2 text-sm font-semibold">
           <input type="checkbox" checked={deposit.take} onChange={(e) => setDeposit({ ...deposit, take: e.target.checked, amount: deposit.amount || (suggestedDeposit / 100).toFixed(2) })} />
           Take deposit / prepayment now

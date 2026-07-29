@@ -127,6 +127,7 @@ it('applies a percentage discount and recomputes the total', function () {
 
 it('settles an order only when split payments sum exactly to the total', function () {
     $manager = staffWithRole('Manager');
+    openTillFor($manager);
     $item = posMenuItem();
 
     $created = $this->actingAs($manager)->postJson('/api/orders', [
@@ -146,6 +147,7 @@ it('settles an order only when split payments sum exactly to the total', functio
 
 it('charges a room-guest order to the folio without double-taxing it at reservation checkout', function () {
     $manager = staffWithRole('Manager');
+    openTillFor($manager);
     $this->seed(HotelRoomsSeeder::class);
     Settings::set('billing.service_charge_pct', 10);
     Settings::set('billing.vat_pct', 10);
@@ -204,6 +206,7 @@ it('voids an order with no payments, restocking if still NEW', function () {
 
 it('refunds a settled order, capped at the amount paid', function () {
     $manager = staffWithRole('Manager');
+    openTillFor($manager);
     $item = posMenuItem();
 
     $created = $this->actingAs($manager)->postJson('/api/orders', [

@@ -60,8 +60,7 @@ class ApartmentBookingService
             $rate = $this->pricing->resolveStayRate($unit->unitType, $checkIn, $checkOut);
             $stayTotal = $rate['stay_total'];
 
-            $depositPct = Settings::num('apartment.deposit_pct', 20);
-            $depositDue = (int) round($stayTotal * $depositPct / 100);
+            $depositDue = Settings::depositAmount($stayTotal, 'apartment.deposit_mode', 'apartment.deposit_pct', 'apartment.deposit_fixed', 20);
 
             $booking = Booking::create([
                 'code' => $this->documentNumbers->next(Booking::class, 'code', 'APT-'),

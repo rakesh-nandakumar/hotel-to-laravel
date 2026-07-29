@@ -72,4 +72,8 @@ class LookupType
     public const DELIVERY_STATUS = 'delivery_status';
 
     public const KITCHEN_STATION = 'kitchen_station';
+
+    public const TILL_SESSION_STATUS = 'till_session_status';
+
+    public const TILL_MOVEMENT_TYPE = 'till_movement_type';
 }

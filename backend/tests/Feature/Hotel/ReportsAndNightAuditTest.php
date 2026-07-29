@@ -31,6 +31,7 @@ it('blocks non-manager roles from reports entirely', function () {
 
 it('computes the daily report from a checked-out reservation and a settled walk-in order', function () {
     $manager = staffWithRole('Manager');
+    openTillFor($manager);
     Settings::set('billing.service_charge_pct', 10);
     Settings::set('billing.vat_pct', 10);
 
@@ -73,6 +74,37 @@ it('computes the daily report from a checked-out reservation and a settled walk-
         ->and($response->json('pos.order_count'))->toBe(1);
 });
 
+it('attributes POS sales to the day the order was settled, not the day it was opened', function () {
+    $manager = staffWithRole('Manager');
+    openTillFor($manager);
+    $item = posMenuItem();
+
+    $this->travelTo('2026-07-20 22:00:00');
+    $order = $this->actingAs($manager)->postJson('/api/orders', [
+        'type' => 'walkin', 'dining_mode' => 'dine_in', 'items' => [['menu_item_id' => $item->id, 'qty' => 1]],
+    ])->assertCreated()->json('order');
+
+    // Tab stays open past midnight — settled the next business day.
+    $this->travelTo('2026-07-21 09:00:00');
+    $this->actingAs($manager)->postJson("/api/orders/{$order['id']}/settle", [
+        'payments' => [['method' => 'cash', 'amount' => $order['total']]],
+    ])->assertOk();
+
+    $openingDay = $this->actingAs($manager)->getJson('/api/reports/pos?from=2026-07-20&to=2026-07-20')->assertOk();
+    expect($openingDay->json('total_sales'))->toBe(0)
+        ->and($openingDay->json('by_category'))->toBe([]);
+
+    $settlementDay = $this->actingAs($manager)->getJson('/api/reports/pos?from=2026-07-21&to=2026-07-21')->assertOk();
+    expect($settlementDay->json('total_sales'))->toBe($order['total'])
+        ->and($settlementDay->json('by_category.Mains'))->toBe($order['total']);
+
+    $dailyOnOpeningDay = $this->actingAs($manager)->getJson('/api/reports/daily?date=2026-07-20')->assertOk();
+    expect($dailyOnOpeningDay->json('pos.order_count'))->toBe(0);
+
+    $dailyOnSettlementDay = $this->actingAs($manager)->getJson('/api/reports/daily?date=2026-07-21')->assertOk();
+    expect($dailyOnSettlementDay->json('pos.order_count'))->toBe(1);
+});
+
 it('runs a night audit once per business date and blocks a duplicate run', function () {
     $manager = staffWithRole('Manager');
 
@@ -90,6 +122,7 @@ it('runs a night audit once per business date and blocks a duplicate run', funct
 
 it('renders every report and document PDF endpoint successfully', function () {
     $manager = staffWithRole('Manager');
+    openTillFor($manager);
     $owner = staffWithRole('Owner');
 
     // POS order (thermal receipt, walk-in slip, KOT ticket).

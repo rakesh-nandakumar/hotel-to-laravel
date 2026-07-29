@@ -3,6 +3,7 @@
 namespace App\Models\Hotel;
 
 use App\Models\Lookup;
+use App\Models\TillSession;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -20,7 +21,7 @@ class Payment extends Model
         'order_id',
         'corporate_account_id',
         'staff_id',
-        'shift_id',
+        'till_session_id',
     ];
 
     protected function casts(): array
@@ -60,8 +61,8 @@ class Payment extends Model
         return $this->belongsTo(User::class, 'staff_id');
     }
 
-    public function shift(): BelongsTo
+    public function tillSession(): BelongsTo
     {
-        return $this->belongsTo(Shift::class);
+        return $this->belongsTo(TillSession::class);
     }
 }

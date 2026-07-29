@@ -1,11 +1,13 @@
 import { useMemo, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import {
   BarChart3, ChevronLeft, ChevronRight, Download, TrendingUp, TrendingDown,
-  Play, Calendar, Trophy, Wallet, FileText,
+  Play, Calendar, Trophy, Wallet, FileText, Gauge, Share2, XCircle, Heart,
+  Building2, ClipboardCheck, PartyPopper, Shirt,
 } from "lucide-react";
 import { post, openPdf } from "../lib/api";
-import { useFetch, usePagedFetch, lkr, todayStr, fmtDate } from "../lib/util";
-import { Badge, Card, Empty, ErrorText, Tabs, Pagination } from "../components/ui";
+import { useFetch, usePagedFetch, lkr, todayStr, fmtDate, downloadCsv } from "../lib/util";
+import { Badge, Card, Empty, ErrorText, Pagination, ReportGrid, ReportDef, SimpleTable, DateRangeBar, Stat } from "../components/ui";
 import { useAuth } from "../lib/auth";
 import { useBranding } from "../lib/branding";
 import clsx from "clsx";
@@ -22,7 +24,6 @@ type Daily = {
   shifts: { staff: string; opening_cash: number; closing_cash: number | null; expected_cash: number | null; variance: number | null }[];
 };
 type Monthly = { month: string; days: { date: string; revenue: number; occupancy_pct: number }[]; total_revenue: number; avg_occupancy: number };
-type PosReport = { from: string; to: string; by_category: Record<string, number>; best_sellers: { name: string; qty: number; amount: number }[]; payment_method_breakdown: Record<string, number>; total_sales: number };
 type Audit = { id: number; business_date: string; run_at: string; run_by: { id: number; name: string }; data: Daily };
 
 // ── small date helpers (string dates, no timezone surprises) ─────────────────
@@ -37,35 +38,59 @@ const shiftMonth = (month: string, delta: number) => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 };
 
-// ── CSV export (client-side — no backend round trip) ─────────────────────────
-function downloadCsv(filename: string, rows: (string | number)[][]) {
-  const csv = rows.map((r) => r.map((v) => (typeof v === "string" && /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v)).join(",")).join("\n");
-  const blob = new Blob([csv], { type: "text/csv" });
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = filename;
-  a.click();
-}
+const HOTEL_REPORTS: ReportDef[] = [
+  { key: "daily", label: "Daily Operations", description: "Occupancy, revenue by source, payments, POS best-sellers, shift variance.", icon: <Calendar size={18} />, permission: "hotel_reports.daily" },
+  { key: "monthly", label: "Monthly Performance", description: "Daily revenue & occupancy trend across a month.", icon: <BarChart3 size={18} />, permission: "hotel_reports.monthly" },
+  { key: "night_audit", label: "Night Audit", description: "Permanent daily snapshots — revenue, occupancy, cash reconciliation.", icon: <Trophy size={18} />, permission: "hotel_reports.night_audit_view" },
+  { key: "revpar", label: "RevPAR & ADR", description: "Average daily rate, revenue per available room, occupancy trend.", icon: <Gauge size={18} />, permission: "hotel_reports.revpar" },
+  { key: "channel_mix", label: "Booking Channel Mix", description: "Reservations & revenue by booking source.", icon: <Share2 size={18} />, permission: "hotel_reports.channel_mix" },
+  { key: "cancellations", label: "Cancellations & No-shows", description: "Cancelled reservations by reason, no-show tracking.", icon: <XCircle size={18} />, permission: "hotel_reports.cancellations" },
+  { key: "guest_loyalty", label: "Guest & Loyalty", description: "Top guests by spend, repeat-guest rate, loyalty points.", icon: <Heart size={18} />, permission: "hotel_reports.guest_loyalty" },
+  { key: "corporate_ar", label: "Corporate Accounts (AR)", description: "Outstanding balances, aging, credit utilization.", icon: <Building2 size={18} />, permission: "hotel_reports.corporate_ar" },
+  { key: "ops_sla", label: "Housekeeping & Maintenance", description: "Task turnaround & resolution time by status.", icon: <ClipboardCheck size={18} />, permission: "hotel_reports.ops_sla" },
+  { key: "payroll_cost", label: "Payroll Cost", description: "Labor cost, OT, EPF/ETF/APIT — by month.", icon: <Wallet size={18} />, permission: "hotel_reports.payroll_cost" },
+  { key: "venues", label: "Venues & Banquets", description: "Bookings, revenue and utilization by venue.", icon: <PartyPopper size={18} />, permission: "hotel_reports.venues" },
+  { key: "laundry", label: "Laundry Revenue", description: "Revenue by laundry item over a date range.", icon: <Shirt size={18} />, permission: "hotel_reports.laundry" },
+];
 
 export default function Reports() {
   const { can } = useAuth();
-  const tabs = [
-    ...(can("hotel_reports.daily") ? [{ id: "daily" as const, label: "Daily" }] : []),
-    ...(can("hotel_reports.monthly") ? [{ id: "monthly" as const, label: "Monthly" }] : []),
-    ...(can("hotel_reports.pos") ? [{ id: "pos" as const, label: "POS sales" }] : []),
-    ...(can("hotel_reports.night_audit_view") ? [{ id: "audit" as const, label: "Night audit" }] : []),
-  ];
-  const [tab, setTab] = useState<"daily" | "monthly" | "pos" | "audit">(tabs[0]?.id ?? "daily");
+  const nav = useNavigate();
+  const { reportKey } = useParams<{ reportKey: string }>();
+  const visible = HOTEL_REPORTS.filter((r) => !r.permission || can(r.permission));
+  const def = visible.find((r) => r.key === reportKey);
+
+  if (!reportKey) {
+    return (
+      <div className="space-y-4">
+        <h1 className="flex items-center gap-2 text-xl font-extrabold"><BarChart3 /> Reports</h1>
+        <ReportGrid reports={visible} onSelect={(key) => nav(`/reports/${key}`)} />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="flex items-center gap-2 text-xl font-extrabold"><BarChart3 /> Reports & Night Audit</h1>
-        <Tabs tabs={tabs} active={tab} onChange={setTab} />
-      </div>
-      {tab === "daily" && can("hotel_reports.daily") && <DailyTab />}
-      {tab === "monthly" && can("hotel_reports.monthly") && <MonthlyTab />}
-      {tab === "pos" && can("hotel_reports.pos") && <PosTab />}
-      {tab === "audit" && can("hotel_reports.night_audit_view") && <AuditTab />}
+      <button className="btn-ghost text-sm" onClick={() => nav("/reports")}><ChevronLeft size={14} /> All reports</button>
+      {!def ? (
+        <ErrorText error="You don't have access to this report." />
+      ) : (
+        <>
+          <h1 className="flex items-center gap-2 text-xl font-extrabold">{def.icon} {def.label}</h1>
+          {reportKey === "daily" && <DailyTab />}
+          {reportKey === "monthly" && <MonthlyTab />}
+          {reportKey === "night_audit" && <AuditTab />}
+          {reportKey === "revpar" && <RevParTab />}
+          {reportKey === "channel_mix" && <ChannelMixTab />}
+          {reportKey === "cancellations" && <CancellationsTab />}
+          {reportKey === "guest_loyalty" && <GuestLoyaltyTab />}
+          {reportKey === "corporate_ar" && <CorporateArTab />}
+          {reportKey === "ops_sla" && <OpsSlaTab />}
+          {reportKey === "payroll_cost" && <PayrollCostTab />}
+          {reportKey === "venues" && <VenuesTab />}
+          {reportKey === "laundry" && <LaundryTab />}
+        </>
+      )}
     </div>
   );
 }
@@ -306,98 +331,6 @@ function MonthlyTab() {
   );
 }
 
-const RANGE_PRESETS = [
-  { label: "7 days", days: 6 },
-  { label: "14 days", days: 13 },
-  { label: "30 days", days: 29 },
-];
-
-function PosTab() {
-  const { branding } = useBranding();
-  const [from, setFrom] = useState(todayStr(-6));
-  const [to, setTo] = useState(todayStr());
-  const { data } = useFetch<PosReport>(`/reports/pos?from=${from}&to=${to}`, [from, to]);
-  const catMax = Math.max(1, ...Object.values(data?.by_category ?? {}));
-  const payMax = Math.max(1, ...Object.values(data?.payment_method_breakdown ?? {}));
-  const bestMax = Math.max(1, ...(data?.best_sellers ?? []).map((b) => b.amount));
-
-  const exportCsv = () => {
-    if (!data) return;
-    downloadCsv(`pos-report-${data.from}-to-${data.to}.csv`, [
-      [`${branding.name} — POS report`, `${data.from} to ${data.to}`],
-      [],
-      ["Category", "Amount (LKR)"],
-      ...Object.entries(data.by_category).map(([k, v]) => [k, (v / 100).toFixed(2)]),
-      [],
-      ["Payment method", "Amount (LKR)"],
-      ...Object.entries(data.payment_method_breakdown).map(([k, v]) => [k, (v / 100).toFixed(2)]),
-      [],
-      ["Best seller", "Qty", "Amount (LKR)"],
-      ...data.best_sellers.map((b) => [b.name, b.qty, (b.amount / 100).toFixed(2)]),
-    ]);
-  };
-
-  return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-2">
-        {RANGE_PRESETS.map((p) => (
-          <button key={p.label} className="btn-secondary !py-1.5 text-xs" onClick={() => { setFrom(todayStr(-p.days)); setTo(todayStr()); }}>
-            Last {p.label}
-          </button>
-        ))}
-        <input type="date" className="input !w-40" value={from} max={to} onChange={(e) => setFrom(e.target.value)} />
-        <span className="text-xs text-slate-400">to</span>
-        <input type="date" className="input !w-40" value={to} max={todayStr()} onChange={(e) => setTo(e.target.value)} />
-      </div>
-      {data && (
-        <div className="grid gap-4 lg:grid-cols-3">
-          <div className="lg:col-span-3">
-            <HeroStat label="Total POS sales" value={lkr(data.total_sales)} sub={`${fmtDate(data.from)} → ${fmtDate(data.to)}`} />
-          </div>
-          <Card title="Sales by category">
-            {Object.keys(data.by_category).length === 0 ? (
-              <Empty text="—" />
-            ) : (
-              <div className="space-y-2.5">
-                {Object.entries(data.by_category).map(([k, v]) => (
-                  <BarRow key={k} label={k} amount={v} max={catMax} />
-                ))}
-              </div>
-            )}
-          </Card>
-          <Card title="Payment methods">
-            {Object.keys(data.payment_method_breakdown).length === 0 ? (
-              <Empty text="—" />
-            ) : (
-              <div className="space-y-2.5">
-                {Object.entries(data.payment_method_breakdown).map(([k, v]) => (
-                  <BarRow key={k} label={k} amount={v} max={payMax} colorClass={METHOD_COLOR[k] ?? "bg-slate-400"} />
-                ))}
-              </div>
-            )}
-          </Card>
-          <Card title="Best sellers">
-            {data.best_sellers.length === 0 ? (
-              <Empty text="—" />
-            ) : (
-              <div className="space-y-2.5">
-                {data.best_sellers.slice(0, 6).map((b, i) => (
-                  <BarRow key={b.name} label={`${b.name} (${b.qty}×)`} amount={b.amount} max={bestMax} rank={i + 1} />
-                ))}
-              </div>
-            )}
-          </Card>
-          <div className="flex gap-2 lg:col-span-3">
-            <button className="btn-secondary" onClick={exportCsv}><Download size={14} /> Export CSV</button>
-            <button className="btn-secondary" onClick={() => openPdf(`/reports/pos/pdf?from=${data.from}&to=${data.to}`)}><FileText size={14} /> Download PDF</button>
-          </div>
-        </div>
-      )}
-      {!data && <Empty text="Loading…" />}
-    </div>
-  );
-}
-
 function AuditTab() {
   const { can } = useAuth();
   const [page, setPage] = useState(1);
@@ -464,6 +397,384 @@ function AuditTab() {
           <DailyView d={viewing.data} pdfUrl={`/reports/night-audit/${viewing.id}/pdf`} />
         </div>
       )}
+    </div>
+  );
+}
+
+// ── new reports ──────────────────────────────────────────────────────────────
+
+type RevPar = {
+  from: string; to: string; total_rooms: number; available_room_nights: number; room_nights_sold: number;
+  room_revenue: number; adr: number; revpar: number; occupancy_pct: number;
+  series: { date: string; room_revenue: number; occupied_rooms: number; adr: number; revpar: number }[];
+};
+
+function RevParTab() {
+  const [from, setFrom] = useState(todayStr(-29));
+  const [to, setTo] = useState(todayStr());
+  const { data } = useFetch<RevPar>(`/reports/revpar?from=${from}&to=${to}`, [from, to]);
+  const max = Math.max(1, ...(data?.series ?? []).map((d) => d.revpar));
+
+  const exportCsv = () => {
+    if (!data) return;
+    downloadCsv(`revpar-${data.from}-to-${data.to}.csv`, [
+      ["Date", "Room revenue (LKR)", "Occupied rooms", "ADR (LKR)", "RevPAR (LKR)"],
+      ...data.series.map((d) => [d.date, (d.room_revenue / 100).toFixed(2), d.occupied_rooms, (d.adr / 100).toFixed(2), (d.revpar / 100).toFixed(2)]),
+    ]);
+  };
+
+  return (
+    <div className="space-y-3">
+      <DateRangeBar
+        from={from} to={to} onFrom={setFrom} onTo={setTo} maxTo={todayStr()}
+        presets={[7, 14, 30].map((n) => ({ label: `${n} days`, onClick: () => { setFrom(todayStr(-(n - 1))); setTo(todayStr()); } }))}
+      />
+      {data ? (
+        <>
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <Stat label="ADR" value={lkr(data.adr)} sub="Average Daily Rate" />
+            <Stat label="RevPAR" value={lkr(data.revpar)} sub="Revenue per available room" />
+            <Stat label="Occupancy" value={`${data.occupancy_pct}%`} sub={`${data.room_nights_sold}/${data.available_room_nights} room-nights`} />
+            <Stat label="Room revenue" value={lkr(data.room_revenue)} color="brand" />
+          </div>
+          <Card title="Daily RevPAR trend" actions={<button className="btn-ghost !py-1 text-xs" onClick={exportCsv}><Download size={13} /> CSV</button>}>
+            <div className="flex h-32 items-end gap-1">
+              {data.series.map((d) => (
+                <div key={d.date} className="group relative flex-1">
+                  <div className="w-full rounded-t bg-brand-500 transition group-hover:bg-brand-700" style={{ height: `${(d.revpar / max) * 110 + 2}px` }} />
+                  <div className="absolute bottom-full left-1/2 z-10 mb-1 hidden -translate-x-1/2 whitespace-nowrap rounded bg-slate-900 px-2 py-1 text-[10px] text-white group-hover:block">
+                    {fmtDate(d.date)}: RevPAR {lkr(d.revpar)} · ADR {lkr(d.adr)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Card>
+        </>
+      ) : <Empty text="Loading…" />}
+    </div>
+  );
+}
+
+type ChannelMix = { from: string; to: string; by_channel: Record<string, { reservations: number; revenue: number }>; total_reservations: number };
+
+function ChannelMixTab() {
+  const [from, setFrom] = useState(todayStr(-29));
+  const [to, setTo] = useState(todayStr());
+  const { data } = useFetch<ChannelMix>(`/reports/channel-mix?from=${from}&to=${to}`, [from, to]);
+  const rows = Object.entries(data?.by_channel ?? {}).map(([code, v]) => ({ code, ...v }));
+
+  const exportCsv = () => downloadCsv(`channel-mix-${from}-to-${to}.csv`, [["Channel", "Reservations", "Revenue (LKR)"], ...rows.map((r) => [r.code, r.reservations, (r.revenue / 100).toFixed(2)])]);
+
+  return (
+    <div className="space-y-3">
+      <DateRangeBar from={from} to={to} onFrom={setFrom} onTo={setTo} maxTo={todayStr()} />
+      <Card title="Reservations & revenue by channel" actions={<button className="btn-ghost !py-1 text-xs" onClick={exportCsv}><Download size={13} /> CSV</button>}>
+        <SimpleTable
+          columns={[
+            { key: "code", label: "Channel" },
+            { key: "reservations", label: "Reservations", align: "right" },
+            { key: "revenue", label: "Revenue", align: "right", render: (r) => lkr(r.revenue) },
+          ]}
+          rows={rows}
+          rowKey={(r) => r.code}
+          empty="No reservations in this range"
+        />
+      </Card>
+    </div>
+  );
+}
+
+type Cancellations = {
+  from: string; to: string; cancelled_count: number; no_show_count: number; total_reservations: number; cancellation_rate_pct: number;
+  by_reason: Record<string, number>;
+  cancelled: { id: number; code: string; guest: string; channel: string | null; check_in: string; cancelled_at: string; reason: string | null }[];
+  no_shows: { id: number; code: string; guest: string; channel: string | null; check_in: string }[];
+};
+
+function CancellationsTab() {
+  const [from, setFrom] = useState(todayStr(-29));
+  const [to, setTo] = useState(todayStr());
+  const { data } = useFetch<Cancellations>(`/reports/cancellations?from=${from}&to=${to}`, [from, to]);
+
+  return (
+    <div className="space-y-3">
+      <DateRangeBar from={from} to={to} onFrom={setFrom} onTo={setTo} maxTo={todayStr()} />
+      {data ? (
+        <>
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <Stat label="Cancelled" value={data.cancelled_count} />
+            <Stat label="No-shows" value={data.no_show_count} />
+            <Stat label="Cancellation rate" value={`${data.cancellation_rate_pct}%`} />
+            <Stat label="Total reservations" value={data.total_reservations} />
+          </div>
+          <Card title="Cancelled reservations">
+            <SimpleTable
+              columns={[
+                { key: "code", label: "Code" }, { key: "guest", label: "Guest" },
+                { key: "check_in", label: "Check-in", render: (r) => fmtDate(r.check_in) },
+                { key: "reason", label: "Reason", render: (r) => r.reason ?? "Not specified" },
+              ]}
+              rows={data.cancelled}
+              rowKey={(r) => r.id}
+              empty="No cancellations in this range"
+            />
+          </Card>
+          <Card title="No-shows">
+            <SimpleTable
+              columns={[{ key: "code", label: "Code" }, { key: "guest", label: "Guest" }, { key: "check_in", label: "Check-in", render: (r) => fmtDate(r.check_in) }]}
+              rows={data.no_shows}
+              rowKey={(r) => r.id}
+              empty="No no-shows in this range"
+            />
+          </Card>
+        </>
+      ) : <Empty text="Loading…" />}
+    </div>
+  );
+}
+
+type GuestLoyalty = {
+  from: string; to: string;
+  top_guests: { guest_id: number; name: string; spend: number; stays: number }[];
+  distinct_guests: number; repeat_guests: number; repeat_rate_pct: number;
+  loyalty_points_issued: number; loyalty_points_redeemed: number;
+};
+
+function GuestLoyaltyTab() {
+  const [from, setFrom] = useState(todayStr(-29));
+  const [to, setTo] = useState(todayStr());
+  const { data } = useFetch<GuestLoyalty>(`/reports/guest-loyalty?from=${from}&to=${to}`, [from, to]);
+
+  return (
+    <div className="space-y-3">
+      <DateRangeBar from={from} to={to} onFrom={setFrom} onTo={setTo} maxTo={todayStr()} />
+      {data ? (
+        <>
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <Stat label="Guests who stayed" value={data.distinct_guests} />
+            <Stat label="Repeat rate" value={`${data.repeat_rate_pct}%`} sub={`${data.repeat_guests} repeat guests`} />
+            <Stat label="Loyalty points issued" value={data.loyalty_points_issued.toLocaleString()} />
+            <Stat label="Loyalty points redeemed" value={data.loyalty_points_redeemed.toLocaleString()} />
+          </div>
+          <Card title="Top guests by spend">
+            <SimpleTable
+              columns={[
+                { key: "name", label: "Guest" },
+                { key: "stays", label: "Stays", align: "right" },
+                { key: "spend", label: "Spend", align: "right", render: (r) => lkr(r.spend) },
+              ]}
+              rows={data.top_guests}
+              rowKey={(r) => r.guest_id}
+              empty="No spend in this range"
+            />
+          </Card>
+        </>
+      ) : <Empty text="Loading…" />}
+    </div>
+  );
+}
+
+type CorporateAr = {
+  accounts: { id: number; company_name: string; credit_limit: number; charged: number; paid: number; balance: number; credit_utilization_pct: number; aging_bucket: string; days_outstanding: number }[];
+  total_outstanding: number;
+  by_bucket: Record<string, number>;
+};
+
+function CorporateArTab() {
+  const { data } = useFetch<CorporateAr>(`/reports/corporate-ar`);
+
+  return (
+    <div className="space-y-3">
+      {data ? (
+        <>
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <Stat label="Total outstanding" value={lkr(data.total_outstanding)} color="brand" />
+            {Object.entries(data.by_bucket).filter(([b]) => b !== "current").map(([bucket, amt]) => (
+              <Stat key={bucket} label={`Aged ${bucket} days`} value={lkr(amt)} />
+            ))}
+          </div>
+          <Card title="Corporate accounts">
+            <SimpleTable
+              columns={[
+                { key: "company_name", label: "Company" },
+                { key: "balance", label: "Balance", align: "right", render: (r) => lkr(r.balance) },
+                { key: "credit_utilization_pct", label: "Credit used", align: "right", render: (r) => `${r.credit_utilization_pct}%` },
+                { key: "aging_bucket", label: "Aging", align: "center", render: (r) => <Badge color={r.aging_bucket === "current" ? "green" : r.aging_bucket === "90+" ? "red" : "amber"}>{r.aging_bucket}</Badge> },
+              ]}
+              rows={data.accounts}
+              rowKey={(r) => r.id}
+              empty="No active corporate accounts"
+            />
+          </Card>
+        </>
+      ) : <Empty text="Loading…" />}
+    </div>
+  );
+}
+
+type OpsSla = {
+  from: string; to: string;
+  housekeeping: { total: number; by_status: Record<string, number>; completed: number; avg_turnaround_minutes: number };
+  maintenance: { total: number; by_status: Record<string, number>; resolved: number; avg_resolution_hours: number };
+};
+
+function OpsSlaTab() {
+  const [from, setFrom] = useState(todayStr(-29));
+  const [to, setTo] = useState(todayStr());
+  const { data } = useFetch<OpsSla>(`/reports/ops-sla?from=${from}&to=${to}`, [from, to]);
+
+  return (
+    <div className="space-y-3">
+      <DateRangeBar from={from} to={to} onFrom={setFrom} onTo={setTo} maxTo={todayStr()} />
+      {data ? (
+        <div className="grid gap-4 lg:grid-cols-2">
+          <Card title="Housekeeping">
+            <div className="grid grid-cols-2 gap-3">
+              <Stat label="Tasks" value={data.housekeeping.total} />
+              <Stat label="Avg turnaround" value={`${data.housekeeping.avg_turnaround_minutes}m`} />
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {Object.entries(data.housekeeping.by_status).map(([code, count]) => (
+                <div key={code} className="rounded-lg bg-slate-50 p-3 text-center"><div className="text-xl font-extrabold">{count}</div><div className="text-xs text-slate-500">{code}</div></div>
+              ))}
+            </div>
+          </Card>
+          <Card title="Maintenance">
+            <div className="grid grid-cols-2 gap-3">
+              <Stat label="Issues" value={data.maintenance.total} />
+              <Stat label="Avg resolution" value={`${data.maintenance.avg_resolution_hours}h`} />
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {Object.entries(data.maintenance.by_status).map(([code, count]) => (
+                <div key={code} className="rounded-lg bg-slate-50 p-3 text-center"><div className="text-xl font-extrabold">{count}</div><div className="text-xs text-slate-500">{code}</div></div>
+              ))}
+            </div>
+          </Card>
+        </div>
+      ) : <Empty text="Loading…" />}
+    </div>
+  );
+}
+
+type PayrollCost = {
+  month: string; found: boolean; status?: string; staff_count?: number;
+  totals?: { base_salary: number; ot_pay: number; allowance: number; bonus: number; gross: number; epf_employee: number; epf_employer: number; etf: number; apit: number; net_pay: number; employer_cost: number };
+  by_staff?: { user: string; gross: number; net_pay: number; employer_cost: number }[];
+  trend: { month: string; employer_cost: number; net_pay: number }[];
+};
+
+function PayrollCostTab() {
+  const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
+  const { data } = useFetch<PayrollCost>(`/reports/payroll-cost?month=${month}`, [month]);
+  const max = Math.max(1, ...(data?.trend ?? []).map((t) => t.employer_cost));
+
+  return (
+    <div className="space-y-3">
+      <input type="month" className="input !w-44" value={month} onChange={(e) => setMonth(e.target.value)} />
+      {data?.found && data.totals && (
+        <>
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <Stat label="Staff" value={data.staff_count} />
+            <Stat label="Gross pay" value={lkr(data.totals.gross)} />
+            <Stat label="Net pay" value={lkr(data.totals.net_pay)} />
+            <Stat label="Employer cost" value={lkr(data.totals.employer_cost)} color="brand" />
+          </div>
+          <Card title="By staff">
+            <SimpleTable
+              columns={[
+                { key: "user", label: "Staff" },
+                { key: "gross", label: "Gross", align: "right", render: (r) => lkr(r.gross) },
+                { key: "net_pay", label: "Net", align: "right", render: (r) => lkr(r.net_pay) },
+                { key: "employer_cost", label: "Employer cost", align: "right", render: (r) => lkr(r.employer_cost) },
+              ]}
+              rows={data.by_staff ?? []}
+              rowKey={(r) => r.user}
+            />
+          </Card>
+        </>
+      )}
+      {data && !data.found && <Empty text={`No payroll run found for ${month}`} />}
+      {data && data.trend.length > 0 && (
+        <Card title="Employer cost trend">
+          <div className="flex h-32 items-end gap-1">
+            {data.trend.map((t) => (
+              <div key={t.month} className="group relative flex-1">
+                <div className="w-full rounded-t bg-brand-500" style={{ height: `${(t.employer_cost / max) * 110 + 2}px` }} />
+                <div className="absolute bottom-full left-1/2 z-10 mb-1 hidden -translate-x-1/2 whitespace-nowrap rounded bg-slate-900 px-2 py-1 text-[10px] text-white group-hover:block">{t.month}: {lkr(t.employer_cost)}</div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+      {!data && <Empty text="Loading…" />}
+    </div>
+  );
+}
+
+type Venues = {
+  from: string; to: string; total_bookings: number; total_hours: number; total_guest_count: number; revenue: number;
+  by_venue: Record<string, { bookings: number; hours: number }>;
+  by_status: Record<string, number>;
+};
+
+function VenuesTab() {
+  const [from, setFrom] = useState(todayStr(-29));
+  const [to, setTo] = useState(todayStr(30));
+  const { data } = useFetch<Venues>(`/reports/venues?from=${from}&to=${to}`, [from, to]);
+  const rows = Object.entries(data?.by_venue ?? {}).map(([name, v]) => ({ name, ...v }));
+
+  return (
+    <div className="space-y-3">
+      <DateRangeBar from={from} to={to} onFrom={setFrom} onTo={setTo} />
+      {data ? (
+        <>
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <Stat label="Bookings" value={data.total_bookings} />
+            <Stat label="Guest count" value={data.total_guest_count} />
+            <Stat label="Hours booked" value={data.total_hours} />
+            <Stat label="Revenue" value={lkr(data.revenue)} color="brand" />
+          </div>
+          <Card title="By venue">
+            <SimpleTable
+              columns={[{ key: "name", label: "Venue" }, { key: "bookings", label: "Bookings", align: "right" }, { key: "hours", label: "Hours", align: "right" }]}
+              rows={rows}
+              rowKey={(r) => r.name}
+              empty="No venue bookings in this range"
+            />
+          </Card>
+        </>
+      ) : <Empty text="Loading…" />}
+    </div>
+  );
+}
+
+type Laundry = { from: string; to: string; total_revenue: number; total_items: number; by_item: Record<string, { qty: number; amount: number }> };
+
+function LaundryTab() {
+  const [from, setFrom] = useState(todayStr(-29));
+  const [to, setTo] = useState(todayStr());
+  const { data } = useFetch<Laundry>(`/reports/laundry?from=${from}&to=${to}`, [from, to]);
+  const rows = Object.entries(data?.by_item ?? {}).map(([name, v]) => ({ name, ...v }));
+
+  return (
+    <div className="space-y-3">
+      <DateRangeBar from={from} to={to} onFrom={setFrom} onTo={setTo} maxTo={todayStr()} />
+      {data ? (
+        <>
+          <div className="grid grid-cols-2 gap-3">
+            <Stat label="Revenue" value={lkr(data.total_revenue)} color="brand" />
+            <Stat label="Items processed" value={data.total_items} />
+          </div>
+          <Card title="By item">
+            <SimpleTable
+              columns={[{ key: "name", label: "Item" }, { key: "qty", label: "Qty", align: "right" }, { key: "amount", label: "Revenue", align: "right", render: (r) => lkr(r.amount) }]}
+              rows={rows}
+              rowKey={(r) => r.name}
+              empty="No laundry charges in this range"
+            />
+          </Card>
+        </>
+      ) : <Empty text="Loading…" />}
     </div>
   );
 }

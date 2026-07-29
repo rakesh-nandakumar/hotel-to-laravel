@@ -4,11 +4,11 @@ namespace App\Http\Requests\Hotel;
 
 use Illuminate\Foundation\Http\FormRequest;
 
-class OpenShiftRequest extends FormRequest
+class UpdateQrOrderingPointRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return $this->user()?->hasPermissionTo('hotel_shifts.open') ?? false;
+        return $this->user()?->hasPermissionTo('hotel_qr_ordering.edit') ?? false;
     }
 
     /**
@@ -17,7 +17,7 @@ class OpenShiftRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'opening_cash' => ['required', 'integer', 'min:0'],
+            'enabled' => ['required', 'boolean'],
         ];
     }
 }

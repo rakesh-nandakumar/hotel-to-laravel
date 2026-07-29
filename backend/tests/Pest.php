@@ -1,7 +1,12 @@
 <?php
 
+use App\Models\Branch;
 use App\Models\Role;
+use App\Models\Till;
+use App\Models\TillSession;
 use App\Models\User;
+use App\Services\TillService;
+use Database\Seeders\Menu\SystemRoleDefinition;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -65,7 +70,7 @@ function fullAdmin(): User
 }
 
 /**
- * A staff user holding one of the real seeded {@see \Database\Seeders\Menu\SystemRoleDefinition}
+ * A staff user holding one of the real seeded {@see SystemRoleDefinition}
  * roles (e.g. "Manager", "Housekeeper"). Requires MenuSeeder + PermissionsAndRolesSeeder
  * to have been seeded first. Use to test real per-role permission grants, as opposed to
  * fullAdmin() which bypasses every check.
@@ -78,4 +83,21 @@ function staffWithRole(string $roleName): User
     $user->flushPermissionCache();
 
     return $user;
+}
+
+/**
+ * Opens a till session for the given staff member — every cash payment or
+ * refund now requires one (see BillingService/ApartmentBillingService's
+ * till guard). Auto-creates a Branch + Till if the test hasn't seeded one,
+ * so callers that don't otherwise care about branches/tills can ignore this.
+ */
+function openTillFor(User $staff, int $openingBalance = 100_000_000): TillSession
+{
+    $tillId = Till::query()->value('id');
+    if (! $tillId) {
+        $branchId = Branch::query()->value('id') ?? Branch::create(['name' => 'Main Branch', 'is_active' => true, 'country' => 'Sri Lanka'])->id;
+        $tillId = Till::create(['branch_id' => $branchId, 'name' => 'Main Till'])->id;
+    }
+
+    return app(TillService::class)->openTill($tillId, $staff->id, $openingBalance);
 }

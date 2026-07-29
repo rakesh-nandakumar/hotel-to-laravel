@@ -17,6 +17,7 @@ type KotOrder = {
   dining_table?: { table_no: string } | null;
   reservation?: { guest: { name: string } } | null;
   customer_name?: string;
+  placed_via_qr?: boolean;
   items: { id: number; name: string; qty: number; notes?: string; voided: boolean; menu_item?: { category?: { kitchen_station?: { code: string; name: string } | null } | null } | null }[];
 };
 type RecentOrder = {
@@ -359,6 +360,11 @@ export default function KOT() {
                         {o.type.code === "delivery" && (
                           <span className="ml-auto flex shrink-0 items-center gap-1 rounded-full bg-purple-500/20 px-2 py-0.5 text-[10px] font-black uppercase text-purple-500">
                             Delivery
+                          </span>
+                        )}
+                        {o.placed_via_qr && (
+                          <span className="ml-auto flex shrink-0 items-center gap-1 rounded-full bg-brand-500/20 px-2 py-0.5 text-[10px] font-black uppercase text-brand-500">
+                            Self-order
                           </span>
                         )}
                       </div>

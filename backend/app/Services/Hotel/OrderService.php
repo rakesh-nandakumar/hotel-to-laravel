@@ -50,7 +50,7 @@ class OrderService
     /**
      * @param  array<string, mixed>  $data
      */
-    public function create(array $data, int $staffId): Order
+    public function create(array $data, ?int $staffId): Order
     {
         if (! empty($data['client_key'])) {
             $existing = Order::query()->where('client_key', $data['client_key'])->first();
@@ -106,6 +106,8 @@ class OrderService
                         : null,
                     'reservation_id' => $reservationId,
                     'customer_name' => $data['customer_name'] ?? null,
+                    'customer_phone' => $data['customer_phone'] ?? null,
+                    'placed_via_qr' => $data['placed_via_qr'] ?? false,
                     'notes' => $data['notes'] ?? null,
                     'staff_id' => $staffId,
                     'discount' => 0,
@@ -142,7 +144,7 @@ class OrderService
     /**
      * @param  list<array{menu_item_id: int, qty: int, notes?: string}>  $items
      */
-    public function addItems(Order $order, array $items, int $staffId): Order
+    public function addItems(Order $order, array $items, ?int $staffId): Order
     {
         $order->loadMissing('status');
         if (! in_array($order->status->code, [OrderStatus::OPEN, OrderStatus::PARKED], true)) {
@@ -226,7 +228,17 @@ class OrderService
 
     public function updateKotStatus(Order $order, string $status): Order
     {
-        $order->update(['kot_status_id' => Lookup::id(LookupType::KOT_STATUS, $status)]);
+        // Stamped once, the first time each stage is reached — never overwritten
+        // on later re-visits — so the Kitchen Ticket Time report measures real
+        // prep duration even if a ticket bounces between statuses.
+        $timestamps = match ($status) {
+            KotStatus::PREPARING => ['kot_started_at' => $order->kot_started_at ?? now()],
+            KotStatus::READY => ['kot_ready_at' => $order->kot_ready_at ?? now()],
+            KotStatus::SERVED => ['served_at' => $order->served_at ?? now()],
+            default => [],
+        };
+
+        $order->update(['kot_status_id' => Lookup::id(LookupType::KOT_STATUS, $status), ...$timestamps]);
         $order->loadMissing('kotStatus');
 
         broadcast(new RealtimeUpdate(RealtimeEvent::KOT, [
@@ -432,7 +444,16 @@ class OrderService
             throw ValidationException::withMessages(['order' => 'Not a delivery order.']);
         }
 
-        $order->update(['delivery_status_id' => Lookup::id(LookupType::DELIVERY_STATUS, $status)]);
+        // Stamped once, first time reached — same idempotent approach as the KOT
+        // timestamps above — so the Delivery Performance report measures real
+        // fulfillment duration even if a status gets corrected/re-applied.
+        $timestamps = match ($status) {
+            DeliveryStatus::OUT_FOR_DELIVERY => ['dispatched_at' => $order->dispatched_at ?? now()],
+            DeliveryStatus::DELIVERED => ['delivered_at' => $order->delivered_at ?? now()],
+            default => [],
+        };
+
+        $order->update(['delivery_status_id' => Lookup::id(LookupType::DELIVERY_STATUS, $status), ...$timestamps]);
 
         AuditLog::record('order.delivery_status_changed', $order, ['status' => $status]);
         broadcast(new RealtimeUpdate(RealtimeEvent::ORDERS, ['order_id' => $order->id]));

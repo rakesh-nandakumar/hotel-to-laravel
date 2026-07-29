@@ -58,8 +58,12 @@ class SettingsSeeder extends Seeder
             ['key' => 'billing.late_checkout_surcharge', 'value' => 0, 'type' => SettingType::MONEY, 'category' => 'billing', 'label' => 'Late Check-out Surcharge (LKR cents)'],
             ['key' => 'billing.vat_pct', 'value' => 0, 'type' => SettingType::PERCENT, 'category' => 'billing', 'label' => 'VAT %'],
             ['key' => 'billing.service_charge_pct', 'value' => 0, 'type' => SettingType::PERCENT, 'category' => 'billing', 'label' => 'Service Charge %', 'hint' => 'Waived on takeaway POS orders.'],
-            ['key' => 'billing.room_deposit_pct', 'value' => 20, 'type' => SettingType::PERCENT, 'category' => 'billing', 'label' => 'Room Booking Deposit %'],
-            ['key' => 'billing.venue_deposit_pct', 'value' => 25, 'type' => SettingType::PERCENT, 'category' => 'billing', 'label' => 'Venue Booking Deposit %'],
+            ['key' => 'billing.room_deposit_mode', 'value' => 'percentage', 'type' => SettingType::TEXT, 'category' => 'billing', 'label' => 'Room Booking Deposit Mode', 'hint' => '"percentage" or "fixed".'],
+            ['key' => 'billing.room_deposit_pct', 'value' => 20, 'type' => SettingType::PERCENT, 'category' => 'billing', 'label' => 'Room Booking Deposit %', 'hint' => 'Used when the deposit mode is "percentage".'],
+            ['key' => 'billing.room_deposit_fixed', 'value' => 0, 'type' => SettingType::MONEY, 'category' => 'billing', 'label' => 'Room Booking Deposit — Fixed Amount (LKR cents)', 'hint' => 'Used when the deposit mode is "fixed"; capped to the stay total.'],
+            ['key' => 'billing.venue_deposit_mode', 'value' => 'percentage', 'type' => SettingType::TEXT, 'category' => 'billing', 'label' => 'Venue Booking Deposit Mode', 'hint' => '"percentage" or "fixed".'],
+            ['key' => 'billing.venue_deposit_pct', 'value' => 25, 'type' => SettingType::PERCENT, 'category' => 'billing', 'label' => 'Venue Booking Deposit %', 'hint' => 'Used when the deposit mode is "percentage".'],
+            ['key' => 'billing.venue_deposit_fixed', 'value' => 0, 'type' => SettingType::MONEY, 'category' => 'billing', 'label' => 'Venue Booking Deposit — Fixed Amount (LKR cents)', 'hint' => 'Used when the deposit mode is "fixed"; capped to the rental total.'],
 
             // ── Currency ─────────────────────────────────────────────────────
             ['key' => 'currency.usd_rate', 'value' => 300, 'type' => SettingType::NUMBER, 'category' => 'currency', 'label' => 'LKR per 1 USD (display only)'],
@@ -106,11 +110,24 @@ class SettingsSeeder extends Seeder
                 ['width' => null, 'rate' => 36],
             ], 'type' => SettingType::JSON, 'category' => 'payroll', 'label' => 'APIT Tax Brackets', 'hint' => 'Sri Lanka monthly APIT bands (Y/A 2025/2026): each band\'s "width" is LKR cents taxed at "rate" %, consumed in order; the last band (width=null) is unbounded. Derived from the Rs. 1,800,000/yr personal relief + progressive schedule, so widths are precise twelfths rather than the IRD\'s rounded monthly display figures.'],
 
+            // ── QR ordering (guest self-order after scanning a room/table QR) ──
+            ['key' => 'qr_ordering.enabled', 'value' => true, 'type' => SettingType::BOOLEAN, 'category' => 'qr_ordering', 'label' => 'Enable QR Ordering', 'hint' => 'Master switch — turns off ordering on every room/table QR link at once.'],
+            ['key' => 'qr_ordering.welcome_message', 'value' => 'Scan. Browse. Order.', 'type' => SettingType::TEXT, 'category' => 'qr_ordering', 'label' => 'Welcome Message', 'hint' => 'Headline shown at the top of the guest ordering page.'],
+            ['key' => 'qr_ordering.accent_color', 'value' => '#0462d3', 'type' => SettingType::COLOR, 'category' => 'qr_ordering', 'label' => 'Accent Color', 'hint' => 'Buttons and highlights on the guest ordering page.'],
+            ['key' => 'qr_ordering.banner_image', 'value' => '', 'type' => SettingType::IMAGE, 'category' => 'qr_ordering', 'label' => 'Banner Image', 'hint' => 'Optional hero image shown at the top of the guest menu.'],
+            ['key' => 'qr_ordering.show_item_images', 'value' => true, 'type' => SettingType::BOOLEAN, 'category' => 'qr_ordering', 'label' => 'Show Item Photos'],
+            ['key' => 'qr_ordering.show_descriptions', 'value' => true, 'type' => SettingType::BOOLEAN, 'category' => 'qr_ordering', 'label' => 'Show Item Descriptions'],
+            ['key' => 'qr_ordering.collect_customer_name', 'value' => true, 'type' => SettingType::BOOLEAN, 'category' => 'qr_ordering', 'label' => 'Ask Table Guests for Their Name', 'hint' => 'Room orders already know the guest from the reservation — this only affects restaurant table orders.'],
+            ['key' => 'qr_ordering.collect_customer_phone', 'value' => false, 'type' => SettingType::BOOLEAN, 'category' => 'qr_ordering', 'label' => 'Ask Table Guests for Phone Number'],
+            ['key' => 'qr_ordering.footer_note', 'value' => 'Prices are inclusive of applicable taxes.', 'type' => SettingType::TEXT, 'category' => 'qr_ordering', 'label' => 'Footer Note'],
+
             // ── Inventory ────────────────────────────────────────────────────
             ['key' => 'inventory.expiry_warn_days', 'value' => 3, 'type' => SettingType::NUMBER, 'category' => 'inventory', 'label' => 'Expiry Warning Window (days)'],
 
             // ── Apartments ───────────────────────────────────────────────────
-            ['key' => 'apartment.deposit_pct', 'value' => 20, 'type' => SettingType::PERCENT, 'category' => 'apartments', 'label' => 'Booking Deposit %'],
+            ['key' => 'apartment.deposit_mode', 'value' => 'percentage', 'type' => SettingType::TEXT, 'category' => 'apartments', 'label' => 'Booking Deposit Mode', 'hint' => '"percentage" or "fixed".'],
+            ['key' => 'apartment.deposit_pct', 'value' => 20, 'type' => SettingType::PERCENT, 'category' => 'apartments', 'label' => 'Booking Deposit %', 'hint' => 'Used when the deposit mode is "percentage".'],
+            ['key' => 'apartment.deposit_fixed', 'value' => 0, 'type' => SettingType::MONEY, 'category' => 'apartments', 'label' => 'Booking Deposit — Fixed Amount (LKR cents)', 'hint' => 'Used when the deposit mode is "fixed"; capped to the stay total.'],
             ['key' => 'apartment.vat_pct', 'value' => 0, 'type' => SettingType::PERCENT, 'category' => 'apartments', 'label' => 'VAT %'],
             ['key' => 'apartment.service_charge_pct', 'value' => 0, 'type' => SettingType::PERCENT, 'category' => 'apartments', 'label' => 'Service Charge %'],
             ['key' => 'apartment.late_checkout_surcharge', 'value' => 0, 'type' => SettingType::MONEY, 'category' => 'apartments', 'label' => 'Late Check-out Surcharge (LKR cents)'],

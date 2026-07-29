@@ -110,6 +110,7 @@ it('refuses to complete a sale before it is paid in full, then completes and mar
 
 it('forfeits the deposit on cancellation per policy and frees the unit', function () {
     $manager = staffWithRole('Manager');
+    openTillFor($manager);
     $unit = makeSaleUnit();
 
     $sale = $this->actingAs($manager)->postJson('/api/apartments/sales', [

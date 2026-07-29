@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { post } from "../lib/api";
 import { useBranding } from "../lib/branding";
+import { BrandLogo } from "../components/BrandLogo";
 import { ErrorText, Field } from "../components/ui";
 
 /** Public online pre-check-in — guest submits details before arrival (§4.1). */
@@ -31,8 +32,8 @@ export default function PreCheckIn() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-brand-900 p-4">
       <div className="card w-full max-w-lg p-6">
-        <div className="mb-1 flex items-center gap-3">
-          {branding.logo && <img src={branding.logo} alt="" className="h-10 w-10 shrink-0 rounded-lg object-contain" />}
+        <div className="mb-2 flex items-center gap-3">
+          <BrandLogo logo={branding.logo} name={branding.name} size="lg" />
           <h1 className="text-xl font-black">{branding.name}</h1>
         </div>
         <p className="mb-4 text-sm text-slate-500">Online pre-check-in — save time at the front desk. Check-in from {branding.check_in_time}.</p>

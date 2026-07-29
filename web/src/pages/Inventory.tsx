@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Plus, TriangleAlert, CalendarClock, Trash2, Search, Package, ChevronDown, ArrowDownToLine, ArrowUpFromLine } from "lucide-react";
-import { api, post } from "../lib/api";
-import { useFetch, fmtDate } from "../lib/util";
+import { api, post, put } from "../lib/api";
+import { useFetch, fmtDate, lkr, toCents, centsToRupees } from "../lib/util";
 import { Badge, Card, Empty, ErrorText, Field, Modal, Pagination } from "../components/ui";
 import { ReasonModal } from "./POS";
 import { useAuth } from "../lib/auth";
@@ -9,7 +9,7 @@ import clsx from "clsx";
 
 type Batch = { id: number; qty: number; initial_qty: number; expiry_date: string; received_at: string; note?: string | null };
 type Ingredient = {
-  id: number; name: string; unit: string; stock_qty: number; low_stock_threshold: number; low: boolean;
+  id: number; name: string; unit: string; stock_qty: number; low_stock_threshold: number; low: boolean; unit_cost: number | null;
   next_expiry?: string | null; has_expired: boolean; used_in: string[]; batches: Batch[];
 };
 type ExpiryBatch = Batch & { days_left: number; expired: boolean; ingredient: { name: string; unit: string } };
@@ -23,6 +23,7 @@ export default function Inventory() {
   const canCreate = can("hotel_ingredients.create");
   const canAdjust = can("hotel_ingredients.adjust_stock");
   const canWriteOff = can("hotel_ingredients.write_off");
+  const canEdit = can("hotel_ingredients.edit");
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<Filter>("ALL");
   const [page, setPage] = useState(1);
@@ -197,7 +198,7 @@ export default function Inventory() {
         {data && <Pagination page={data.page} pageSize={data.page_size} total={data.total} onPage={setPage} onPageSize={(n) => { setPageSize(n); setPage(1); }} />}
       </div>
 
-      {adjusting && <AdjustModal ing={adjusting} canAdjust={canAdjust} canDelete={canDelete} onClose={() => { setAdjusting(null); refresh(); }} />}
+      {adjusting && <AdjustModal ing={adjusting} canAdjust={canAdjust} canDelete={canDelete} canEdit={canEdit} onClose={() => { setAdjusting(null); refresh(); }} />}
       {openNew && <NewIngredient onClose={() => { setOpenNew(false); refresh(); }} />}
       {writingOff && (
         <ReasonModal
@@ -221,7 +222,7 @@ export default function Inventory() {
 }
 
 // ── Adjust modal: receive / write-down / remove ───────────────────────────────
-function AdjustModal({ ing, canAdjust, canDelete, onClose }: { ing: Ingredient; canAdjust: boolean; canDelete: boolean; onClose: () => void }) {
+function AdjustModal({ ing, canAdjust, canDelete, canEdit, onClose }: { ing: Ingredient; canAdjust: boolean; canDelete: boolean; canEdit: boolean; onClose: () => void }) {
   const [mode, setMode] = useState<"IN" | "OUT">("IN");
   const [amount, setAmount] = useState("");
   const [reason, setReason] = useState("");
@@ -230,6 +231,16 @@ function AdjustModal({ ing, canAdjust, canDelete, onClose }: { ing: Ingredient; 
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [busy, setBusy] = useState(false);
   const n = parseFloat(amount) || 0;
+
+  const [unitCost, setUnitCost] = useState(ing.unit_cost !== null ? centsToRupees(ing.unit_cost) : "");
+  const [costSaved, setCostSaved] = useState(false);
+  const saveUnitCost = () =>
+    put(`/ingredients/${ing.id}`, { unit_cost: unitCost.trim() === "" ? null : toCents(unitCost) })
+      .then(() => {
+        setCostSaved(true);
+        setTimeout(() => setCostSaved(false), 1500);
+      })
+      .catch((e) => setError((e as Error).message));
 
   const apply = async () => {
     setBusy(true);
@@ -292,6 +303,19 @@ function AdjustModal({ ing, canAdjust, canDelete, onClose }: { ing: Ingredient; 
         </button>
       </div>
       </>)}
+
+      {canEdit && (
+        <div className={clsx("rounded-xl border border-slate-100 p-3", canAdjust && "mt-5")}>
+          <div className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-400">Costing (for the Food Cost % report)</div>
+          <div className="flex items-end gap-2">
+            <Field label={`Cost per ${ing.unit} (LKR)`} hint="Leave blank if unknown — priced items just show — on the report.">
+              <input className="input" inputMode="decimal" value={unitCost} onChange={(e) => setUnitCost(e.target.value)} placeholder="e.g. 45.00" />
+            </Field>
+            <button className="btn-secondary !py-2.5" onClick={saveUnitCost}>{costSaved ? "Saved ✓" : "Save"}</button>
+          </div>
+          {ing.unit_cost !== null && <p className="mt-1 text-[11px] text-slate-400">Currently {lkr(ing.unit_cost)} / {ing.unit}</p>}
+        </div>
+      )}
 
       {canDelete && (
         <div className="mt-5 rounded-xl border border-red-100 bg-red-50/50 p-3">

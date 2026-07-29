@@ -5,13 +5,15 @@ namespace App\Services\Hotel;
 use App\Models\Hotel\Folio;
 use App\Models\Hotel\Guest;
 use App\Models\Hotel\Payment;
-use App\Models\Hotel\Shift;
 use App\Models\Lookup;
 use App\Services\AuditLog;
 use App\Services\Settings;
+use App\Services\TillService;
 use App\Support\Lookups\LookupType;
 use App\Support\Lookups\PaymentKind;
 use App\Support\Lookups\PaymentMethod;
+use App\Support\Lookups\TillMovementType;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -24,6 +26,8 @@ use Illuminate\Validation\ValidationException;
  */
 class BillingService
 {
+    public function __construct(private readonly TillService $till) {}
+
     /**
      * @return array{total: int, paid: int, refunded: int, balance: int}
      */
@@ -128,21 +132,41 @@ class BillingService
             $this->redeemLoyalty($opts);
         }
 
-        $openShift = Shift::query()->where('staff_id', $opts['staff_id'])->open()->first();
+        // Cash can't move without a till open to record it in — checked before any
+        // write so a blocked cash payment never leaves a dangling Payment row.
+        $tillSession = $this->till->currentSessionForStaff($opts['staff_id']);
+        if ($opts['method'] === PaymentMethod::CASH && ! $tillSession) {
+            throw ValidationException::withMessages(['method' => 'Open a till before accepting or refunding cash.']);
+        }
 
-        $payment = Payment::create([
-            'folio_id' => $opts['folio_id'] ?? null,
-            'order_id' => $opts['order_id'] ?? null,
-            'corporate_account_id' => $opts['corporate_account_id'] ?? null,
-            'payment_method_id' => Lookup::id(LookupType::PAYMENT_METHOD, $opts['method']),
-            'payment_kind_id' => Lookup::id(LookupType::PAYMENT_KIND, $kind),
-            'amount' => $opts['amount'],
-            'reference' => $opts['reference'] ?? null,
-            'reason' => $opts['reason'] ?? null,
-            'staff_id' => $opts['staff_id'],
-            'shift_id' => $openShift?->id,
-            'idempotency_key' => $opts['idempotency_key'] ?? null,
-        ]);
+        $payment = DB::transaction(function () use ($opts, $kind, $tillSession) {
+            $payment = Payment::create([
+                'folio_id' => $opts['folio_id'] ?? null,
+                'order_id' => $opts['order_id'] ?? null,
+                'corporate_account_id' => $opts['corporate_account_id'] ?? null,
+                'payment_method_id' => Lookup::id(LookupType::PAYMENT_METHOD, $opts['method']),
+                'payment_kind_id' => Lookup::id(LookupType::PAYMENT_KIND, $kind),
+                'amount' => $opts['amount'],
+                'reference' => $opts['reference'] ?? null,
+                'reason' => $opts['reason'] ?? null,
+                'staff_id' => $opts['staff_id'],
+                'till_session_id' => $tillSession?->id,
+                'idempotency_key' => $opts['idempotency_key'] ?? null,
+            ]);
+
+            if ($opts['method'] === PaymentMethod::CASH) {
+                $this->till->recordMovement(
+                    $tillSession,
+                    $kind === PaymentKind::REFUND ? TillMovementType::REFUND : TillMovementType::CASH_IN,
+                    $opts['amount'],
+                    $opts['staff_id'],
+                    reason: $kind === PaymentKind::REFUND ? ($opts['reason'] ?? null) : null,
+                    source: $payment,
+                );
+            }
+
+            return $payment;
+        });
 
         AuditLog::record(
             $kind === PaymentKind::REFUND ? 'payment.refunded' : 'payment.recorded',

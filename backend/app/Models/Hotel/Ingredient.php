@@ -16,6 +16,7 @@ class Ingredient extends Model
         'unit',
         'stock_qty',
         'low_stock_threshold',
+        'unit_cost',
         'created_by',
         'updated_by',
     ];
@@ -25,6 +26,7 @@ class Ingredient extends Model
         return [
             'stock_qty' => 'float',
             'low_stock_threshold' => 'float',
+            'unit_cost' => 'integer',
         ];
     }
 

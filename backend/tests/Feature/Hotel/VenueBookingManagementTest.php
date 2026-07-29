@@ -78,6 +78,7 @@ it('blocks confirming a second booking on a date already confirmed for that venu
 
 it('completes a booking once the folio balance is zero, assigning a VNU invoice number', function () {
     $manager = staffWithRole('Manager');
+    openTillFor($manager);
     $venue = testVenue();
 
     $created = $this->actingAs($manager)->postJson('/api/venues/bookings', [
@@ -99,6 +100,7 @@ it('completes a booking once the folio balance is zero, assigning a VNU invoice 
 
 it('cancels a booking more than 7 days out with a full refund, and within the window with none', function () {
     $manager = staffWithRole('Manager');
+    openTillFor($manager);
     $venue = testVenue();
 
     $farOut = $this->actingAs($manager)->postJson('/api/venues/bookings', [

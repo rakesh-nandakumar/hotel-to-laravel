@@ -65,8 +65,7 @@ class VenueBookingService
         };
         $extras = $data['extras'] ?? [];
         $extrasTotal = (int) collect($extras)->sum('amount');
-        $depositPct = Settings::num('billing.venue_deposit_pct', 25);
-        $depositDue = (int) round(($rental + $extrasTotal) * $depositPct / 100);
+        $depositDue = Settings::depositAmount($rental + $extrasTotal, 'billing.venue_deposit_mode', 'billing.venue_deposit_pct', 'billing.venue_deposit_fixed', 25);
 
         $booking = DB::transaction(function () use ($data, $venue, $confirm, $rental, $extras, $depositDue, $staffId) {
             $booking = VenueBooking::create([

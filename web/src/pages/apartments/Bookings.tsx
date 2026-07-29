@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Plus, Search } from "lucide-react";
 import { post } from "../../lib/api";
-import { useFetch, usePagedFetch, lkr, todayStr, fmtDate, toCents, useSettings } from "../../lib/util";
+import { useFetch, usePagedFetch, lkr, todayStr, fmtDate, toCents, useSettings, depositAmount } from "../../lib/util";
 import { Badge, Empty, ErrorText, Field, Modal, Pagination, statusColor } from "../../components/ui";
 import { useToast } from "../../lib/toast";
 import { useAuth } from "../../lib/auth";
@@ -103,7 +103,7 @@ function NewBooking({ onClose, onCreated }: { onClose: () => void; onCreated: (i
   const [checkOut, setCheckOut] = useState(todayStr(2));
   const { data: availResp, loading } = useFetch<{ units: AvailUnit[] }>(`/apartments/bookings/availability?check_in=${checkIn}&check_out=${checkOut}`, [checkIn, checkOut]);
   const avail = availResp?.units;
-  const { num } = useSettings();
+  const { num, str } = useSettings();
   const toast = useToast();
 
   const [unitId, setUnitId] = useState<number | null>(null);
@@ -119,8 +119,10 @@ function NewBooking({ onClose, onCreated }: { onClose: () => void; onCreated: (i
   const [busy, setBusy] = useState(false);
 
   const chosen = (avail ?? []).find((u) => u.id === unitId) ?? null;
+  const depositMode = str("apartment.deposit_mode", "percentage");
   const depositPct = num("apartment.deposit_pct", 20);
-  const suggestedDeposit = chosen ? Math.round((chosen.stay_total * depositPct) / 100) : 0;
+  const depositFixed = num("apartment.deposit_fixed", 0);
+  const suggestedDeposit = chosen ? depositAmount(chosen.stay_total, depositMode, depositPct, depositFixed) : 0;
 
   const create = async () => {
     setError("");
@@ -223,7 +225,9 @@ function NewBooking({ onClose, onCreated }: { onClose: () => void; onCreated: (i
             <span className="font-semibold">Estimated stay total</span>
             <span className="text-lg font-extrabold text-brand-700">{lkr(chosen.stay_total)}</span>
           </div>
-          <div className="mt-1 text-xs text-slate-500">Deposit ({depositPct}%): <b>{lkr(suggestedDeposit)}</b></div>
+          <div className="mt-1 text-xs text-slate-500">
+            Deposit ({depositMode === "fixed" ? "fixed" : `${depositPct}%`}): <b>{lkr(suggestedDeposit)}</b>
+          </div>
           <label className="mt-2 flex items-center gap-2 text-sm font-semibold">
             <input type="checkbox" checked={deposit.take} onChange={(e) => setDeposit({ ...deposit, take: e.target.checked, amount: deposit.amount || (suggestedDeposit / 100).toFixed(2) })} />
             Take deposit now

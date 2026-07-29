@@ -17,15 +17,22 @@ class Order extends Model
         'dining_mode_id',
         'order_status_id',
         'kot_status_id',
+        'kot_started_at',
+        'kot_ready_at',
+        'served_at',
         'room_id',
         'dining_table_id',
         'delivery_address',
         'delivery_phone',
         'delivery_rider_id',
         'delivery_status_id',
+        'dispatched_at',
+        'delivered_at',
         'parent_order_id',
         'reservation_id',
         'customer_name',
+        'customer_phone',
+        'placed_via_qr',
         'notes',
         'subtotal',
         'discount',
@@ -42,12 +49,18 @@ class Order extends Model
     protected function casts(): array
     {
         return [
+            'placed_via_qr' => 'boolean',
             'subtotal' => 'integer',
             'discount' => 'integer',
             'service_charge' => 'integer',
             'vat' => 'integer',
             'total' => 'integer',
             'settled_at' => 'datetime',
+            'kot_started_at' => 'datetime',
+            'kot_ready_at' => 'datetime',
+            'served_at' => 'datetime',
+            'dispatched_at' => 'datetime',
+            'delivered_at' => 'datetime',
         ];
     }
 

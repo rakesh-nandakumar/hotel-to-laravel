@@ -56,6 +56,21 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | SPA Frontend URL
+    |--------------------------------------------------------------------------
+    |
+    | The origin the React SPA is served from. config/cors.php reads this same
+    | FRONTEND_URL env var directly (comma-separated list allowed there); this
+    | entry exposes the first origin through config() for app code that needs
+    | to build an absolute guest-facing link (e.g. QR ordering), since env()
+    | must never be called outside of config files.
+    |
+    */
+
+    'frontend_url' => explode(',', (string) env('FRONTEND_URL', 'http://localhost:5173'))[0],
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Timezone
     |--------------------------------------------------------------------------
     |

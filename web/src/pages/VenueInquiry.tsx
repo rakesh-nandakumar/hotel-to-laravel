@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, post } from "../lib/api";
 import { useBranding } from "../lib/branding";
+import { BrandLogo } from "../components/BrandLogo";
 import { ErrorText, Field } from "../components/ui";
 import { lkr, todayStr } from "../lib/util";
 
@@ -51,7 +52,10 @@ export default function VenueInquiry() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-brand-900 p-4">
       <div className="card w-full max-w-lg p-6">
-        <h1 className="text-xl font-black">{branding.name} — Events</h1>
+        <div className="mb-2 flex items-center gap-3">
+          <BrandLogo logo={branding.logo} name={branding.name} size="lg" />
+          <h1 className="text-xl font-black">{branding.name} — Events</h1>
+        </div>
         <p className="mb-4 text-sm text-slate-500">Wedding halls & rooftop venue inquiry. Venue rental is separate from catering — you're welcome to bring your own chefs.</p>
         {ref ? (
           <div className="rounded-xl bg-emerald-50 p-6 text-center">

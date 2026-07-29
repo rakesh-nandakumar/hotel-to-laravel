@@ -14,6 +14,8 @@ import Rooms from "./pages/Rooms";
 import POS from "./pages/POS";
 import KOT from "./pages/KOT";
 import Tables from "./pages/Tables";
+import QrOrdering from "./pages/QrOrdering";
+import QrOrder from "./pages/QrOrder";
 import MenuAdmin from "./pages/MenuAdmin";
 import Inventory from "./pages/Inventory";
 import Venues from "./pages/Venues";
@@ -22,10 +24,11 @@ import Laundry from "./pages/Laundry";
 import Maintenance from "./pages/Maintenance";
 import Guests from "./pages/Guests";
 import Corporate from "./pages/Corporate";
-import Shifts from "./pages/Shifts";
+import Till from "./pages/Till";
 import Attendance from "./pages/Attendance";
 import Visitors from "./pages/Visitors";
 import Reports from "./pages/Reports";
+import RestaurantReports from "./pages/RestaurantReports";
 import Notifications from "./pages/Notifications";
 import Staff from "./pages/Staff";
 import UserDetail from "./pages/UserDetail";
@@ -78,6 +81,7 @@ export default function App() {
           {/* Public guest-facing pages (no login) */}
           <Route path="/pre-checkin" element={<PreCheckIn />} />
           <Route path="/venue-inquiry" element={<VenueInquiry />} />
+          <Route path="/order/:token" element={<QrOrder />} />
 
           <Route path="/" element={<Guard permission="dashboard.access"><Dashboard /></Guard>} />
           <Route path="/reservations" element={<Guard permission="hotel_reservations.access"><Reservations /></Guard>} />
@@ -87,6 +91,7 @@ export default function App() {
           <Route path="/pos" element={<Guard permission="hotel_orders.access"><POS /></Guard>} />
           <Route path="/kot" element={<Guard permission="hotel_orders.access"><KOT /></Guard>} />
           <Route path="/tables" element={<Guard permission="hotel_dining_tables.access"><Tables /></Guard>} />
+          <Route path="/qr-ordering" element={<Guard permission="hotel_qr_ordering.access"><QrOrdering /></Guard>} />
           <Route path="/menu" element={<Guard permission="hotel_menu_items.access"><MenuAdmin /></Guard>} />
           <Route path="/inventory" element={<Guard permission="hotel_ingredients.access"><Inventory /></Guard>} />
           <Route path="/venues" element={<Guard permission="hotel_venues.access"><Venues /></Guard>} />
@@ -95,10 +100,13 @@ export default function App() {
           <Route path="/maintenance" element={<Guard permission="hotel_maintenance.access"><Maintenance /></Guard>} />
           <Route path="/guests" element={<Guard permission="hotel_guests.access"><Guests /></Guard>} />
           <Route path="/corporate" element={<Guard permission="hotel_corporate.access"><Corporate /></Guard>} />
-          <Route path="/shifts" element={<Guard permission="hotel_shifts.access"><Shifts /></Guard>} />
+          <Route path="/till" element={<Guard permission="till.access"><Till /></Guard>} />
           <Route path="/attendance" element={<Guard permission="hotel_attendance.access"><Attendance /></Guard>} />
           <Route path="/visitors" element={<Guard permission="hotel_visitors.access"><Visitors /></Guard>} />
           <Route path="/reports" element={<Guard permission="hotel_reports.dashboard"><Reports /></Guard>} />
+          <Route path="/reports/:reportKey" element={<Guard permission="hotel_reports.dashboard"><Reports /></Guard>} />
+          <Route path="/restaurant/reports" element={<Guard permission="restaurant_reports.pos"><RestaurantReports /></Guard>} />
+          <Route path="/restaurant/reports/:reportKey" element={<Guard permission="restaurant_reports.pos"><RestaurantReports /></Guard>} />
           <Route path="/notifications" element={<Guard permission="hotel_notifications.access"><Notifications /></Guard>} />
           <Route path="/staff" element={<Guard permission={["user_management_users.access", "hotel_staff.set_pin"]}><Staff /></Guard>} />
           <Route path="/staff/users/:id" element={<Guard permission="user_management_users.view"><UserDetail /></Guard>} />
@@ -121,6 +129,7 @@ export default function App() {
           <Route path="/apartments/housekeeping" element={<Guard permission="apartment_housekeeping.access"><ApartmentHousekeeping /></Guard>} />
           <Route path="/apartments/maintenance" element={<Guard permission="apartment_maintenance.access"><ApartmentMaintenance /></Guard>} />
           <Route path="/apartments/reports" element={<Guard permission="apartment_reports.dashboard"><ApartmentReports /></Guard>} />
+          <Route path="/apartments/reports/:reportKey" element={<Guard permission="apartment_reports.dashboard"><ApartmentReports /></Guard>} />
           <Route path="/integrations" element={<Guard fullAdminOnly><Integrations /></Guard>} />
           <Route path="/payroll" element={<Guard permission="hotel_payroll.view"><Payroll /></Guard>} />
           <Route path="/audit-log" element={<Guard permission="audit_logs.access"><AuditLog /></Guard>} />

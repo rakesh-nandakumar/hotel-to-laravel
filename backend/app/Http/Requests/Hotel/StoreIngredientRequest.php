@@ -21,6 +21,7 @@ class StoreIngredientRequest extends FormRequest
             'unit' => ['required', 'string', 'max:20'],
             'stock_qty' => ['required', 'numeric', 'min:0'],
             'low_stock_threshold' => ['required', 'numeric', 'min:0'],
+            'unit_cost' => ['nullable', 'integer', 'min:0'],
         ];
     }
 }

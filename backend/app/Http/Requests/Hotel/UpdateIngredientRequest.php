@@ -22,6 +22,7 @@ class UpdateIngredientRequest extends FormRequest
             'unit' => ['sometimes', 'string', 'max:20'],
             'stock_qty' => ['sometimes', 'numeric', 'min:0'],
             'low_stock_threshold' => ['sometimes', 'numeric', 'min:0'],
+            'unit_cost' => ['sometimes', 'nullable', 'integer', 'min:0'],
         ];
     }
 }

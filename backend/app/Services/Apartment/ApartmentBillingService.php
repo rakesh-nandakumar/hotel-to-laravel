@@ -7,8 +7,12 @@ use App\Models\Apartment\Payment;
 use App\Models\Lookup;
 use App\Services\AuditLog;
 use App\Services\Settings;
+use App\Services\TillService;
 use App\Support\Lookups\LookupType;
 use App\Support\Lookups\PaymentKind;
+use App\Support\Lookups\PaymentMethod;
+use App\Support\Lookups\TillMovementType;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -25,6 +29,8 @@ use Illuminate\Validation\ValidationException;
  */
 class ApartmentBillingService
 {
+    public function __construct(private readonly TillService $till) {}
+
     /**
      * @return array{total: int, paid: int, refunded: int, balance: int}
      */
@@ -81,7 +87,7 @@ class ApartmentBillingService
      * The single choke point for all Apartments-module payment/refund writes.
      *
      * @param  array{ledger_id: int, method: string, amount: int, kind?: string,
-     *     reference?: string|null, reason?: string|null, staff_id: int, idempotency_key?: string|null}  $opts
+     *     reference?: string|null, reason?: string|null, staff_id: int|null, idempotency_key?: string|null}  $opts
      */
     public function recordPayment(array $opts): Payment
     {
@@ -98,16 +104,43 @@ class ApartmentBillingService
             }
         }
 
-        $payment = Payment::create([
-            'ledger_id' => $opts['ledger_id'],
-            'payment_method_id' => Lookup::id(LookupType::PAYMENT_METHOD, $opts['method']),
-            'payment_kind_id' => Lookup::id(LookupType::PAYMENT_KIND, $kind),
-            'amount' => $opts['amount'],
-            'reference' => $opts['reference'] ?? null,
-            'reason' => $opts['reason'] ?? null,
-            'staff_id' => $opts['staff_id'],
-            'idempotency_key' => $opts['idempotency_key'] ?? null,
-        ]);
+        // Cash can't move without a till open to record it in — checked before any
+        // write so a blocked cash payment never leaves a dangling Payment row. A
+        // null staff_id means this was posted by the system (e.g. the expired
+        // sale-hold sweep, see ApartmentSalesService::releaseExpiredHolds()) —
+        // there's no operator to attribute a till session to, so it's skipped
+        // entirely rather than blocked.
+        $tillSession = $opts['staff_id'] !== null ? $this->till->currentSessionForStaff($opts['staff_id']) : null;
+        if ($opts['method'] === PaymentMethod::CASH && $opts['staff_id'] !== null && ! $tillSession) {
+            throw ValidationException::withMessages(['method' => 'Open a till before accepting or refunding cash.']);
+        }
+
+        $payment = DB::transaction(function () use ($opts, $kind, $tillSession) {
+            $payment = Payment::create([
+                'ledger_id' => $opts['ledger_id'],
+                'payment_method_id' => Lookup::id(LookupType::PAYMENT_METHOD, $opts['method']),
+                'payment_kind_id' => Lookup::id(LookupType::PAYMENT_KIND, $kind),
+                'amount' => $opts['amount'],
+                'reference' => $opts['reference'] ?? null,
+                'reason' => $opts['reason'] ?? null,
+                'staff_id' => $opts['staff_id'],
+                'till_session_id' => $tillSession?->id,
+                'idempotency_key' => $opts['idempotency_key'] ?? null,
+            ]);
+
+            if ($opts['method'] === PaymentMethod::CASH && $tillSession) {
+                $this->till->recordMovement(
+                    $tillSession,
+                    $kind === PaymentKind::REFUND ? TillMovementType::REFUND : TillMovementType::CASH_IN,
+                    $opts['amount'],
+                    $opts['staff_id'],
+                    reason: $kind === PaymentKind::REFUND ? ($opts['reason'] ?? null) : null,
+                    source: $payment,
+                );
+            }
+
+            return $payment;
+        });
 
         AuditLog::record(
             $kind === PaymentKind::REFUND ? 'apartment_payment.refunded' : 'apartment_payment.recorded',

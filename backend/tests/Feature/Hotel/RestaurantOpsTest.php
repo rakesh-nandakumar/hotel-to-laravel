@@ -41,6 +41,7 @@ function freeDiningTable(string $tableNo = 'T1'): DiningTable
 
 it('opens a dine-in order against a free table, occupying it, and frees it to Cleaning on settle', function () {
     $manager = staffWithRole('Manager');
+    openTillFor($manager);
     $item = restaurantMenuItem();
     $table = freeDiningTable();
 

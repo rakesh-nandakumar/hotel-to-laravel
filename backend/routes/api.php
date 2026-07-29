@@ -43,12 +43,14 @@ use App\Http\Controllers\Hotel\OrderController;
 use App\Http\Controllers\Hotel\PackageController;
 use App\Http\Controllers\Hotel\PayrollController;
 use App\Http\Controllers\Hotel\PublicController;
+use App\Http\Controllers\Hotel\QrOrderController;
+use App\Http\Controllers\Hotel\QrOrderingPointController;
 use App\Http\Controllers\Hotel\ReportController;
 use App\Http\Controllers\Hotel\ReservationController;
+use App\Http\Controllers\Hotel\RestaurantReportController;
 use App\Http\Controllers\Hotel\RoomController;
 use App\Http\Controllers\Hotel\RoomTypeController;
 use App\Http\Controllers\Hotel\SettingController;
-use App\Http\Controllers\Hotel\ShiftController;
 use App\Http\Controllers\Hotel\StaffController;
 use App\Http\Controllers\Hotel\VenueBookingController;
 use App\Http\Controllers\Hotel\VenueController;
@@ -57,6 +59,7 @@ use App\Http\Controllers\Profile\TwoFactorController;
 use App\Http\Controllers\Settings\BrowserSessionsController;
 use App\Http\Controllers\Settings\PasswordController;
 use App\Http\Controllers\Settings\ProfileController;
+use App\Http\Controllers\TillController;
 use App\Http\Controllers\UserManagement\RoleController;
 use App\Http\Controllers\UserManagement\UserManagementUserController;
 use Illuminate\Support\Facades\Route;
@@ -94,6 +97,13 @@ Route::prefix('public')->name('public.')->group(function () {
     Route::post('pre-checkin', [PublicController::class, 'preCheckIn'])->name('pre-checkin');
     Route::get('venues', [PublicController::class, 'venues'])->name('venues');
     Route::post('venue-inquiry', [PublicController::class, 'venueInquiry'])->name('venue-inquiry');
+
+    // ── QR ordering — scan a room/table QR code, no login required ──
+    Route::get('qr/{token}/menu', [QrOrderController::class, 'menu'])->name('qr.menu');
+    Route::post('qr/{token}/order', [QrOrderController::class, 'placeOrder'])
+        ->middleware('throttle:20,1')
+        ->name('qr.order');
+    Route::get('qr/{token}/orders/{order}', [QrOrderController::class, 'orderStatus'])->name('qr.order-status');
 });
 
 // ── Authenticated ────────────────────────────────────────────────────────────
@@ -289,6 +299,25 @@ Route::middleware(['auth', 'check_active'])->group(function () {
         Route::put('{diningTable}/status', [DiningTableController::class, 'updateStatus'])
             ->middleware('can_do:hotel_dining_tables.edit_status')
             ->name('update-status');
+    });
+
+    // ── QR ordering — per-room/table QR link management ─────────────────────
+    Route::prefix('qr-ordering')->name('hotel.qr-ordering.')->group(function () {
+        Route::get('/', [QrOrderingPointController::class, 'index'])
+            ->middleware('can_do:hotel_qr_ordering.access')
+            ->name('index');
+        Route::post('/', [QrOrderingPointController::class, 'store'])
+            ->middleware('can_do:hotel_qr_ordering.create')
+            ->name('store');
+        Route::put('{qrOrderingPoint}', [QrOrderingPointController::class, 'update'])
+            ->middleware('can_do:hotel_qr_ordering.edit')
+            ->name('update');
+        Route::post('{qrOrderingPoint}/regenerate', [QrOrderingPointController::class, 'regenerate'])
+            ->middleware('can_do:hotel_qr_ordering.regenerate')
+            ->name('regenerate');
+        Route::get('{qrOrderingPoint}/image', [QrOrderingPointController::class, 'image'])
+            ->middleware('can_do:hotel_qr_ordering.access')
+            ->name('image');
     });
 
     // ── Guests ────────────────────────────────────────────────────────────────
@@ -654,20 +683,38 @@ Route::middleware(['auth', 'check_active'])->group(function () {
             ->name('bookings.cancel');
     });
 
-    // ── Shifts ────────────────────────────────────────────────────────────────
-    Route::prefix('shifts')->name('hotel.shifts.')->group(function () {
-        Route::get('current', [ShiftController::class, 'current'])
-            ->middleware('can_do:hotel_shifts.access')
+    // ── Till (shared cash ledger — Hotel + Restaurant + Apartments) ────────────
+    Route::prefix('till')->name('till.')->group(function () {
+        Route::get('tills', [TillController::class, 'index'])
+            ->middleware('can_do:till.access')
+            ->name('tills.index');
+        Route::post('tills', [TillController::class, 'store'])
+            ->middleware('can_do:till.manage')
+            ->name('tills.store');
+        Route::put('tills/{till}', [TillController::class, 'update'])
+            ->middleware('can_do:till.manage')
+            ->name('tills.update');
+
+        Route::get('current', [TillController::class, 'current'])
+            ->middleware('can_do:till.access')
             ->name('current');
-        Route::post('open', [ShiftController::class, 'open'])
-            ->middleware('can_do:hotel_shifts.open')
+        Route::post('open', [TillController::class, 'open'])
+            ->middleware('can_do:till.open')
             ->name('open');
-        Route::post('{shift}/close', [ShiftController::class, 'close'])
-            ->middleware('can_do:hotel_shifts.close')
+        Route::post('{session}/close', [TillController::class, 'close'])
+            ->middleware('can_do:till.close')
             ->name('close');
-        Route::get('/', [ShiftController::class, 'index'])
-            ->middleware('can_do:hotel_shifts.access')
-            ->name('index');
+        Route::get('{session}/movements', [TillController::class, 'movements'])
+            ->middleware('can_do:till.access')
+            ->name('movements.index');
+        // Fine-grained cash_in vs. cash_out/expense/transfer authorization happens
+        // in StoreTillMovementRequest::authorize() (it depends on the `type` field).
+        Route::post('{session}/movements', [TillController::class, 'storeMovement'])
+            ->middleware('can_do:till.access')
+            ->name('movements.store');
+        Route::get('sessions', [TillController::class, 'sessions'])
+            ->middleware('can_do:till.access')
+            ->name('sessions.index');
     });
 
     // ── Attendance ────────────────────────────────────────────────────────────
@@ -789,12 +836,72 @@ Route::middleware(['auth', 'check_active'])->group(function () {
             ->middleware('can_do:hotel_reports.monthly')
             ->name('monthly.pdf');
 
+        // POS sales lives here (computePos() stays in the Hotel ReportService — it
+        // reads Order/OrderItem, which already live under the Hotel namespace) but
+        // is gated on the Restaurant module's own permission — its card now shows
+        // up on the Restaurant Reports hub, not this one.
         Route::get('pos', [ReportController::class, 'pos'])
-            ->middleware('can_do:hotel_reports.pos')
+            ->middleware('can_do:restaurant_reports.pos')
             ->name('pos');
         Route::get('pos/pdf', [ReportController::class, 'posPdf'])
-            ->middleware('can_do:hotel_reports.pos')
+            ->middleware('can_do:restaurant_reports.pos')
             ->name('pos.pdf');
+
+        Route::get('revpar', [ReportController::class, 'revpar'])
+            ->middleware('can_do:hotel_reports.revpar')
+            ->name('revpar');
+        Route::get('channel-mix', [ReportController::class, 'channelMix'])
+            ->middleware('can_do:hotel_reports.channel_mix')
+            ->name('channel-mix');
+        Route::get('cancellations', [ReportController::class, 'cancellations'])
+            ->middleware('can_do:hotel_reports.cancellations')
+            ->name('cancellations');
+        Route::get('guest-loyalty', [ReportController::class, 'guestLoyalty'])
+            ->middleware('can_do:hotel_reports.guest_loyalty')
+            ->name('guest-loyalty');
+        Route::get('corporate-ar', [ReportController::class, 'corporateAr'])
+            ->middleware('can_do:hotel_reports.corporate_ar')
+            ->name('corporate-ar');
+        Route::get('ops-sla', [ReportController::class, 'opsSla'])
+            ->middleware('can_do:hotel_reports.ops_sla')
+            ->name('ops-sla');
+        Route::get('payroll-cost', [ReportController::class, 'payrollCost'])
+            ->middleware('can_do:hotel_reports.payroll_cost')
+            ->name('payroll-cost');
+        Route::get('venues', [ReportController::class, 'venues'])
+            ->middleware('can_do:hotel_reports.venues')
+            ->name('venues');
+        Route::get('laundry', [ReportController::class, 'laundry'])
+            ->middleware('can_do:hotel_reports.laundry')
+            ->name('laundry');
+    });
+
+    // ── Restaurant Reports (separate module from hotel_reports — see the "pos" route above) ──
+    Route::prefix('restaurant/reports')->name('restaurant.reports.')->group(function () {
+        Route::get('menu-performance', [RestaurantReportController::class, 'menuPerformance'])
+            ->middleware('can_do:restaurant_reports.menu_performance')
+            ->name('menu-performance');
+        Route::get('modifiers', [RestaurantReportController::class, 'modifiers'])
+            ->middleware('can_do:restaurant_reports.modifiers')
+            ->name('modifiers');
+        Route::get('discounts-voids', [RestaurantReportController::class, 'discountsVoids'])
+            ->middleware('can_do:restaurant_reports.discounts_voids')
+            ->name('discounts-voids');
+        Route::get('table-server', [RestaurantReportController::class, 'tableServer'])
+            ->middleware('can_do:restaurant_reports.table_server')
+            ->name('table-server');
+        Route::get('delivery', [RestaurantReportController::class, 'delivery'])
+            ->middleware('can_do:restaurant_reports.delivery_performance')
+            ->name('delivery');
+        Route::get('kitchen-ticket-time', [RestaurantReportController::class, 'kitchenTicketTime'])
+            ->middleware('can_do:restaurant_reports.kitchen_ticket_time')
+            ->name('kitchen-ticket-time');
+        Route::get('shift-sales', [RestaurantReportController::class, 'shiftSales'])
+            ->middleware('can_do:restaurant_reports.shift_sales')
+            ->name('shift-sales');
+        Route::get('food-cost', [RestaurantReportController::class, 'foodCost'])
+            ->middleware('can_do:restaurant_reports.food_cost')
+            ->name('food-cost');
     });
 
     // ── Staff (PIN quick-unlock; CRUD lives in User Management) ────────────────
@@ -1001,8 +1108,28 @@ Route::middleware(['auth', 'check_active'])->group(function () {
                 ->name('update');
         });
 
-        Route::get('reports/dashboard', [ApartmentReportController::class, 'dashboard'])
-            ->middleware('can_do:apartment_reports.dashboard')
-            ->name('reports.dashboard');
+        Route::prefix('reports')->name('reports.')->group(function () {
+            Route::get('dashboard', [ApartmentReportController::class, 'dashboard'])
+                ->middleware('can_do:apartment_reports.dashboard')
+                ->name('dashboard');
+            Route::get('occupancy-trend', [ApartmentReportController::class, 'occupancyTrend'])
+                ->middleware('can_do:apartment_reports.occupancy_trend')
+                ->name('occupancy-trend');
+            Route::get('revenue-channel', [ApartmentReportController::class, 'revenueChannel'])
+                ->middleware('can_do:apartment_reports.revenue_channel')
+                ->name('revenue-channel');
+            Route::get('rent-roll', [ApartmentReportController::class, 'rentRoll'])
+                ->middleware('can_do:apartment_reports.rent_roll')
+                ->name('rent-roll');
+            Route::get('sales-pipeline', [ApartmentReportController::class, 'salesPipeline'])
+                ->middleware('can_do:apartment_reports.sales_pipeline')
+                ->name('sales-pipeline');
+            Route::get('utilities', [ApartmentReportController::class, 'utilities'])
+                ->middleware('can_do:apartment_reports.utilities')
+                ->name('utilities');
+            Route::get('ops-sla', [ApartmentReportController::class, 'opsSla'])
+                ->middleware('can_do:apartment_reports.ops_sla')
+                ->name('ops-sla');
+        });
     });
 });

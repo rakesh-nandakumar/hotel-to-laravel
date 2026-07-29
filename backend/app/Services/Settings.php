@@ -67,6 +67,21 @@ class Settings
     }
 
     /**
+     * A deposit/advance amount that's configurable as either a percentage of
+     * the total or a flat LKR-cents figure, per `{$modeKey}` ('percentage',
+     * the default, or 'fixed'). A fixed amount is always capped to the total —
+     * a misconfigured flat deposit can never exceed what's actually owed.
+     */
+    public static function depositAmount(int $total, string $modeKey, string $pctKey, string $fixedKey, float $defaultPct = 20): int
+    {
+        if (self::str($modeKey, 'percentage') === 'fixed') {
+            return min((int) round(self::num($fixedKey, 0)), $total);
+        }
+
+        return (int) round($total * self::num($pctKey, $defaultPct) / 100);
+    }
+
+    /**
      * Type-validated write. Throws {@see ValidationException} on a type
      * mismatch (mirrors the Node route's inline validation) rather than
      * silently coercing bad input.

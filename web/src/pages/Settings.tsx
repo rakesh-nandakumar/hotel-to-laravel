@@ -22,6 +22,7 @@ const CATEGORY_META: Record<string, { label: string; blurb: string }> = {
   pricing: { label: "Dynamic pricing", blurb: "Weekend days and public holidays that trigger the weekend/peak rate." },
   loyalty: { label: "Loyalty", blurb: "Earn rate, point value and the redemption catalog." },
   inventory: { label: "Inventory", blurb: "Food expiry alert window for kitchen stock batches." },
+  qr_ordering: { label: "QR ordering", blurb: "Theme and behavior of the guest-facing menu shown after scanning a room or table QR code." },
   payroll: { label: "Payroll", blurb: "EPF/ETF statutory percentages and the standard monthly hours before overtime." },
   notifications: { label: "Notifications", blurb: "Reminder timing and which channels guests receive." },
 };

@@ -1,14 +1,14 @@
 <?php
 
-namespace App\Http\Requests\Hotel;
+namespace App\Http\Requests\Till;
 
 use Illuminate\Foundation\Http\FormRequest;
 
-class CloseShiftRequest extends FormRequest
+class CloseTillRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return $this->user()?->hasPermissionTo('hotel_shifts.close') ?? false;
+        return $this->user()?->hasPermissionTo('till.close') ?? false;
     }
 
     /**
