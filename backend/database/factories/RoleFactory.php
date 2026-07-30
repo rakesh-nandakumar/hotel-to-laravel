@@ -3,6 +3,7 @@
 namespace Database\Factories;
 
 use App\Models\Role;
+use App\Models\Tenant;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -18,6 +19,10 @@ class RoleFactory extends Factory
     public function definition(): array
     {
         return [
+            // Same shared demo tenant as UserFactory (see its comment) —
+            // keeps IdentifyTenant's "exactly one tenant" local/testing
+            // dev-fallback true for the vast majority of tests.
+            'tenant_id' => Tenant::demo()->id,
             'name' => fake()->unique()->jobTitle(),
             'description' => fake()->sentence(),
             'is_system' => false,

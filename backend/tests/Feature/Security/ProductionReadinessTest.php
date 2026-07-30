@@ -35,6 +35,14 @@ it('protects every state-changing route with auth or guest-flow middleware', fun
                 return false;
             }
 
+            // Impersonation hand-off is likewise reachable with no prior tenant
+            // session (that's the point) — protected instead by requiring
+            // possession of a single-use, short-lived, tenant-bound token minted
+            // from master control (see App\Services\Impersonation).
+            if ($route->getName() === 'impersonate.consume') {
+                return false;
+            }
+
             // Guest-flow endpoints (login, password reset, OTP challenge) are
             // intentionally unauthenticated; everything else needs auth.
             $protected = collect($route->gatherMiddleware())->contains(

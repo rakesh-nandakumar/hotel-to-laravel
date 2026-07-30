@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\MenuItem;
 use App\Models\User;
+use Illuminate\Routing\Exceptions\UrlGenerationException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Route;
 
@@ -36,7 +37,7 @@ class MenuRenderer
 
                 $isLeafVisible = $item->route_name !== null
                     && ($item->module_key === null
-                        || $user->hasPermissionTo("{$item->module_key}.access"));
+                        || ($user->hasPermissionTo("{$item->module_key}.access") && TenantModules::isEnabled($item->module_key)));
 
                 $isGroupVisible = $item->route_name === null
                     && $filteredChildren->isNotEmpty();
@@ -53,7 +54,7 @@ class MenuRenderer
                         ? (static function () use ($item): ?string {
                             try {
                                 return route($item->route_name);
-                            } catch (\Illuminate\Routing\Exceptions\UrlGenerationException) {
+                            } catch (UrlGenerationException) {
                                 return null;
                             }
                         })()

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToTenant;
 use App\Models\Concerns\HasPermissions;
 use App\Traits\HasUserstamps;
 use Database\Factories\UserFactory;
@@ -19,7 +20,7 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
-    use HasFactory, HasPermissions, HasUserstamps, Notifiable, SoftDeletes, TwoFactorAuthenticatable;
+    use BelongsToTenant, HasFactory, HasPermissions, HasUserstamps, Notifiable, SoftDeletes, TwoFactorAuthenticatable;
 
     public const STATUS_ACTIVE = 'active';
 
@@ -41,6 +42,7 @@ class User extends Authenticatable
      * @var list<string>
      */
     protected $fillable = [
+        'tenant_id',
         'name',
         'email',
         'password',
@@ -134,6 +136,11 @@ class User extends Authenticatable
         return Attribute::make(
             set: fn ($value) => strtolower(trim((string) $value)),
         );
+    }
+
+    public function tenant(): BelongsTo
+    {
+        return $this->belongsTo(Tenant::class);
     }
 
     public function role(): BelongsTo

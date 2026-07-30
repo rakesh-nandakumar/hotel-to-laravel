@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToBranch;
 use App\Traits\HasUserstamps;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -17,7 +18,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  */
 class Till extends Model
 {
-    use HasUserstamps, SoftDeletes;
+    use BelongsToBranch, HasUserstamps, SoftDeletes;
 
     protected $fillable = [
         'branch_id',

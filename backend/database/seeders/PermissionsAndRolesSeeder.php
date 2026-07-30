@@ -5,6 +5,7 @@ namespace Database\Seeders;
 use App\Models\MenuItem;
 use App\Models\Permission;
 use App\Models\Role;
+use App\Models\Tenant;
 use App\Models\User;
 use Database\Seeders\Menu\SystemRoleDefinition;
 use Illuminate\Database\Seeder;
@@ -17,7 +18,7 @@ class PermissionsAndRolesSeeder extends Seeder
     {
         DB::transaction(function (): void {
             $this->derivePermissionsFromMenu();
-            $this->seedSystemRoles();
+            $this->seedSystemRoles(Tenant::demo()->id);
         });
 
         User::query()->whereNotNull('role_id')->lazy()->each(function (User $user): void {
@@ -47,11 +48,18 @@ class PermissionsAndRolesSeeder extends Seeder
             ->each(fn (Permission $permission) => $permission->forceDelete());
     }
 
-    private function seedSystemRoles(): void
+    /**
+     * Seeds the baseline system roles (Full Administrator, Manager, ...) for
+     * one tenant. Each tenant gets its own independent Role rows — editing
+     * one tenant's "Manager" must never touch another's — so this is called
+     * both for the demo tenant here and for every newly-provisioned tenant
+     * (see App\Services\TenantProvisioning).
+     */
+    public function seedSystemRoles(int $tenantId): void
     {
         foreach (SystemRoleDefinition::roles() as $name => $config) {
             /** @var Role $role */
-            $role = Role::firstOrNew(['name' => $name]);
+            $role = Role::firstOrNew(['tenant_id' => $tenantId, 'name' => $name]);
             $role->fill([
                 'description' => $config['description'] ?? null,
                 'is_system' => true,

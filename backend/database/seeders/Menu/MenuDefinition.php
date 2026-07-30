@@ -252,13 +252,6 @@ class MenuDefinition
                 'actions' => ['set_pin'],
             ],
             [
-                'name' => 'Hotel Settings',
-                'icon' => 'settings',
-                'route_name' => 'hotel.settings.index',
-                'module_key' => 'hotel_settings',
-                'actions' => ['access', 'update'],
-            ],
-            [
                 'name' => 'Apartments',
                 'icon' => 'building',
                 'children' => [

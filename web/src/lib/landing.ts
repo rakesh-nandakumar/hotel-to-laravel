@@ -13,7 +13,6 @@ const PRIORITY: [string, string][] = [
   ["hotel_housekeeping.access", "/housekeeping"],
   ["hotel_orders.kot", "/kot"],
   ["hotel_visitors.access", "/visitors"],
-  ["hotel_settings.access", "/settings"],
 ];
 
 export function landingPath(me: Me): string {

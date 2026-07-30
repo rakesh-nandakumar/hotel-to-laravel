@@ -2,6 +2,7 @@
 
 namespace Database\Factories;
 
+use App\Models\Tenant;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Facades\Hash;
@@ -25,6 +26,12 @@ class UserFactory extends Factory
     public function definition(): array
     {
         return [
+            // Every real user belongs to exactly one tenant — default new
+            // factory users to the shared demo tenant IdentifyTenant's
+            // local/testing dev-fallback resolves to (config/tenancy.php),
+            // so a bare User::factory()->create() doesn't get logged straight
+            // back out by that middleware's cross-tenant mismatch guard.
+            'tenant_id' => Tenant::demo()->id,
             'name' => fake()->name(),
             'email' => fake()->unique()->safeEmail(),
             'email_verified_at' => now(),

@@ -15,18 +15,28 @@ use Illuminate\Validation\ValidationException;
  */
 class Settings
 {
-    private const CACHE_KEY = 'settings:all';
+    private const CACHE_KEY_PREFIX = 'settings:all:';
 
     /**
      * @return array<string, mixed>
      */
     private static function all(): array
     {
-        return Cache::rememberForever(self::CACHE_KEY, function (): array {
+        return Cache::rememberForever(self::cacheKey(), function (): array {
             return Setting::query()->get()->mapWithKeys(
                 fn (Setting $setting) => [$setting->key => self::decode($setting->value)],
             )->all();
         });
+    }
+
+    /**
+     * Keyed per tenant — every read here goes through the ambient tenant
+     * scope (see App\Models\Concerns\BelongsToTenant), so the cache must be
+     * too, or one tenant's settings would leak into another's cached view.
+     */
+    private static function cacheKey(?int $tenantId = null): string
+    {
+        return self::CACHE_KEY_PREFIX.($tenantId ?? app(CurrentContext::class)->tenantId() ?? 'none');
     }
 
     public static function get(string $key, mixed $default = null): mixed
@@ -85,10 +95,20 @@ class Settings
      * Type-validated write. Throws {@see ValidationException} on a type
      * mismatch (mirrors the Node route's inline validation) rather than
      * silently coercing bad input.
+     *
+     * $tenantId is required from the central admin panel — a CentralAdmin has
+     * no ambient tenant context (TenantScope is unscoped for the `central`
+     * guard), so it must say explicitly which tenant's setting it's editing.
+     * Tenant-side call sites (none remain — settings management now lives
+     * entirely in master control) would rely on the ambient scope instead.
      */
-    public static function set(string $key, mixed $value, ?int $updatedBy = null): Setting
+    public static function set(string $key, mixed $value, ?int $updatedBy = null, ?int $tenantId = null): Setting
     {
-        $setting = Setting::query()->findOrFail($key);
+        $query = $tenantId !== null
+            ? Setting::query()->withoutTenantScope()->where('tenant_id', $tenantId)
+            : Setting::query();
+
+        $setting = $query->where('key', $key)->firstOrFail();
 
         self::assertValidForType($setting->type, $value);
 
@@ -97,14 +117,18 @@ class Settings
             'updated_by' => $updatedBy,
         ]);
 
-        self::invalidate();
+        // Invalidate the exact same cache key the read path (all()) would
+        // have used — i.e. don't substitute the row's actual tenant_id when
+        // $tenantId wasn't given; that would invalidate a different key than
+        // the ambient one all()/get() actually read from and cached under.
+        self::invalidate($tenantId);
 
         return $setting->refresh();
     }
 
-    public static function invalidate(): void
+    public static function invalidate(?int $tenantId = null): void
     {
-        Cache::forget(self::CACHE_KEY);
+        Cache::forget(self::cacheKey($tenantId));
     }
 
     private static function decode(?string $raw): mixed

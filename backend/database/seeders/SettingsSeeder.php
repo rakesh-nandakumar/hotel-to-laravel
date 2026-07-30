@@ -3,21 +3,26 @@
 namespace Database\Seeders;
 
 use App\Models\Setting;
+use App\Models\Tenant;
 use App\Support\Lookups\SettingType;
 use Illuminate\Database\Seeder;
 
 /**
- * Default business settings. Idempotent by design (create-if-missing, never
- * overwrite): re-running this seeder must never clobber a value an admin has
- * since edited via the Settings screen.
+ * Default business settings, seeded per tenant — `key` alone is no longer
+ * unique (the same key now exists once per tenant), so every lookup/create
+ * here is keyed on (tenant_id, key). Idempotent by design (create-if-missing,
+ * never overwrite): re-running this seeder must never clobber a value a
+ * platform operator has since edited via the central Settings screen.
  */
 class SettingsSeeder extends Seeder
 {
-    public function run(): void
+    public function run(?int $tenantId = null): void
     {
-        foreach ($this->definitions() as $definition) {
-            Setting::firstOrCreate(
-                ['key' => $definition['key']],
+        $tenantId ??= Tenant::demo()->id;
+
+        foreach (self::definitions() as $definition) {
+            Setting::query()->withoutTenantScope()->firstOrCreate(
+                ['tenant_id' => $tenantId, 'key' => $definition['key']],
                 [
                     'value' => json_encode($definition['value']),
                     'type' => $definition['type'],
@@ -32,7 +37,7 @@ class SettingsSeeder extends Seeder
     /**
      * @return list<array{key: string, value: mixed, type: string, category: string, label: string, hint?: string}>
      */
-    private function definitions(): array
+    public static function definitions(): array
     {
         return [
             // ── Hotel identity ───────────────────────────────────────────────

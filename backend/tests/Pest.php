@@ -1,13 +1,16 @@
 <?php
 
 use App\Models\Branch;
+use App\Models\CentralAdmin;
 use App\Models\Role;
+use App\Models\Tenant;
 use App\Models\Till;
 use App\Models\TillSession;
 use App\Models\User;
 use App\Services\TillService;
 use Database\Seeders\Menu\SystemRoleDefinition;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Auth;
 use Tests\TestCase;
 
 /*
@@ -62,7 +65,11 @@ function fullAdmin(): User
         ['is_full_admin' => true, 'is_active' => true, 'is_system' => false],
     );
 
-    $user = User::factory()->create();
+    // Every test user belongs to the same demo tenant IdentifyTenant's local/testing
+    // dev-fallback resolves to (the single tenant in the DB) — see config/tenancy.php
+    // and App\Http\Middleware\IdentifyTenant. A mismatched tenant_id here would get
+    // the user logged straight back out by that middleware's cross-tenant guard.
+    $user = User::factory()->create(['tenant_id' => Tenant::demo()->id]);
     $user->roles()->syncWithoutDetaching([$role->id]);
     $user->flushPermissionCache();
 
@@ -78,7 +85,7 @@ function fullAdmin(): User
 function staffWithRole(string $roleName): User
 {
     $role = Role::query()->where('name', $roleName)->firstOrFail();
-    $user = User::factory()->create();
+    $user = User::factory()->create(['tenant_id' => Tenant::demo()->id]);
     $user->roles()->sync([$role->id]);
     $user->flushPermissionCache();
 
@@ -95,9 +102,26 @@ function openTillFor(User $staff, int $openingBalance = 100_000_000): TillSessio
 {
     $tillId = Till::query()->value('id');
     if (! $tillId) {
-        $branchId = Branch::query()->value('id') ?? Branch::create(['name' => 'Main Branch', 'is_active' => true, 'country' => 'Sri Lanka'])->id;
+        $branchId = Branch::query()->value('id')
+            ?? Branch::create(['tenant_id' => Tenant::demo()->id, 'name' => 'Main Branch', 'is_active' => true, 'country' => 'Sri Lanka'])->id;
         $tillId = Till::create(['branch_id' => $branchId, 'name' => 'Main Till'])->id;
     }
 
     return app(TillService::class)->openTill($tillId, $staff->id, $openingBalance);
+}
+
+/**
+ * Authenticates a CentralAdmin for the test, WITHOUT using $this->actingAs()
+ * — that helper also calls Auth::shouldUse($guard), which repoints every
+ * *ambiguous* default-guard resolution (Auth::id(), $request->user()) at
+ * 'central' for the rest of the test. Real production code never calls
+ * shouldUse() itself (Laravel's own default guard is always 'web', per
+ * config/auth.php), so that side effect is a test-only artifact that would
+ * make Auth::id() calls elsewhere in the app (e.g. AuditLog::record()'s
+ * fallback) resolve a CentralAdmin id where they're written assuming a
+ * `users` row. Setting the guard's user directly sidesteps that.
+ */
+function actingAsCentral(CentralAdmin $admin): void
+{
+    Auth::guard('central')->setUser($admin);
 }

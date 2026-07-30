@@ -32,7 +32,6 @@ import {
   Bell,
   Package,
   Sparkles,
-  Plug,
   Shirt,
   Wallet,
   History,
@@ -237,12 +236,6 @@ const SECTIONS: Section[] = [
         icon: <Wallet size={18} />,
         permission: "hotel_payroll.view",
       },
-      {
-        to: "/settings",
-        label: "Settings",
-        icon: <SettingsIcon size={18} />,
-        permission: "hotel_settings.access",
-      },
     ],
   },
   {
@@ -332,19 +325,6 @@ const SECTIONS: Section[] = [
         label: "Audit Log",
         icon: <History size={18} />,
         permission: "audit_logs.access",
-      },
-    ],
-  },
-  {
-    title: "System Admin",
-    items: [
-      // Integrations settings — Full Administrator only, matching the backend's
-      // hard admin-only gate on the "integrations" settings category.
-      {
-        to: "/integrations",
-        label: "Integrations",
-        icon: <Plug size={18} />,
-        fullAdminOnly: true,
       },
     ],
   },

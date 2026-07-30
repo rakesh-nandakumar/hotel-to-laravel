@@ -3,6 +3,7 @@
 namespace App\Models\Hotel;
 
 use App\Models\Branch;
+use App\Models\Concerns\BelongsToBranch;
 use App\Models\Lookup;
 use App\Traits\HasUserstamps;
 use Illuminate\Database\Eloquent\Builder;
@@ -13,7 +14,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Room extends Model
 {
-    use HasUserstamps, SoftDeletes;
+    use BelongsToBranch, HasUserstamps, SoftDeletes;
 
     protected $fillable = [
         'number',

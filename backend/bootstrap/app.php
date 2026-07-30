@@ -2,7 +2,10 @@
 
 use App\Http\Middleware\CheckActiveUser;
 use App\Http\Middleware\CheckPermission;
+use App\Http\Middleware\EnsureCentralContext;
+use App\Http\Middleware\IdentifyTenant;
 use App\Http\Middleware\RequirePasswordChange;
+use App\Http\Middleware\ResetDefaultGuardAfterCentralAuth;
 use App\Http\Middleware\ResolveBranchContext;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Auth\AuthenticationException;
@@ -36,6 +39,8 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'can_do' => CheckPermission::class,
             'check_active' => CheckActiveUser::class,
+            'central_only' => EnsureCentralContext::class,
+            'reset_default_guard' => ResetDefaultGuardAfterCentralAuth::class,
         ]);
 
         // The framework defaults unauthenticated requests to a `route('login')`
@@ -43,11 +48,17 @@ return Application::configure(basePath: dirname(__DIR__))
         // plain 401 JSON response instead (handled below in withExceptions).
         $middleware->redirectGuestsTo(fn () => null);
 
-        // Sanctum's SPA (cookie/session) auth must run before the guard
-        // resolves the user, so it goes first; the rest mirror the old
-        // `web` group's account-state checks, now JSON-responding.
+        // Sanctum's SPA (cookie/session) middleware must go first — it's what
+        // actually attaches the session store to the request on a stateful
+        // domain; nothing downstream can call $request->session() (directly,
+        // or indirectly via the `web` guard reading the authenticated user)
+        // until it has run. Tenant resolution goes right after it, since
+        // every check beyond this point assumes CurrentContext already knows
+        // which tenant (if any) this request belongs to; the rest mirror the
+        // old `web` group's account-state checks, now JSON-responding.
         $middleware->api(prepend: [
             EnsureFrontendRequestsAreStateful::class,
+            IdentifyTenant::class,
         ]);
 
         $middleware->api(append: [

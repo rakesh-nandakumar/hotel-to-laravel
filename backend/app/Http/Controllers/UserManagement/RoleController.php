@@ -10,9 +10,11 @@ use App\Models\Permission;
 use App\Models\Role;
 use App\Models\User;
 use App\Services\AuditLog;
+use App\Services\TenantModules;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 class RoleController extends Controller
 {
@@ -275,6 +277,15 @@ class RoleController extends Controller
      */
     private function assertActorHoldsPermissions(array $permissionNames, User $actor): void
     {
+        // Module licensing applies even to a full admin assigning permissions
+        // — a disabled module's permissions must never be grantable, however
+        // the request reaches this endpoint (see App\Services\TenantModules).
+        foreach ($permissionNames as $name) {
+            if (! TenantModules::isEnabled(Str::before($name, '.'))) {
+                abort(403, "You cannot assign permission \"{$name}\" — that module is not enabled for your account.");
+            }
+        }
+
         if ($actor->isFullAdmin()) {
             return;
         }
@@ -315,7 +326,7 @@ class RoleController extends Controller
             return [
                 'section' => $section->name,
                 'modules' => $modules
-                    ->filter(fn (MenuItem $m) => $m->module_key !== null)
+                    ->filter(fn (MenuItem $m) => $m->module_key !== null && TenantModules::isEnabled($m->module_key))
                     ->map(fn (MenuItem $m) => [
                         'key' => $m->module_key,
                         'label' => $m->name,

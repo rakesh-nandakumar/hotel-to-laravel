@@ -32,6 +32,10 @@ class CurrentContext
 
     protected bool $allBranches = false;
 
+    protected ?int $tenantOverride = null;
+
+    protected static bool $simulatingWebRequest = false;
+
     public function user(): ?User
     {
         return Auth::user();
@@ -43,11 +47,53 @@ class CurrentContext
     }
 
     /**
-     * Phase 9 placeholder. Returns null today; a future migration adds the column.
+     * The tenant resolved for this request by IdentifyTenant (from the Host
+     * header), falling back to the authenticated user's own tenant_id. The
+     * explicit override is what lets IdentifyTenant record "no tenant
+     * resolved" (null) even when Auth already has a stale user loaded.
      */
     public function tenantId(): ?int
     {
-        return Auth::user()?->tenant_id ?? null;
+        return $this->tenantOverride ?? Auth::guard('web')->user()?->tenant_id;
+    }
+
+    public function setTenant(?int $tenantId): void
+    {
+        $this->tenantOverride = $tenantId;
+    }
+
+    /**
+     * CurrentContext is a container singleton — called at the top of every
+     * request (by IdentifyTenant) so a previous request's resolved tenant can
+     * never leak forward into this one.
+     */
+    public function resetTenant(): void
+    {
+        $this->tenantOverride = null;
+    }
+
+    /**
+     * Test-only escape hatch: TenantScope/BranchScope treat console execution
+     * as unscoped (artisan, seeders, the test runner's own CLI process), which
+     * would hide a real bug if a test tried to verify the fail-closed "no
+     * tenant resolved" behavior from a Pest test — Pest itself runs in
+     * console. Wrapping an assertion in this flag makes the scopes behave as
+     * if a genuine web request were in flight.
+     */
+    public static function isSimulatingWebRequest(): bool
+    {
+        return static::$simulatingWebRequest;
+    }
+
+    public static function simulateWebRequest(callable $callback): mixed
+    {
+        static::$simulatingWebRequest = true;
+
+        try {
+            return $callback();
+        } finally {
+            static::$simulatingWebRequest = false;
+        }
     }
 
     public function setBranch(int $branchId, bool $explicit = true): void

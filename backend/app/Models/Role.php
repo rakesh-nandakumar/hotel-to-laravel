@@ -2,18 +2,27 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToTenant;
 use App\Traits\HasUserstamps;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
+/**
+ * A tenant-owned role — each tenant gets its own independent rows (even for
+ * the shared system-role names like "Full Administrator"/"Manager"), so
+ * editing one tenant's role can never touch another's. See
+ * App\Models\Concerns\BelongsToTenant.
+ */
 class Role extends Model
 {
-    use HasFactory, HasUserstamps, SoftDeletes;
+    use BelongsToTenant, HasFactory, HasUserstamps, SoftDeletes;
 
     protected $fillable = [
+        'tenant_id',
         'name',
         'description',
         'is_system',
@@ -30,6 +39,11 @@ class Role extends Model
             'is_full_admin' => 'boolean',
             'is_active' => 'boolean',
         ];
+    }
+
+    public function tenant(): BelongsTo
+    {
+        return $this->belongsTo(Tenant::class);
     }
 
     public function users(): HasMany

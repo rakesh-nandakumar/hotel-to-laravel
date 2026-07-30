@@ -3,6 +3,7 @@
 namespace Database\Seeders;
 
 use App\Models\Role;
+use App\Models\Tenant;
 use App\Models\User;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
@@ -17,8 +18,14 @@ class AdminUsersSeeder extends Seeder
             return;
         }
 
+        // Every demo account belongs to the shared demo tenant — see
+        // UserFactory's identical rationale (App\Http\Middleware\IdentifyTenant's
+        // cross-tenant guard would otherwise log these accounts straight back
+        // out on the very next request after login).
+        $tenantId = Tenant::demo()->id;
+
         $admin = User::updateOrCreate(
-            ['email' => 'admin@vellix.com'],
+            ['tenant_id' => $tenantId, 'email' => 'admin@vellix.com'],
             [
                 'name' => 'Admin User',
                 'password' => Hash::make('password'),
@@ -26,10 +33,10 @@ class AdminUsersSeeder extends Seeder
                 'email_verified_at' => now(),
             ],
         );
-        $this->assignRole($admin, 'Full Administrator');
+        $this->assignRole($admin, 'Full Administrator', $tenantId);
 
         $manager = User::updateOrCreate(
-            ['email' => 'manager@vellix.lk'],
+            ['tenant_id' => $tenantId, 'email' => 'manager@vellix.lk'],
             [
                 'name' => 'Operations Manager',
                 'password' => Hash::make('password'),
@@ -37,7 +44,7 @@ class AdminUsersSeeder extends Seeder
                 'email_verified_at' => now(),
             ],
         );
-        $this->assignRole($manager, 'Manager');
+        $this->assignRole($manager, 'Manager', $tenantId);
 
         // One account per remaining operational role — useful for manual testing/demo
         // and for automated E2E coverage of role-gated behavior (Playwright logs in as each).
@@ -48,7 +55,7 @@ class AdminUsersSeeder extends Seeder
             'security@vellix.lk' => ['Security Officer', 'Security'],
         ] as $email => [$name, $roleName]) {
             $user = User::updateOrCreate(
-                ['email' => $email],
+                ['tenant_id' => $tenantId, 'email' => $email],
                 [
                     'name' => $name,
                     'password' => Hash::make('password'),
@@ -56,13 +63,13 @@ class AdminUsersSeeder extends Seeder
                     'email_verified_at' => now(),
                 ],
             );
-            $this->assignRole($user, $roleName);
+            $this->assignRole($user, $roleName, $tenantId);
         }
     }
 
-    private function assignRole(User $user, string $roleName): void
+    private function assignRole(User $user, string $roleName, int $tenantId): void
     {
-        $role = Role::query()->where('name', $roleName)->firstOrFail();
+        $role = Role::query()->withoutTenantScope()->where('tenant_id', $tenantId)->where('name', $roleName)->firstOrFail();
 
         // Multi-role: keep role_id as the primary for display, assign via the pivot.
         $user->update(['role_id' => $role->id]);

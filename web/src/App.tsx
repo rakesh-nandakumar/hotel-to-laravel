@@ -33,12 +33,11 @@ import Notifications from "./pages/Notifications";
 import Staff from "./pages/Staff";
 import UserDetail from "./pages/UserDetail";
 import Roles from "./pages/Roles";
-import Settings from "./pages/Settings";
-import Integrations from "./pages/Integrations";
 import Payroll from "./pages/Payroll";
 import AuditLog from "./pages/AuditLog";
 import PreCheckIn from "./pages/PreCheckIn";
 import VenueInquiry from "./pages/VenueInquiry";
+import ImpersonateConsume from "./pages/ImpersonateConsume";
 import AccountProfile from "./pages/account/Profile";
 import AccountPassword from "./pages/account/Password";
 import AccountTwoFactor from "./pages/account/TwoFactor";
@@ -82,6 +81,7 @@ export default function App() {
           <Route path="/pre-checkin" element={<PreCheckIn />} />
           <Route path="/venue-inquiry" element={<VenueInquiry />} />
           <Route path="/order/:token" element={<QrOrder />} />
+          <Route path="/impersonate/:token" element={<ImpersonateConsume />} />
 
           <Route path="/" element={<Guard permission="dashboard.access"><Dashboard /></Guard>} />
           <Route path="/reservations" element={<Guard permission="hotel_reservations.access"><Reservations /></Guard>} />
@@ -111,7 +111,6 @@ export default function App() {
           <Route path="/staff" element={<Guard permission={["user_management_users.access", "hotel_staff.set_pin"]}><Staff /></Guard>} />
           <Route path="/staff/users/:id" element={<Guard permission="user_management_users.view"><UserDetail /></Guard>} />
           <Route path="/roles" element={<Guard permission="user_management_roles.access"><Roles /></Guard>} />
-          <Route path="/settings" element={<Guard permission="hotel_settings.access"><Settings /></Guard>} />
           {/* Personal account settings — any authenticated user manages their own. */}
           <Route path="/account" element={<Guard><AccountProfile /></Guard>} />
           <Route path="/account/password" element={<Guard><AccountPassword /></Guard>} />
@@ -130,7 +129,6 @@ export default function App() {
           <Route path="/apartments/maintenance" element={<Guard permission="apartment_maintenance.access"><ApartmentMaintenance /></Guard>} />
           <Route path="/apartments/reports" element={<Guard permission="apartment_reports.dashboard"><ApartmentReports /></Guard>} />
           <Route path="/apartments/reports/:reportKey" element={<Guard permission="apartment_reports.dashboard"><ApartmentReports /></Guard>} />
-          <Route path="/integrations" element={<Guard fullAdminOnly><Integrations /></Guard>} />
           <Route path="/payroll" element={<Guard permission="hotel_payroll.view"><Payroll /></Guard>} />
           <Route path="/audit-log" element={<Guard permission="audit_logs.access"><AuditLog /></Guard>} />
           <Route path="*" element={<Navigate to="/" replace />} />

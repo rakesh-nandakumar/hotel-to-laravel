@@ -18,12 +18,19 @@ use App\Http\Controllers\Auth\ConfirmablePasswordController;
 use App\Http\Controllers\Auth\DeviceTokenController;
 use App\Http\Controllers\Auth\EmailVerificationNotificationController;
 use App\Http\Controllers\Auth\EmailVerificationPromptController;
+use App\Http\Controllers\Auth\ImpersonationSessionController;
 use App\Http\Controllers\Auth\NewPasswordController;
 use App\Http\Controllers\Auth\OtpChallengeController;
 use App\Http\Controllers\Auth\PasswordResetLinkController;
 use App\Http\Controllers\Auth\PinLoginController;
 use App\Http\Controllers\Auth\VerifyEmailController;
 use App\Http\Controllers\BranchContextController;
+use App\Http\Controllers\Central\AuthenticatedSessionController as CentralAuthenticatedSessionController;
+use App\Http\Controllers\Central\ImpersonationController as CentralImpersonationController;
+use App\Http\Controllers\Central\MeController as CentralMeController;
+use App\Http\Controllers\Central\TenantController;
+use App\Http\Controllers\Central\TenantModuleController;
+use App\Http\Controllers\Central\TenantSettingController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\Hotel\AttendanceController;
 use App\Http\Controllers\Hotel\CorporateAccountController;
@@ -91,6 +98,15 @@ Route::post('pin-login', [PinLoginController::class, 'store'])
     ->middleware('throttle:10,1')
     ->name('pin-login');
 
+// Impersonation hand-off (see App\Services\Impersonation) — reached right
+// after a platform operator clicks "Impersonate" in master control, possibly
+// with a stale session for a different staff member already in the browser
+// (same reasoning as pin-login above: this establishes/replaces the session,
+// it doesn't require the absence of one).
+Route::post('impersonate/{token}', [ImpersonationSessionController::class, 'store'])
+    ->middleware('throttle:10,1')
+    ->name('impersonate.consume');
+
 // ── Public (unauthenticated, hotel guest-facing) ─────────────────────────────
 Route::prefix('public')->name('public.')->group(function () {
     Route::get('branding', [PublicController::class, 'branding'])->name('branding');
@@ -104,6 +120,32 @@ Route::prefix('public')->name('public.')->group(function () {
         ->middleware('throttle:20,1')
         ->name('qr.order');
     Route::get('qr/{token}/orders/{order}', [QrOrderController::class, 'orderStatus'])->name('qr.order-status');
+});
+
+// ── Central ("master control") — platform operators, a wholly separate guard
+// and principal from tenant users. See App\Models\CentralAdmin and
+// App\Http\Middleware\{IdentifyTenant,EnsureCentralContext}. ─────────────────
+Route::prefix('central')->name('central.')->middleware('central_only')->group(function () {
+    Route::post('login', [CentralAuthenticatedSessionController::class, 'store'])
+        ->middleware(['guest:central', 'throttle:10,1'])
+        ->name('login');
+
+    Route::middleware(['auth:central', 'reset_default_guard'])->group(function () {
+        Route::post('logout', [CentralAuthenticatedSessionController::class, 'destroy'])->name('logout');
+        Route::get('me', [CentralMeController::class, 'show'])->name('me');
+
+        Route::get('tenants', [TenantController::class, 'index'])->name('tenants.index');
+        Route::post('tenants', [TenantController::class, 'store'])->name('tenants.store');
+        Route::put('tenants/{tenant}', [TenantController::class, 'update'])->name('tenants.update');
+
+        Route::get('tenants/{tenant}/settings', [TenantSettingController::class, 'index'])->name('tenants.settings.index');
+        Route::put('tenants/{tenant}/settings/{key}', [TenantSettingController::class, 'update'])->name('tenants.settings.update');
+
+        Route::get('tenants/{tenant}/modules', [TenantModuleController::class, 'index'])->name('tenants.modules.index');
+        Route::put('tenants/{tenant}/modules/{moduleKey}', [TenantModuleController::class, 'update'])->name('tenants.modules.update');
+
+        Route::post('tenants/{tenant}/impersonate', [CentralImpersonationController::class, 'store'])->name('tenants.impersonate');
+    });
 });
 
 // ── Authenticated ────────────────────────────────────────────────────────────
@@ -913,15 +955,8 @@ Route::middleware(['auth', 'check_active'])->group(function () {
             ->name('pin.update');
     });
 
-    // ── Settings admin ───────────────────────────────────────────────────────
-    Route::prefix('hotel-settings')->name('hotel.settings.')->group(function () {
-        Route::get('/', [SettingController::class, 'index'])
-            ->middleware('can_do:hotel_settings.access')
-            ->name('index');
-        Route::put('{setting}', [SettingController::class, 'update'])
-            ->middleware('can_do:hotel_settings.update')
-            ->name('update');
-    });
+    // ── Settings (read-only — writing is a master-control-only action now) ────
+    Route::get('hotel-settings', [SettingController::class, 'index'])->name('hotel.settings.index');
 
     // ── Apartments (separate domain — see App\Models\Apartment) ────────────────
     Route::prefix('apartments')->name('apartments.')->group(function () {
