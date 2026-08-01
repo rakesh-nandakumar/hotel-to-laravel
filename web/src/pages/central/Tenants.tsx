@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, post } from "../../lib/api";
+import { tenantHost } from "../../lib/tenancy";
 import { Card, Badge, Modal, Field, ErrorText, SimpleTable, statusColor } from "../../components/ui";
 import { Plus } from "lucide-react";
 
@@ -40,9 +41,9 @@ export default function CentralTenants() {
           <SimpleTable<Tenant>
             columns={[
               { key: "name", label: "Business", render: (t) => (
-                <Link to={`/central/tenants/${t.id}`} className="font-semibold text-brand-600 hover:underline">{t.name}</Link>
+                <Link to={`/tenants/${t.id}`} className="font-semibold text-brand-600 hover:underline">{t.name}</Link>
               ) },
-              { key: "slug", label: "Subdomain", render: (t) => <span className="text-slate-500">{t.slug}.{window.location.hostname.replace(/^admin\./, "")}</span> },
+              { key: "slug", label: "Subdomain", render: (t) => <span className="text-slate-500">{tenantHost(t.slug)}</span> },
               { key: "status", label: "Status", render: (t) => <Badge color={statusColor(t.status)}>{t.status}</Badge> },
               { key: "branches_count", label: "Branches", align: "right" },
               { key: "users_count", label: "Users", align: "right" },

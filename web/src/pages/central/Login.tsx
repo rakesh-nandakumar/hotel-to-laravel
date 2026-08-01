@@ -18,7 +18,7 @@ export default function CentralLogin() {
     setError("");
     try {
       await login(email, password);
-      nav("/central/tenants");
+      nav("/tenants");
     } catch (err) {
       setError((err as Error).message);
     } finally {

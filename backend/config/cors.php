@@ -26,7 +26,20 @@ return [
         explode(',', (string) env('FRONTEND_URL', 'http://localhost:5173')),
     ))),
 
-    'allowed_origins_patterns' => [],
+    // Every tenant is its own origin ({slug}.{base_domain}), so they can't be
+    // enumerated in allowed_origins ahead of time — one pattern covers the
+    // whole wildcard-DNS space instead. Anchored, with the base domain quoted,
+    // so it matches exactly one label of subdomain on the configured domain
+    // and nothing else (notably not "vellixglobal.com.attacker.test").
+    //
+    // Reads env() rather than config('tenancy.base_domain') on purpose: config
+    // files are loaded alphabetically, so tenancy.php isn't in the repository
+    // yet when this one is evaluated. Keep the default in sync with it.
+    'allowed_origins_patterns' => array_values(array_filter([
+        ($base = (string) env('TENANCY_BASE_DOMAIN', 'vellixglobal.com'))
+            ? '#^https?://[a-z0-9-]+\.'.preg_quote($base, '#').'$#i'
+            : null,
+    ])),
 
     'allowed_headers' => ['*'],
 
