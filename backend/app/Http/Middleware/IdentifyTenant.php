@@ -27,6 +27,12 @@ use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
  */
 class IdentifyTenant
 {
+    /**
+     * Session key holding the dev-fallback tenant slug. Never consulted in
+     * production, where the Host header is the only source of truth.
+     */
+    private const DEV_TENANT_SESSION_KEY = 'dev_tenant_slug';
+
     public function __construct(private readonly CurrentContext $context) {}
 
     public function handle(Request $request, Closure $next): Response
@@ -93,7 +99,23 @@ class IdentifyTenant
 
         $explicit = $request->header('X-Tenant-Slug') ?? $request->query('tenant');
         if ($explicit) {
-            return $this->findBySlug((string) $explicit);
+            $tenant = $this->findBySlug((string) $explicit);
+
+            // Sticky for the rest of the session: an impersonation hand-off
+            // names its tenant once, in the landing URL, but every request the
+            // app makes afterwards is an ordinary same-host call with no hint
+            // on it. Without this the "only tenant in the database" rule below
+            // is the sole fallback, so local dev breaks the moment a second
+            // tenant exists.
+            if ($tenant && $request->hasSession()) {
+                $request->session()->put(self::DEV_TENANT_SESSION_KEY, $tenant->slug);
+            }
+
+            return $tenant;
+        }
+
+        if ($request->hasSession() && ($remembered = $request->session()->get(self::DEV_TENANT_SESSION_KEY))) {
+            return $this->findBySlug((string) $remembered);
         }
 
         return Tenant::query()->count() === 1 ? Tenant::query()->first() : null;

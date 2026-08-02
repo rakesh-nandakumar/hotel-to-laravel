@@ -46,3 +46,46 @@ it('requires central authentication', function () {
 
     $this->getJson("/api/central/tenants/{$tenant->id}/settings")->assertUnauthorized();
 });
+
+it('saves a setting the tenant has no row for yet', function () {
+    actingAsCentral(CentralAdmin::factory()->create());
+
+    // Deliberately NOT seeded — the index screen lists every catalog key at its
+    // default, so saving one of them has to materialise the row instead of 404ing.
+    $tenant = Tenant::factory()->create();
+
+    expect(Setting::query()->withoutTenantScope()->where('tenant_id', $tenant->id)->count())->toBe(0);
+
+    $this->putJson("/api/central/tenants/{$tenant->id}/settings/billing.vat_pct", ['value' => 15])
+        ->assertOk();
+
+    $row = Setting::query()->withoutTenantScope()
+        ->where('tenant_id', $tenant->id)
+        ->where('key', 'billing.vat_pct')
+        ->first();
+
+    expect($row)->not->toBeNull()
+        ->and((float) json_decode($row->value))->toBe(15.0)
+        // Carried across from the catalog, or the value stops validating.
+        ->and($row->type)->toBe('percent');
+});
+
+it('still type-validates a setting it had to create', function () {
+    actingAsCentral(CentralAdmin::factory()->create());
+    $tenant = Tenant::factory()->create();
+
+    $this->putJson("/api/central/tenants/{$tenant->id}/settings/billing.vat_pct", ['value' => 150])
+        ->assertUnprocessable()->assertJsonValidationErrors('value');
+
+    expect(Setting::query()->withoutTenantScope()->where('tenant_id', $tenant->id)->count())->toBe(0);
+});
+
+it('refuses to invent a setting key that is not in the catalog', function () {
+    actingAsCentral(CentralAdmin::factory()->create());
+    $tenant = Tenant::factory()->create();
+
+    $this->putJson("/api/central/tenants/{$tenant->id}/settings/not.a.real.key", ['value' => 'x'])
+        ->assertNotFound();
+
+    expect(Setting::query()->withoutTenantScope()->where('tenant_id', $tenant->id)->count())->toBe(0);
+});

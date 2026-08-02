@@ -8,6 +8,7 @@ use App\Models\TenantModule;
 use App\Models\User;
 use App\Support\ModuleCatalog;
 use Database\Seeders\PermissionsAndRolesSeeder;
+use Database\Seeders\SettingsSeeder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
@@ -27,6 +28,11 @@ class TenantProvisioning
             app(PermissionsAndRolesSeeder::class)->seedSystemRoles($tenant->id);
 
             $this->enableDefaultModules($tenant);
+
+            // Without this a new tenant has no `settings` rows at all, so its
+            // app falls back to hardcoded defaults and master control's
+            // Settings tab has nothing to update (see App\Services\Settings).
+            app(SettingsSeeder::class)->run($tenant->id);
 
             return $this->createAdminUser($tenant, $adminEmail, $adminName);
         });

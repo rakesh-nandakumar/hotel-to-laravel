@@ -4,6 +4,8 @@ namespace App\Services;
 
 use App\Models\Setting;
 use App\Support\Lookups\SettingType;
+use Database\Seeders\SettingsSeeder;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Validation\ValidationException;
 
@@ -108,9 +110,24 @@ class Settings
             ? Setting::query()->withoutTenantScope()->where('tenant_id', $tenantId)
             : Setting::query();
 
-        $setting = $query->where('key', $key)->firstOrFail();
+        // A tenant only has rows for keys it has actually been seeded with, so
+        // a key that's in the catalog but has never been written for THIS
+        // tenant has nothing to update — which is every key of a tenant
+        // provisioned before settings seeding existed, and every key added to
+        // the catalog since a tenant was created. The central Settings screen
+        // lists those keys (at their catalog default), so saving one must
+        // materialise the row rather than 404.
+        $setting = $query->where('key', $key)->first();
 
-        self::assertValidForType($setting->type, $value);
+        // Validate BEFORE creating anything: the type comes from the existing
+        // row or, failing that, the catalog. Creating first would leave a row
+        // behind every time a value was rejected, silently converting "not
+        // overridden" into "overridden with the default".
+        $type = $setting?->type ?? self::catalogDefinition($key)['type'];
+
+        self::assertValidForType($type, $value);
+
+        $setting ??= self::createFromCatalog($key, $tenantId);
 
         $setting->update([
             'value' => json_encode($value),
@@ -129,6 +146,50 @@ class Settings
     public static function invalidate(?int $tenantId = null): void
     {
         Cache::forget(self::cacheKey($tenantId));
+    }
+
+    /**
+     * The catalog entry defining a setting key.
+     *
+     * An unknown key has no definition and is never created — that would let a
+     * typo'd or hand-crafted request invent arbitrary rows. It raises the same
+     * ModelNotFoundException the previous firstOrFail() did, which the app
+     * renders as a 404.
+     *
+     * @return array{key: string, value: mixed, type: string, category: string, label: string, hint?: string}
+     */
+    private static function catalogDefinition(string $key): array
+    {
+        $definition = collect(SettingsSeeder::definitions())->firstWhere('key', $key);
+
+        if ($definition === null) {
+            throw (new ModelNotFoundException)->setModel(Setting::class, [$key]);
+        }
+
+        return $definition;
+    }
+
+    /**
+     * Materialises a catalog-defined setting for a tenant that has no row for
+     * it yet, carrying the catalog's type/category/label across so the value
+     * still validates and renders exactly like a seeded one.
+     */
+    private static function createFromCatalog(string $key, ?int $tenantId): Setting
+    {
+        $definition = self::catalogDefinition($key);
+
+        // tenant_id is only stamped from ambient context when left null (see
+        // BelongsToTenant), so passing it explicitly is what lets a central
+        // admin — who has no ambient tenant — write on a tenant's behalf.
+        return Setting::query()->create([
+            'tenant_id' => $tenantId ?? app(CurrentContext::class)->tenantId(),
+            'key' => $key,
+            'value' => json_encode($definition['value']),
+            'type' => $definition['type'],
+            'category' => $definition['category'],
+            'label' => $definition['label'],
+            'hint' => $definition['hint'] ?? null,
+        ]);
     }
 
     private static function decode(?string $raw): mixed

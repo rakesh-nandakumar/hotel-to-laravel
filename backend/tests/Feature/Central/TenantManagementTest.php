@@ -2,12 +2,14 @@
 
 use App\Models\CentralAdmin;
 use App\Models\Role;
+use App\Models\Setting;
 use App\Models\Tenant;
 use App\Models\TenantModule;
 use App\Models\User;
 use App\Support\ModuleCatalog;
 use Database\Seeders\MenuSeeder;
 use Database\Seeders\PermissionsAndRolesSeeder;
+use Database\Seeders\SettingsSeeder;
 
 beforeEach(function () {
     $this->seed(MenuSeeder::class);
@@ -45,6 +47,11 @@ it('lets a central admin create a tenant and auto-provisions its admin user', fu
     foreach (ModuleCatalog::keys() as $moduleKey) {
         expect(TenantModule::query()->where('tenant_id', $tenant->id)->where('module_key', $moduleKey)->where('is_enabled', true)->exists())->toBeTrue();
     }
+
+    // A tenant with no settings rows runs its whole app on hardcoded fallbacks
+    // and shows master control nothing to edit.
+    expect(Setting::query()->withoutTenantScope()->where('tenant_id', $tenant->id)->count())
+        ->toBe(count(SettingsSeeder::definitions()));
 });
 
 it('rejects a tenant slug matching the reserved central subdomain', function () {

@@ -25,7 +25,14 @@ class Impersonation
             ->withoutTenantScope()
             ->where('tenant_id', $tenant->id)
             ->whereHas('roles', fn ($q) => $q->where('is_full_admin', true))
-            ->firstOrFail();
+            ->first();
+
+        // Every tenant gets one at provisioning (see TenantProvisioning), so
+        // this only happens if it was since deleted or stripped of the role.
+        // Say so plainly rather than surfacing a raw model-not-found 404.
+        if (! $user) {
+            abort(422, 'This tenant has no Full Administrator to impersonate.');
+        }
 
         $plainToken = Str::random(64);
 
@@ -37,10 +44,36 @@ class Impersonation
             'expires_at' => now()->addSeconds(self::TTL_SECONDS),
         ]);
 
-        $scheme = request()?->getScheme() ?? 'https';
-        $url = "{$scheme}://{$tenant->slug}.".config('tenancy.base_domain')."/impersonate/{$plainToken}";
+        return ['url' => $this->landingUrl($tenant, $plainToken), 'user' => $user];
+    }
 
-        return ['url' => $url, 'user' => $user];
+    /**
+     * Where the operator's browser is sent to redeem the token: always the
+     * tenant's own subdomain, which is what binds the resulting session to the
+     * right tenant (IdentifyTenant resolves it from that Host, and the token
+     * is refused anywhere else).
+     *
+     * Locally that works too, as long as TENANCY_BASE_DOMAIN is a name whose
+     * subdomains actually resolve — `localhost` is the obvious one, since
+     * browsers send every *.localhost straight to 127.0.0.1 with no hosts-file
+     * entry. The only difference from production is the port: the SPA is on
+     * Vite's, which a bare hostname doesn't carry.
+     */
+    private function landingUrl(Tenant $tenant, string $plainToken): string
+    {
+        $host = $tenant->slug.'.'.config('tenancy.base_domain');
+        $scheme = request()?->getScheme() ?? 'https';
+
+        if (config('tenancy.dev_fallback')) {
+            $frontend = parse_url((string) config('app.frontend_url')) ?: [];
+            $scheme = $frontend['scheme'] ?? $scheme;
+
+            if (isset($frontend['port'])) {
+                $host .= ':'.$frontend['port'];
+            }
+        }
+
+        return "{$scheme}://{$host}/impersonate/{$plainToken}";
     }
 
     /**

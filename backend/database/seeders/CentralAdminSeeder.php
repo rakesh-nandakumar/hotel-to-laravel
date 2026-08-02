@@ -22,7 +22,7 @@ class CentralAdminSeeder extends Seeder
         }
 
         CentralAdmin::updateOrCreate(
-            ['email' => 'platform@vellix.com'],
+            ['email' => 'admin@vellix.com'],
             [
                 'name' => 'Platform Operator',
                 'password' => Hash::make('password'),

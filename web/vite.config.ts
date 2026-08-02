@@ -12,18 +12,29 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 5173,
+    // Bind every interface so tenant subdomains resolve here. Browsers send
+    // *.localhost straight to 127.0.0.1 with no hosts-file entry, which is
+    // what makes real subdomain tenancy testable locally.
+    host: true,
+    // Vite 5 refuses requests whose Host it doesn't recognise; every tenant
+    // arrives on its own subdomain, so allow the whole local space.
+    allowedHosts: [".localhost", "127.0.0.1"],
     proxy: {
       // Laravel API — same-origin from the browser's perspective, so Sanctum's
       // SPA cookie session + CSRF cookie need no CORS/cross-site handling.
-      // "/api": { target: "http://localhost:8888", changeOrigin: true },
-      // "/sanctum": { target: "http://localhost:8888", changeOrigin: true },
+      //
+      // changeOrigin MUST stay false: it would rewrite the Host header to the
+      // proxy target, and the Host is precisely how App\Http\Middleware\
+      // IdentifyTenant works out which tenant a request belongs to. Rewritten,
+      // every tenant subdomain reaches Laravel as "127.0.0.1" and resolves no
+      // tenant at all ("Unknown host.").
       "/api": {
         target: apiProxyTarget,
-        changeOrigin: true,
+        changeOrigin: false,
       },
       "/sanctum": {
         target: apiProxyTarget,
-        changeOrigin: true,
+        changeOrigin: false,
       },
       // Reverb (realtime) is connected to directly by the browser — see lib/socket.ts.
     },
