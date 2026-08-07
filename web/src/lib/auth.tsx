@@ -29,6 +29,8 @@ export type Me = {
   user: User;
   is_full_admin: boolean;
   permissions: string[];
+  /** Fine-grained module_keys (permission prefix before the dot) currently licensed for this tenant, plus core. See App\Services\TenantModules::enabledFineKeys(). */
+  enabled_modules: string[];
   home: string;
   menu: MenuNode[];
   branch: { branches: Branch[]; selected_id: number | null; show_selector: boolean };
@@ -112,13 +114,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return data;
   };
 
+  /**
+   * Module licensing (`enabled_modules`) is orthogonal to role and checked
+   * unconditionally — even a Full Administrator can't use a permission whose
+   * module the platform operator hasn't licensed for this tenant, mirroring
+   * the server-side App\Services\TenantModules::isEnabled() check that backs
+   * every `can_do` route. Without this, a disabled module's nav/routes stay
+   * reachable client-side until the API call 403s.
+   */
+  const can = (permission: string): boolean => {
+    if (!me) return false;
+    if (!me.enabled_modules.includes(permission.split(".")[0])) return false;
+    return me.is_full_admin || me.permissions.includes(permission);
+  };
+  const canAny = (permissions: string[]): boolean => permissions.some(can);
+
   return (
     <Ctx.Provider
       value={{
         me,
         loading,
-        can: (permission) => !!me && (me.is_full_admin || me.permissions.includes(permission)),
-        canAny: (permissions) => !!me && (me.is_full_admin || permissions.some((p) => me.permissions.includes(p))),
+        can,
+        canAny,
         refresh,
         login: async (email, password, remember) => {
           const r = await post<{ home?: string; challenge?: Challenge }>("/login", { email, password, remember });

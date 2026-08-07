@@ -23,7 +23,7 @@ class PublicController extends Controller
     public function branding(): JsonResponse
     {
         return response()->json([
-            'name' => Settings::str('hotel.name', 'Mount View Hotel, Badulla'),
+            'name' => Settings::str('hotel.name', 'Mount View Hotel'),
             'tagline' => Settings::str('hotel.tagline', 'Hospitality Management System'),
             'login_tagline' => Settings::str('hotel.login_tagline', 'Hospitality Management System'),
             'logo' => Settings::str('hotel.logo_url', ''),

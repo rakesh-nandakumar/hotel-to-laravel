@@ -78,3 +78,48 @@ it('never gates core modules like dashboard', function () {
         ->getJson(route('dashboard'))
         ->assertOk());
 });
+
+/**
+ * /me's `enabled_modules` is what the SPA (App\lib\auth.tsx) cross-checks
+ * every permission against before treating it as usable — a disabled
+ * module's permission must never appear there, even for a Full
+ * Administrator whose role holds every permission in the system. Without
+ * this, the sidebar/route guards showed unlicensed modules until the API
+ * call 403'd.
+ */
+it('excludes an unlicensed module from /me enabled_modules even for a full admin', function () {
+    [$tenant, $admin] = tenantWithFullAdmin();
+
+    // No TenantModule rows exist yet — every business module starts disabled.
+    CurrentContext::simulateWebRequest(function () use ($tenant, $admin) {
+        $response = $this->actingAs($admin)
+            ->withHeaders(['X-Tenant-Slug' => $tenant->slug])
+            ->getJson(route('me'))
+            ->assertOk();
+
+        expect($response->json('enabled_modules'))
+            ->not->toContain('apartment_properties')
+            ->toContain('dashboard'); // core — never gated
+
+        // The role still grants it; only the module gate must reject it.
+        expect($response->json('permissions'))->toContain('apartment_properties.access');
+    });
+});
+
+it('adds a module to /me enabled_modules once master control licenses it', function () {
+    [$tenant, $admin] = tenantWithFullAdmin();
+
+    actingAsCentral(CentralAdmin::factory()->create());
+    $this->withHeaders(['X-Tenant-Slug' => $tenant->slug])
+        ->putJson('/api/central/tenants/'.$tenant->id.'/modules/'.ModuleCatalog::APARTMENTS, ['enabled' => true])
+        ->assertOk();
+
+    CurrentContext::simulateWebRequest(function () use ($tenant, $admin) {
+        $response = $this->actingAs($admin)
+            ->withHeaders(['X-Tenant-Slug' => $tenant->slug])
+            ->getJson(route('me'))
+            ->assertOk();
+
+        expect($response->json('enabled_modules'))->toContain('apartment_properties');
+    });
+});

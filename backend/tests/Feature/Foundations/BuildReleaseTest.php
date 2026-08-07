@@ -5,7 +5,8 @@ use Illuminate\Testing\PendingCommand;
 
 /**
  * Write a temp production-env file for release:build, starting from a valid
- * single-domain baseline and applying overrides (a null value drops the key).
+ * wildcard-subdomain (multi-tenant) baseline and applying overrides (a null
+ * value drops the key).
  */
 function releaseEnvFile(array $overrides = []): string
 {
@@ -15,9 +16,10 @@ function releaseEnvFile(array $overrides = []): string
         'APP_KEY' => 'base64:uxaHvfk2lgQj+HeuaxeOY6NUPmOS74TXJ6k6Yi1s0yk=',
         'APP_DEBUG' => 'false',
         'APP_URL' => 'https://hotel.example.com',
+        'TENANCY_BASE_DOMAIN' => 'hotel.example.com',
         'SESSION_DOMAIN' => 'hotel.example.com',
         'SESSION_SECURE_COOKIE' => 'true',
-        'SANCTUM_STATEFUL_DOMAINS' => 'hotel.example.com',
+        'SANCTUM_STATEFUL_DOMAINS' => 'hotel.example.com,*.hotel.example.com',
         'DB_DATABASE' => 'hotel_prod',
     ], $overrides);
 
@@ -73,9 +75,11 @@ it('assembles a single-domain bundle: patched index.php, split .htaccess, core q
         ->toContain("__DIR__.'/app_core/vendor/autoload.php'")
         ->toContain("__DIR__.'/app_core/bootstrap/app.php'");
 
-    // .htaccess: core denied, server prefixes -> Laravel, else -> SPA shell.
+    // .htaccess: forces https, core denied, server prefixes -> Laravel, else -> SPA shell.
     expect(File::get("{$stage}/.htaccess"))
         ->toContain('DirectoryIndex index.html index.php')
+        ->toContain('RewriteCond %{HTTPS} off')
+        ->toContain('RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]')
         ->toContain('RewriteRule ^app_core(/|$) - [F,L]')
         ->toContain('RewriteRule ^(api|sanctum|broadcasting|up)(/|$) index.php [L]')
         ->toContain('RewriteRule ^ index.html [L]');
@@ -105,9 +109,26 @@ it('writes deploy notes next to the zip, never inside the document root', functi
 
 it('rejects a leftover two-subdomain env where stateful domains miss the API host', function () {
     stageRelease(releaseEnvFile([
-        'APP_URL' => 'https://api.hotel.example.com',       // host is api.hotel.example.com
-        'SANCTUM_STATEFUL_DOMAINS' => 'hotel.example.com',  // ...which is not in this list
+        'APP_URL' => 'https://api.hotel.example.com',        // host is api.hotel.example.com
+        'TENANCY_BASE_DOMAIN' => 'api.hotel.example.com',    // matches, so this isolates the stateful-domains check
+        'SANCTUM_STATEFUL_DOMAINS' => 'hotel.example.com,*.hotel.example.com', // ...which don't cover it
     ]))->assertFailed();
+});
+
+it('rejects a missing TENANCY_BASE_DOMAIN', function () {
+    stageRelease(releaseEnvFile(['TENANCY_BASE_DOMAIN' => null]))->assertFailed();
+});
+
+it('rejects a TENANCY_BASE_DOMAIN that does not match the APP_URL host', function () {
+    stageRelease(releaseEnvFile(['TENANCY_BASE_DOMAIN' => 'vellixglobal.com']))->assertFailed();
+});
+
+it('rejects stateful domains missing the wildcard entry for tenant subdomains', function () {
+    stageRelease(releaseEnvFile(['SANCTUM_STATEFUL_DOMAINS' => 'hotel.example.com']))->assertFailed();
+});
+
+it('rejects a missing SANCTUM_STATEFUL_DOMAINS', function () {
+    stageRelease(releaseEnvFile(['SANCTUM_STATEFUL_DOMAINS' => null]))->assertFailed();
 });
 
 it('rejects a debug build', function () {

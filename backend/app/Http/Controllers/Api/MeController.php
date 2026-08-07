@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Services\CurrentContext;
 use App\Services\MenuRenderer;
+use App\Services\TenantModules;
 use App\Services\UserLanding;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -44,6 +45,10 @@ class MeController extends Controller
             ],
             'is_full_admin' => $user->isFullAdmin(),
             'permissions' => $user->cachedPermissionNames()->values()->all(),
+            // Module licensing (App\Services\TenantModules) is orthogonal to role —
+            // even a Full Administrator's permissions must be cross-checked against
+            // this before the SPA treats them as usable.
+            'enabled_modules' => TenantModules::enabledFineKeys()->all(),
             'home' => UserLanding::urlFor($user),
             'menu' => MenuRenderer::forUser($user),
             'branch' => $this->resolveBranchContext($request),
