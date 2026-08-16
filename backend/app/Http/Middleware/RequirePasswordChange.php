@@ -29,10 +29,16 @@ class RequirePasswordChange
     public function handle(Request $request, Closure $next): Response
     {
         $user = $request->user();
+        $routeName = $request->route()?->getName();
 
         if ($user
             && $user->must_change_password
-            && ! in_array($request->route()?->getName(), self::ALLOWED_ROUTES, true)) {
+            && ! in_array($routeName, self::ALLOWED_ROUTES, true)
+            // The public.* endpoints are guest-facing (branding, pre-check-in,
+            // QR ordering) — a flagged user must not be locked out of the very
+            // theme data their own login screen renders. Same for host-context:
+            // it's the SPA's boot gate and may be hit with a stale session.
+            && ! (is_string($routeName) && (str_starts_with($routeName, 'public.') || $routeName === 'host-context'))) {
             return response()->json([
                 'message' => 'Please set a new password before continuing.',
                 'error_code' => 'must_change_password',

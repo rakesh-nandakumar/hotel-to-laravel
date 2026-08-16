@@ -2,6 +2,7 @@
 
 namespace App\Models\Apartment;
 
+use App\Models\Concerns\BelongsToTenant;
 use App\Models\Lookup;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
@@ -9,9 +10,12 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class MaintenanceIssue extends Model
 {
+    use BelongsToTenant;
+
     protected $table = 'apartment_maintenance_issues';
 
-    protected $fillable = [
+    protected $fillable = ['tenant_id',
+
         'unit_id',
         'description',
         'maintenance_status_id',

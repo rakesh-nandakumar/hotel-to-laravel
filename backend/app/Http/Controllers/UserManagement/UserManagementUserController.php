@@ -7,11 +7,11 @@ use App\Http\Requests\UserManagement\BulkActionRequest;
 use App\Http\Requests\UserManagement\StoreUserRequest;
 use App\Http\Requests\UserManagement\UpdateUserRequest;
 use App\Models\Branch;
-use App\Models\MenuItem;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\User;
 use App\Services\AuditLog;
+use App\Services\PermissionMatrixBuilder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -471,36 +471,7 @@ class UserManagementUserController extends Controller
         $actorPermissions = $actor?->cachedPermissionNames() ?? collect();
         $isFullAdmin = $actor?->isFullAdmin() ?? false;
 
-        $sections = MenuItem::with('children')
-            ->whereNull('parent_id')
-            ->where('is_active', true)
-            ->orderBy('order')
-            ->get();
-
-        $matrix = $sections->map(function (MenuItem $section) {
-            $modules = $section->isGroup()
-                ? $section->children
-                : collect([$section]);
-
-            return [
-                'section' => $section->name,
-                'modules' => $modules
-                    ->filter(fn (MenuItem $m) => $m->module_key !== null)
-                    ->map(fn (MenuItem $m) => [
-                        'key' => $m->module_key,
-                        'label' => $m->name,
-                        'actions' => $m->actions ?? [],
-                    ])
-                    ->values()
-                    ->all(),
-            ];
-        })->filter(fn ($s) => count($s['modules']) > 0)->values()->all();
-
-        $allActions = collect($matrix)
-            ->flatMap(fn ($s) => collect($s['modules'])->flatMap(fn ($m) => $m['actions']))
-            ->unique()
-            ->values()
-            ->all();
+        $matrix = app(PermissionMatrixBuilder::class)->for();
 
         $roles = Role::query()
             ->where('is_active', true)
@@ -517,9 +488,7 @@ class UserManagementUserController extends Controller
 
         $warehouses = Branch::query()->select('id', 'name')->orderBy('name')->get();
 
-        return [
-            'matrix' => $matrix,
-            'allActions' => $allActions,
+        return array_merge($matrix, [
             'roles' => $roles->map(fn (Role $r) => [
                 'id' => $r->id,
                 'name' => $r->name,
@@ -532,6 +501,6 @@ class UserManagementUserController extends Controller
                 ? null
                 : $actorPermissions->values()->all(),
             'is_full_admin' => $isFullAdmin,
-        ];
+        ]);
     }
 }

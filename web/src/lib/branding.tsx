@@ -4,9 +4,11 @@ import { applyTheme } from "./theme";
 
 /**
  * Site identity — hotel name, tagline and logo — pulled from the business
- * Settings (Hotel identity section) via the unauthenticated `/public/branding`
- * endpoint. Fetched once for the whole app so the login screen, sidebar and
- * guest pages all render the same, admin-configurable identity. Nothing here
+ * Settings (Hotel identity section). On a tenant host the boot gate
+ * (/api/host-context) already returns the full public branding payload, so
+ * the provider seeds from that (setBrandingBootHint in main.tsx) and the
+ * tenant shell paints its identity and theme with zero extra round-trips.
+ * refresh() re-pulls /api/public/branding after settings change. Nothing here
  * is hard-coded: the Settings screen drives every value.
  */
 export type Branding = {
@@ -42,6 +44,17 @@ type BrandingCtx = { branding: Branding; loading: boolean; refresh: () => void }
 const Ctx = createContext<BrandingCtx>({ branding: DEFAULTS, loading: true, refresh: () => {} });
 export const useBranding = () => useContext(Ctx);
 
+let bootHint: Partial<Branding> | null = null;
+
+/**
+ * Seed identity from the boot gate's tenant payload (main.tsx, before
+ * mounting). Cleared when there is no tenant (the provider won't fetch then,
+ * but the tenant shell never mounts without a hint anyway).
+ */
+export function setBrandingBootHint(hint: Partial<Branding> | null) {
+  bootHint = hint;
+}
+
 /** Two-letter fallback mark (e.g. "Mount View Hotel" → "MV") when no logo is set. */
 export function brandInitials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -50,18 +63,20 @@ export function brandInitials(name: string): string {
 }
 
 export function BrandingProvider({ children }: { children: ReactNode }) {
-  const [branding, setBranding] = useState<Branding>(DEFAULTS);
-  const [loading, setLoading] = useState(true);
+  const [branding, setBranding] = useState<Branding>({ ...DEFAULTS, ...bootHint });
+  const [loading, setLoading] = useState(bootHint === null);
 
   const refresh = useCallback(() => {
     api<Partial<Branding>>("/public/branding")
-      .then((b) => setBranding({ ...DEFAULTS, ...b }))
-      .catch(() => {}) // keep defaults if branding can't be reached (e.g. offline)
+      .then((b) => setBranding((prev) => ({ ...prev, ...b })))
+      .catch(() => {}) // keep what we have if branding can't be reached (e.g. offline)
       .finally(() => setLoading(false));
   }, []);
 
   useEffect(() => {
-    refresh();
+    // The boot gate already carried the full identity on a tenant host; only
+    // re-fetch when there was no hint (or when settings changed).
+    if (bootHint === null) refresh();
   }, [refresh]);
 
   useEffect(() => {

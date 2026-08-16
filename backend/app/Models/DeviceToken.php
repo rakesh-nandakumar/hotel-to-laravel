@@ -2,14 +2,18 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToTenant;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class DeviceToken extends Model
 {
+    use BelongsToTenant;
+
     public $timestamps = false;
 
-    protected $fillable = [
+    protected $fillable = ['tenant_id',
+
         'user_id',
         'token_hash',
         'expires_at',

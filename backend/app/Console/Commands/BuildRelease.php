@@ -25,15 +25,17 @@ use ZipArchive;
  * terminal, no artisan/composer on the server.
  *
  * This app is multi-tenant (see config/tenancy.php): tenants live at
- * {slug}.{TENANCY_BASE_DOMAIN} and the master-control panel at
- * {central_subdomain}.{TENANCY_BASE_DOMAIN} (default "admin"), all resolved
- * at runtime from the Host header by IdentifyTenant — there is nothing
- * per-tenant in this bundle. That means one cPanel "wildcard subdomain"
- * (`*.hms.vellixglobal.com` -> this document root) plus a matching wildcard
- * SSL cert is enough to serve every current AND future tenant from this one
- * zip; validateProductionEnv() below fails the build loudly if the env file
- * would not actually cover every subdomain (wrong TENANCY_BASE_DOMAIN, or a
- * SANCTUM_STATEFUL_DOMAINS list missing the *.{host} wildcard).
+ * {slug}.{base} and the master-control panel at {central_subdomain}.{base}
+ * (default "admin"), where {base} is the request's own host minus its first
+ * label — resolution is RELATIVE, so nothing per-domain is baked in, and all
+ * of it is resolved at runtime from the Host header by IdentifyTenant. There
+ * is nothing per-tenant in this bundle. That means one cPanel "wildcard
+ * subdomain" (`*.hms.vellixglobal.com` -> this document root) plus a matching
+ * wildcard SSL cert is enough to serve every current AND future tenant from
+ * this one zip; validateProductionEnv() below fails the build loudly if the
+ * env file would not actually cover every subdomain (a pinned
+ * TENANCY_BASE_DOMAIN that doesn't match APP_URL, or a SANCTUM_STATEFUL_DOMAINS
+ * list missing the *.{host} wildcard).
  *
  * Layout the zip produces (its entries land directly in the document root):
  *
@@ -196,22 +198,15 @@ class BuildRelease extends Command
             // process env override .env files. This is what puts both halves on
             // one origin: no CORS, no cross-site cookies, nothing to configure.
             //
-            // VITE_TENANCY_BASE_DOMAIN / VITE_TENANCY_CENTRAL_SUBDOMAIN are
-            // baked in the same way, from the SAME values IdentifyTenant uses
-            // server-side (TENANCY_BASE_DOMAIN / TENANCY_CENTRAL_SUBDOMAIN),
-            // never left to whatever happens to be in web/.env*. Without this
-            // web/src/lib/tenancy.ts's isCentralHost() sees an empty
-            // BASE_DOMAIN and never mounts CentralApp on the real central
-            // subdomain — it silently falls back to the tenant app instead,
-            // which is what let a tenant's own /api/public/branding data
-            // (and its hardcoded fallback name) show up on the central login.
+            // No tenant/central host values are baked in: resolution is RELATIVE
+            // (first DNS label = identity, rest = base, see config/tenancy.php),
+            // and the SPA's boot gate (/api/host-context) tells it which shell to
+            // mount from the Host header it's actually served under.
             $this->components->task('Building front-end (npm run build)', fn () => $this->runProcess(
                 ['npm', 'run', 'build'],
                 $frontendBase,
                 [
                     'VITE_API_URL' => '',
-                    'VITE_TENANCY_BASE_DOMAIN' => $env['host'],
-                    'VITE_TENANCY_CENTRAL_SUBDOMAIN' => $env['central_subdomain'],
                 ],
             ));
         }
@@ -253,6 +248,7 @@ class BuildRelease extends Command
             $this->components->task('Installing production vendor (composer --no-dev)', fn () => $this->runProcess([
                 'composer', 'install', '--no-dev', '--optimize-autoloader',
                 '--classmap-authoritative', '--no-interaction', '--no-progress', '--no-scripts',
+                '--ignore-platform-req=php',
             ], $coreStage));
             $this->components->task('Pruning vendor cruft', function () use ($coreStage, &$pruned) {
                 $pruned = $this->pruneVendor($coreStage.'/vendor');
@@ -321,7 +317,7 @@ class BuildRelease extends Command
      * hosts resolved at runtime by IdentifyTenant, so the checks below confirm
      * the env file actually covers ALL of them, not just the bare host.
      *
-     * @return array{APP_URL: string, host: string, db: string, central_subdomain: string}
+     * @return array{APP_URL: string, host: string, db: string}
      */
     private function loadAndValidateProductionEnv(string $envFile): array
     {
@@ -352,27 +348,18 @@ class BuildRelease extends Command
             throw new RuntimeException("APP_URL must be an https:// URL with a host in {$envFile}, got \"{$appUrl}\". This is the bare base domain — every tenant subdomain and the central panel sit under it.");
         }
 
-        // TENANCY_BASE_DOMAIN drives IdentifyTenant's Str::endsWith($host,
-        // ".{$baseDomain}") slug parsing. If it's left unset (defaulting to
-        // config/tenancy.php's "vellixglobal.com") while APP_URL points at a
-        // narrower host like "hms.vellixglobal.com", every subdomain still
-        // technically ends with ".vellixglobal.com" and gets parsed with the
-        // wrong slug (e.g. "tenant1.hms" instead of "tenant1") — a silent,
-        // hard-to-spot routing bug rather than a loud failure. Require it to
-        // be set explicitly and match the deploy host exactly.
+        // TENANCY_BASE_DOMAIN is now OPTIONAL: host resolution is RELATIVE
+        // (see config/tenancy.php), so with it unset every {slug}.{APP_URL-host}
+        // subdomain resolves correctly with no domain literal anywhere. Setting
+        // it pins STRICT mode — and then it must equal the deploy host exactly,
+        // or every request's base mismatches and the whole site 404s. A pinned
+        // value that doesn't match is a loud, caught error, not a silent bug.
         $baseDomain = trim((string) ($env['TENANCY_BASE_DOMAIN'] ?? ''));
-        if ($baseDomain === '') {
-            throw new RuntimeException(
-                "TENANCY_BASE_DOMAIN is missing in {$envFile} — every tenant is reached at {slug}.{TENANCY_BASE_DOMAIN} "
-                .'(see config/tenancy.php), so an unset value silently falls back to the config default and can '
-                ."misparse tenant slugs on this host. Set TENANCY_BASE_DOMAIN={$host}."
-            );
-        }
-        if ($baseDomain !== $host) {
+        if ($baseDomain !== '' && $baseDomain !== $host) {
             throw new RuntimeException(
                 "TENANCY_BASE_DOMAIN ({$baseDomain}) does not match the APP_URL host ({$host}) in {$envFile} — "
                 .'APP_URL must be the bare base domain that every tenant subdomain sits under. '
-                ."Set TENANCY_BASE_DOMAIN={$host} (or fix APP_URL)."
+                ."Set TENANCY_BASE_DOMAIN={$host}, or remove it entirely (relative mode — recommended)."
             );
         }
 
@@ -431,13 +418,10 @@ class BuildRelease extends Command
             throw new RuntimeException("DB_DATABASE is missing in {$envFile} — set the production database name you import the SQL dump into.");
         }
 
-        $centralSubdomain = trim((string) ($env['TENANCY_CENTRAL_SUBDOMAIN'] ?? '')) ?: 'admin';
-
         return [
             'APP_URL' => $appUrl,
             'host' => $host,
             'db' => $db,
-            'central_subdomain' => $centralSubdomain,
         ];
     }
 
@@ -797,8 +781,8 @@ class BuildRelease extends Command
             ."  - Which tenant a request belongs to is resolved purely from the Host header\n"
             ."    (IdentifyTenant) — new tenants need only a DB row + DNS coverage under the\n"
             ."    wildcard, never a new deploy.\n"
-            ."  - {$coreDir}/.env is baked from {$envFileName}. TENANCY_BASE_DOMAIN there must equal\n"
-            ."    APP_URL's host ({$host}) — release:build already refused to build otherwise.\n"
+            ."  - {$coreDir}/.env is baked from {$envFileName}. TENANCY_BASE_DOMAIN is optional (relative mode); if\n"
+            ."    set, it must equal APP_URL's host ({$host}) — release:build already refused to build otherwise.\n"
             ."  - storage/ is a fresh empty skeleton each build. Sessions & cache live in the DB\n"
             ."    (SESSION_DRIVER=database, CACHE_STORE=database), so nothing important is lost.\n"
             ."  - Public-disk serving (/storage/*) needs a symlink and is NOT set up here; this app\n"

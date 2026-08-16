@@ -7,6 +7,7 @@ use App\Models\Permission;
 use App\Models\Role;
 use App\Models\Tenant;
 use App\Models\User;
+use App\Services\CurrentContext;
 use Database\Seeders\Menu\SystemRoleDefinition;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
@@ -21,8 +22,12 @@ class PermissionsAndRolesSeeder extends Seeder
             $this->seedSystemRoles(Tenant::demo()->id);
         });
 
-        User::query()->whereNotNull('role_id')->lazy()->each(function (User $user): void {
-            $user->flushPermissionCache();
+        // A cross-tenant sweep (every user holding a role, in any tenant) —
+        // explicitly unscoped: this seeder is console-only setup work.
+        app(CurrentContext::class)->runWithoutTenant(function (): void {
+            User::query()->whereNotNull('role_id')->lazy()->each(function (User $user): void {
+                $user->flushPermissionCache();
+            });
         });
     }
 
@@ -57,32 +62,37 @@ class PermissionsAndRolesSeeder extends Seeder
      */
     public function seedSystemRoles(int $tenantId): void
     {
-        foreach (SystemRoleDefinition::roles() as $name => $config) {
-            /** @var Role $role */
-            $role = Role::firstOrNew(['tenant_id' => $tenantId, 'name' => $name]);
-            $role->fill([
-                'description' => $config['description'] ?? null,
-                'is_system' => true,
-                'is_full_admin' => $config['is_full_admin'] ?? false,
-                'is_active' => true,
-            ])->save();
+        // Role rows are tenant-scoped, and a seeder runs in console with no
+        // ambient tenant — bind the tenant explicitly so every query inside
+        // behaves exactly like the tenant's own app would (see TenantScope).
+        app(CurrentContext::class)->runForTenant($tenantId, function () use ($tenantId): void {
+            foreach (SystemRoleDefinition::roles() as $name => $config) {
+                /** @var Role $role */
+                $role = Role::firstOrNew(['tenant_id' => $tenantId, 'name' => $name]);
+                $role->fill([
+                    'description' => $config['description'] ?? null,
+                    'is_system' => true,
+                    'is_full_admin' => $config['is_full_admin'] ?? false,
+                    'is_active' => true,
+                ])->save();
 
-            $permissionNames = $this->resolveGrants($config['permissions'] ?? []);
+                $permissionNames = $this->resolveGrants($config['permissions'] ?? []);
 
-            $existing = Permission::query()->whereIn('name', $permissionNames)->pluck('name')->all();
-            $missing = array_diff($permissionNames, $existing);
+                $existing = Permission::query()->whereIn('name', $permissionNames)->pluck('name')->all();
+                $missing = array_diff($permissionNames, $existing);
 
-            if (! empty($missing)) {
-                throw new RuntimeException(
-                    "System role '{$name}' references unknown permissions: "
-                    .implode(', ', $missing)
-                    .'. Check MenuDefinition module_keys against SystemRoleDefinition.'
-                );
+                if (! empty($missing)) {
+                    throw new RuntimeException(
+                        "System role '{$name}' references unknown permissions: "
+                        .implode(', ', $missing)
+                        .'. Check MenuDefinition module_keys against SystemRoleDefinition.'
+                    );
+                }
+
+                $permissionIds = Permission::query()->whereIn('name', $permissionNames)->pluck('id')->all();
+                $role->permissions()->sync($permissionIds);
             }
-
-            $permissionIds = Permission::query()->whereIn('name', $permissionNames)->pluck('id')->all();
-            $role->permissions()->sync($permissionIds);
-        }
+        });
     }
 
     /**

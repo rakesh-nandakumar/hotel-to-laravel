@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus, Search, ClipboardList, Trash2, ArchiveRestore, ImageOff } from "lucide-react";
+import { Plus, Search, ClipboardList, Trash2, ArchiveRestore, ImageOff, ChefHat, HandPlatter, ListPlus } from "lucide-react";
 import { api, post, put } from "../lib/api";
 import { useFetch, lkr, toCents, centsToRupees } from "../lib/util";
 import { Badge, Empty, ErrorText, Field, Modal, Pagination } from "../components/ui";
@@ -11,9 +11,15 @@ type Cat = { id: number; name: string; sort_order: number; is_minibar: boolean; 
 type Ingredient = { id: number; name: string; unit: string };
 type Modifier = { id: number; name: string; price_delta: number };
 type ModifierGroup = { id: number; name: string; is_required: boolean; max_select: number; modifiers: Modifier[] };
+type AddOnLink = { id: number; menu_item_id?: number | null; menu_item?: { id: number; name: string } | null; menu_category_id?: number | null; menu_category?: { id: number; name: string } | null };
+type AddOn = {
+  id: number; name: string; price: number; send_to_kot: boolean; active: boolean; sort_order: number;
+  stock_ingredient_id?: number | null; stock_ingredient?: { id: number; name: string; unit: string } | null;
+  links: AddOnLink[];
+};
 type Item = {
   id: number; item_no?: number | null; name: string; price: number; sold_out: boolean; active: boolean; description: string;
-  image?: string | null;
+  image?: string | null; send_to_kot: boolean; stock_ingredient_id?: number | null; stock_ingredient?: { id: number; name: string; unit: string } | null;
   category: { id: number; name: string };
   recipe: { ingredient_id: number; qty: number; ingredient: { name: string; unit: string } }[];
   modifier_groups: ModifierGroup[];
@@ -40,6 +46,7 @@ export default function MenuAdmin() {
   const cats = catsData?.menu_categories;
   const ingredients = ingredientsData?.ingredients;
   const [edit, setEdit] = useState<Item | "new" | null>(null);
+  const [addOnsOpen, setAddOnsOpen] = useState(false);
   const [removing, setRemoving] = useState<Item | null>(null);
   const [flash, setFlash] = useState("");
   const [err, setErr] = useState("");
@@ -60,7 +67,14 @@ export default function MenuAdmin() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="flex items-center gap-2 text-xl font-extrabold"><ClipboardList /> Menu</h1>
-        {canCreate && <button className="btn-primary" onClick={() => setEdit("new")}><Plus size={16} /> New item</button>}
+        <div className="flex gap-2">
+          {canEdit && (
+            <button className="btn-secondary" onClick={() => setAddOnsOpen(true)}>
+              <ListPlus size={15} /> Add-ons
+            </button>
+          )}
+          {canCreate && <button className="btn-primary" onClick={() => setEdit("new")}><Plus size={16} /> New item</button>}
+        </div>
       </div>
 
       {/* Stats */}
@@ -136,9 +150,13 @@ export default function MenuAdmin() {
             </span>
             <div className="min-w-0 flex-1">
               <div className={clsx("truncate text-sm font-bold", !i.active && "text-slate-400 line-through")}>{i.name}</div>
-              <div className="text-[11px] text-slate-400">
-                {i.category.name}
-                {i.recipe.length > 0 && <> · BOM: {i.recipe.length} ingredient{i.recipe.length === 1 ? "" : "s"}</>}
+              <div className="flex items-center gap-1 text-[11px] text-slate-400">
+                <span>{i.category.name}</span>
+                {i.recipe.length > 0 && <span>· BOM: {i.recipe.length} ingredient{i.recipe.length === 1 ? "" : "s"}</span>}
+                {i.send_to_kot === false && (
+                  <span className="flex items-center gap-0.5 rounded bg-sky-100 px-1 py-px font-semibold text-sky-600"><HandPlatter size={9} /> counter</span>
+                )}
+                {i.stock_ingredient && <span className="rounded bg-slate-100 px-1 py-px font-semibold text-slate-500">unit stock</span>}
               </div>
             </div>
             <span className="text-sm font-extrabold text-brand-700">{lkr(i.price)}</span>
@@ -204,6 +222,13 @@ export default function MenuAdmin() {
             <button className="btn-secondary flex-1" onClick={() => setRemoving(null)}>Cancel</button>
           </div>
         </Modal>
+      )}
+      {addOnsOpen && (
+        <AddOnsManager
+          cats={(cats ?? []).filter((c) => c.active)}
+          ingredients={ingredients ?? []}
+          onClose={() => { setAddOnsOpen(false); reload(); }}
+        />
       )}
     </div>
   );
@@ -282,6 +307,8 @@ function ItemEditor({ item, cats, ingredients, onClose }: { item: Item | null; c
     itemNo: item?.item_no != null ? String(item.item_no) : "",
     description: item?.description ?? "",
     image: item?.image ?? "",
+    sendToKot: item?.send_to_kot ?? true,
+    stockIngredientId: item?.stock_ingredient_id != null ? String(item.stock_ingredient_id) : "",
   });
   const [recipe, setRecipe] = useState<{ ingredientId: string; qty: string }[]>(
     (item?.recipe ?? []).map((r) => ({ ingredientId: String(r.ingredient_id), qty: String(r.qty) }))
@@ -297,6 +324,8 @@ function ItemEditor({ item, cats, ingredients, onClose }: { item: Item | null; c
       item_no: f.itemNo.trim() ? parseInt(f.itemNo) : null,
       description: f.description,
       image: f.image || null,
+      send_to_kot: f.sendToKot,
+      stock_ingredient_id: f.stockIngredientId ? Number(f.stockIngredientId) : null,
       recipe: recipe.filter((r) => r.ingredientId && parseFloat(r.qty) > 0).map((r) => ({ ingredient_id: Number(r.ingredientId), qty: parseFloat(r.qty) })),
     };
     try {
@@ -335,6 +364,24 @@ function ItemEditor({ item, cats, ingredients, onClose }: { item: Item | null; c
       </div>
       <div className="mt-3">
         <Field label="Description"><input className="input" value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} /></Field>
+      </div>
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <Field label="Routing">
+          <label className="flex cursor-pointer items-center gap-2 rounded-lg bg-slate-50 px-3 py-2.5 text-sm font-semibold">
+            <input type="checkbox" checked={f.sendToKot} onChange={(e) => setF({ ...f, sendToKot: e.target.checked })} />
+            {f.sendToKot ? (
+              <><ChefHat size={14} className="text-orange-500" /> Send to kitchen (KOT ticket)</>
+            ) : (
+              <><HandPlatter size={14} className="text-sky-500" /> Front-counter pickup (no KOT)</>
+            )}
+          </label>
+        </Field>
+        <Field label="Unit stock ingredient" hint="For products without a recipe (bottled drinks, snacks): 1 unit = 1 portion, deducted FEFO from expiry batches. Ignored when a recipe is set.">
+          <select className="input" value={f.stockIngredientId} onChange={(e) => setF({ ...f, stockIngredientId: e.target.value })}>
+            <option value="">No unit stock (recipe only)</option>
+            {ingredients.map((ing) => <option key={ing.id} value={ing.id}>{ing.name} ({ing.unit})</option>)}
+          </select>
+        </Field>
       </div>
       <div className="mt-3">
         <div className="label">Recipe / BOM (auto-deducts ingredient stock per portion)</div>
@@ -440,5 +487,165 @@ function ModifierGroupsEditor({ item }: { item: Item }) {
       </div>
       <ErrorText error={error} />
     </div>
+  );
+}
+
+// ── Add-ons manager (extra cheese, extra curry…) — standalone sellable lines ──
+function AddOnsManager({ cats, ingredients, onClose }: { cats: Cat[]; ingredients: Ingredient[]; onClose: () => void }) {
+  const { data, reload } = useFetch<{ add_ons: AddOn[] }>("/menu/add-ons");
+  const { data: allItemsData } = useFetch<{ menu_items: Item[] }>("/menu/items?active=true");
+  const allAddOns = data?.add_ons ?? [];
+  const allItems = allItemsData?.menu_items ?? [];
+  const [editing, setEditing] = useState<AddOn | "new" | null>(null);
+  const [error, setError] = useState("");
+
+  return (
+    <Modal open onClose={onClose} title="Add-ons — extra cheese, extra curry, sides…" wide>
+      <p className="mb-3 text-xs text-slate-500">
+        Add-ons are standalone order lines with their own price, routing (kitchen ticket vs counter pickup) and stock. Link each to menu items or whole categories — the POS offers them when that item is tapped.
+      </p>
+      <div className="mb-2 flex items-center justify-between">
+        <span className="text-xs font-bold uppercase tracking-wide text-slate-400">{allAddOns.length} add-on{allAddOns.length === 1 ? "" : "s"}</span>
+        <button className="btn-secondary !py-1.5 text-xs" onClick={() => setEditing("new")}><Plus size={12} /> New add-on</button>
+      </div>
+      <div className="max-h-80 divide-y divide-slate-50 overflow-y-auto">
+        {allAddOns.map((a) => (
+          <div key={a.id} className={clsx("flex flex-wrap items-center gap-2 py-2", !a.active && "opacity-60")}>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5 text-sm font-bold">
+                <span className="truncate">{a.name}</span>
+                {a.send_to_kot ? (
+                  <span className="flex shrink-0 items-center gap-0.5 rounded bg-orange-100 px-1 py-px text-[10px] font-bold text-orange-600"><ChefHat size={9} /> kitchen</span>
+                ) : (
+                  <span className="flex shrink-0 items-center gap-0.5 rounded bg-sky-100 px-1 py-px text-[10px] font-bold text-sky-600"><HandPlatter size={9} /> counter</span>
+                )}
+                {!a.active && <Badge color="amber">inactive</Badge>}
+              </div>
+              <div className="text-[11px] text-slate-400">
+                {a.links.length > 0 ? a.links.map((l) => l.menu_item?.name ?? l.menu_category?.name ?? "").filter(Boolean).slice(0, 3).join(", ") : "not linked to any item"}
+                {a.links.length > 3 && "…"}
+                {a.stock_ingredient && <> · stock: {a.stock_ingredient.name}</>}
+              </div>
+            </div>
+            <span className="text-sm font-extrabold text-brand-700">{lkr(a.price)}</span>
+            <button className="btn-ghost !py-1 text-xs" onClick={() => setEditing(a)}>Edit</button>
+            <button
+              className="btn-ghost !p-1.5 text-red-400 hover:!bg-red-50 hover:text-red-600"
+              title="Remove add-on"
+              onClick={() =>
+                api(`/menu/add-ons/${a.id}`, { method: "DELETE" })
+                  .then(() => { setError(""); reload(); })
+                  .catch((e) => setError(e.message))
+              }
+            >
+              <Trash2 size={14} />
+            </button>
+          </div>
+        ))}
+        {allAddOns.length === 0 && <Empty text="No add-ons yet — create one" />}
+      </div>
+      <ErrorText error={error} />
+      {editing && (
+        <AddOnEditor
+          addOn={editing === "new" ? null : editing}
+          items={allItems}
+          cats={cats}
+          ingredients={ingredients}
+          onClose={() => { setEditing(null); reload(); }}
+        />
+      )}
+    </Modal>
+  );
+}
+
+function AddOnEditor({ addOn, items, cats, ingredients, onClose }: { addOn: AddOn | null; items: Item[]; cats: Cat[]; ingredients: Ingredient[]; onClose: () => void }) {
+  const [f, setF] = useState({
+    name: addOn?.name ?? "",
+    price: addOn ? centsToRupees(addOn.price) : "",
+    sendToKot: addOn?.send_to_kot ?? true,
+    stockIngredientId: addOn?.stock_ingredient_id != null ? String(addOn.stock_ingredient_id) : "",
+    itemIds: new Set<number>(addOn?.links.filter((l) => l.menu_item_id).map((l) => l.menu_item_id as number) ?? []),
+    catIds: new Set<number>(addOn?.links.filter((l) => l.menu_category_id).map((l) => l.menu_category_id as number) ?? []),
+  });
+  const [error, setError] = useState("");
+
+  const toggleSet = (key: "itemIds" | "catIds", id: number) =>
+    setF((s) => {
+      const next = new Set(s[key]);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return { ...s, [key]: next };
+    });
+
+  const save = async () => {
+    setError("");
+    const body = {
+      name: f.name.trim(),
+      price: toCents(f.price),
+      send_to_kot: f.sendToKot,
+      stock_ingredient_id: f.stockIngredientId ? Number(f.stockIngredientId) : null,
+      menu_item_ids: [...f.itemIds],
+      menu_category_ids: [...f.catIds],
+    };
+    try {
+      if (addOn) await put(`/menu/add-ons/${addOn.id}`, body);
+      else await post("/menu/add-ons", body);
+      onClose();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+
+  return (
+    <Modal open onClose={onClose} title={addOn ? `Edit add-on — ${addOn.name}` : "New add-on"} wide>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label="Name"><input className="input" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} autoFocus /></Field>
+        <Field label="Price (LKR)"><input className="input" value={f.price} onChange={(e) => setF({ ...f, price: e.target.value })} /></Field>
+        <Field label="Stock ingredient" hint="Unit-stocked (1 add-on = 1 unit). Batch expiry tracked — FEFO deduction.">
+          <select className="input" value={f.stockIngredientId} onChange={(e) => setF({ ...f, stockIngredientId: e.target.value })}>
+            <option value="">No stock tracking</option>
+            {ingredients.map((ing) => <option key={ing.id} value={ing.id}>{ing.name} ({ing.unit})</option>)}
+          </select>
+        </Field>
+        <Field label="Routing">
+          <label className="flex cursor-pointer items-center gap-2 rounded-lg bg-slate-50 px-3 py-2.5 text-sm font-semibold">
+            <input type="checkbox" checked={f.sendToKot} onChange={(e) => setF({ ...f, sendToKot: e.target.checked })} />
+            {f.sendToKot ? (
+              <><ChefHat size={14} className="text-orange-500" /> Send to kitchen (KOT ticket)</>
+            ) : (
+              <><HandPlatter size={14} className="text-sky-500" /> Front-counter pickup (no KOT)</>
+            )}
+          </label>
+        </Field>
+      </div>
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <div>
+          <div className="label">Offered on categories</div>
+          <div className="max-h-44 space-y-1 overflow-y-auto rounded-lg bg-slate-50 p-2">
+            {cats.map((c) => (
+              <label key={c.id} className="flex items-center gap-2 rounded px-1.5 py-1 text-xs font-semibold hover:bg-white">
+                <input type="checkbox" checked={f.catIds.has(c.id)} onChange={() => toggleSet("catIds", c.id)} />
+                {c.name}
+              </label>
+            ))}
+            {cats.length === 0 && <span className="text-xs text-slate-400">No active categories</span>}
+          </div>
+        </div>
+        <div>
+          <div className="label">Offered on items</div>
+          <div className="max-h-44 space-y-1 overflow-y-auto rounded-lg bg-slate-50 p-2">
+            {items.map((i) => (
+              <label key={i.id} className="flex items-center gap-2 rounded px-1.5 py-1 text-xs font-semibold hover:bg-white">
+                <input type="checkbox" checked={f.itemIds.has(i.id)} onChange={() => toggleSet("itemIds", i.id)} />
+                <span className="truncate">{i.name}</span>
+              </label>
+            ))}
+            {items.length === 0 && <span className="text-xs text-slate-400">No items on this page</span>}
+          </div>
+        </div>
+      </div>
+      <ErrorText error={error} />
+      <button className="btn-primary mt-4 w-full" disabled={!f.name.trim() || toCents(f.price) <= 0} onClick={save}>Save add-on</button>
+    </Modal>
   );
 }

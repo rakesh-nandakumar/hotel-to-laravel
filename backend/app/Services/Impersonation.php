@@ -53,15 +53,18 @@ class Impersonation
      * right tenant (IdentifyTenant resolves it from that Host, and the token
      * is refused anywhere else).
      *
-     * Locally that works too, as long as TENANCY_BASE_DOMAIN is a name whose
-     * subdomains actually resolve — `localhost` is the obvious one, since
-     * browsers send every *.localhost straight to 127.0.0.1 with no hosts-file
-     * entry. The only difference from production is the port: the SPA is on
-     * Vite's, which a bare hostname doesn't carry.
+     * The subdomain is built RELATIVELY — {slug}.{base of the request's own
+     * host} — so a token minted on admin.vellixglobal.com lands on
+     * {slug}.vellixglobal.com, one minted on admin.localhost on
+     * {slug}.localhost, with no domain literal consulted anywhere.
+     *
+     * Locally the only difference from production is the port: with the dev
+     * fallback enabled the SPA is on Vite's, which a bare hostname doesn't
+     * carry, so it's bolted on here.
      */
     private function landingUrl(Tenant $tenant, string $plainToken): string
     {
-        $host = $tenant->slug.'.'.config('tenancy.base_domain');
+        $host = $tenant->slug.'.'.app(TenantHostResolver::class)->baseOf((string) request()->getHost());
         $scheme = request()?->getScheme() ?? 'https';
 
         if (config('tenancy.dev_fallback')) {

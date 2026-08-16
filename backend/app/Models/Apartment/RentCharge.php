@@ -2,6 +2,7 @@
 
 namespace App\Models\Apartment;
 
+use App\Models\Concerns\BelongsToTenant;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -11,9 +12,12 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  */
 class RentCharge extends Model
 {
+    use BelongsToTenant;
+
     protected $table = 'apartment_lease_rent_charges';
 
-    protected $fillable = [
+    protected $fillable = ['tenant_id',
+
         'lease_id',
         'period_month',
         'ledger_line_id',

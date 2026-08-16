@@ -6,6 +6,7 @@ use App\Models\Hotel\Notification;
 use App\Models\Hotel\Reservation;
 use App\Models\Hotel\Venue;
 use App\Models\Hotel\VenueBooking;
+use App\Models\User;
 use Database\Seeders\BranchSeeder;
 use Database\Seeders\HotelRoomsSeeder;
 use Database\Seeders\LookupSeeder;
@@ -30,6 +31,15 @@ it('serves branding with no authentication required', function () {
         ->and($response->json('theme_primary'))->toBe('#0462d3')
         ->and($response->json('theme_secondary'))->toBe('#3783f0')
         ->and($response->json('theme_sidebar'))->toBe('#0c182a');
+});
+
+it('still serves branding to a user held on the password-change screen', function () {
+    $user = User::factory()->create(['must_change_password' => true]);
+
+    $this->actingAs($user, 'web')
+        ->getJson('/api/public/branding')
+        ->assertOk()
+        ->assertJsonPath('theme_primary', '#0462d3');
 });
 
 it('lists only active venues publicly', function () {

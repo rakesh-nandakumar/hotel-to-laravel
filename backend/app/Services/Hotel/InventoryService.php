@@ -2,6 +2,7 @@
 
 namespace App\Services\Hotel;
 
+use App\Models\Hotel\AddOn;
 use App\Models\Hotel\Ingredient;
 use App\Models\Hotel\IngredientBatch;
 use App\Models\Hotel\MenuItem;
@@ -23,6 +24,14 @@ class InventoryService
     public function canMake(MenuItem $menuItem, int $portions = 1): array
     {
         $recipe = $menuItem->recipe()->with('ingredient')->get();
+
+        if ($recipe->isEmpty() && $menuItem->stock_ingredient_id && $menuItem->stockIngredient) {
+            $ingredient = $menuItem->stockIngredient;
+
+            return $ingredient->stock_qty < $portions
+                ? ['ok' => false, 'missing' => ["{$ingredient->name} (needs {$portions}{$ingredient->unit}, has {$ingredient->stock_qty}{$ingredient->unit})"]]
+                : ['ok' => true, 'missing' => []];
+        }
 
         $missing = $recipe
             ->filter(fn ($r) => $r->ingredient->stock_qty < $r->qty * $portions)
@@ -98,53 +107,103 @@ class InventoryService
      * Does NOT open its own transaction — must run inside the caller's, so a
      * mid-order failure rolls back the order/items too, not just the stock.
      *
+     * A menu item deducts via its recipe when one exists; a recipe-less,
+     * unit-stocked product (bottled drink, snack) deducts directly from its
+     * `stock_ingredient_id` batch-tracked ingredient — 1 portion = 1 unit.
+     *
      * @return list<string> ingredients newly at/below their low-stock threshold
      */
     public function deductStock(MenuItem $menuItem, int $portions, int $direction = 1): array
     {
         $recipe = $menuItem->recipe()->with('ingredient')->get();
+
         $lowNow = [];
-
-        foreach ($recipe as $recipeItem) {
-            $ingredient = $recipeItem->ingredient;
-            $change = $recipeItem->qty * $portions * $direction;
-
-            if ($direction === 1 && $ingredient->stock_qty < $change) {
-                throw new InsufficientStockException(
-                    $menuItem->id,
-                    "Not enough {$ingredient->name} in stock ({$ingredient->stock_qty}{$ingredient->unit} left, needs {$change}{$ingredient->unit})",
-                );
+        if ($recipe->isNotEmpty()) {
+            foreach ($recipe as $recipeItem) {
+                $change = $recipeItem->qty * $portions * $direction;
+                $lowNow = [...$lowNow, ...$this->applyIngredientDelta($menuItem, $recipeItem->ingredient, $change, $direction)];
             }
 
-            $ingredient->decrement('stock_qty', $change);
-            $ingredient->refresh();
+            return $lowNow;
+        }
 
-            if ($direction === 1) {
-                $this->drainBatchesFefo($ingredient->id, $change);
-            } else {
-                $this->restockBatches($ingredient->id, -$change);
-            }
-
-            if ($direction === 1
-                && $ingredient->stock_qty <= $ingredient->low_stock_threshold
-                && $ingredient->stock_qty + $change > $ingredient->low_stock_threshold) {
-                $lowNow[] = "{$ingredient->name} ({$ingredient->stock_qty}{$ingredient->unit} left)";
-            }
+        if ($menuItem->stock_ingredient_id && $menuItem->stockIngredient) {
+            return $this->applyIngredientDelta($menuItem, $menuItem->stockIngredient, $portions * $direction, $direction);
         }
 
         return $lowNow;
     }
 
     /**
+     * Deduct stock for `portions` of a standalone add-on. Add-ons track
+     * inventory through their `stock_ingredient_id` (1 add-on = 1 unit); the
+     * same FEFO batch drain and low-stock rules apply. Direction=-1 restocks.
+     *
+     * @return list<string> ingredients newly at/below their low-stock threshold
+     */
+    public function deductAddOn(AddOn $addOn, int $portions, int $direction = 1): array
+    {
+        if (! $addOn->stock_ingredient_id || ! $addOn->stockIngredient) {
+            return [];
+        }
+
+        return $this->applyIngredientDelta(null, $addOn->stockIngredient, $portions * $direction, $direction, $addOn);
+    }
+
+    /**
+     * Apply a signed delta to a single ingredient: check sufficiency on
+     * deduction, decrement the authoritative total, drain/restock the FEFO
+     * batches, and report whether it just crossed into low-stock territory.
+     *
+     * @return list<string> low-stock labels crossed on this deduction
+     */
+    private function applyIngredientDelta(?MenuItem $menuItem, Ingredient $ingredient, float $change, int $direction, ?AddOn $addOn = null): array
+    {
+        if ($direction === 1 && $ingredient->stock_qty < $change) {
+            $label = $menuItem ? $menuItem->name : ($addOn?->name ?? 'Item');
+            $owner = $menuItem ? $menuItem->id : ($addOn?->id ?? 0);
+
+            throw new InsufficientStockException(
+                $owner,
+                "Not enough {$ingredient->name} in stock ({$ingredient->stock_qty}{$ingredient->unit} left, needs {$change}{$ingredient->unit}) — \"{$label}\"",
+            );
+        }
+
+        $ingredient->decrement('stock_qty', $change);
+        $ingredient->refresh();
+
+        if ($direction === 1) {
+            $this->drainBatchesFefo($ingredient->id, $change);
+        } else {
+            $this->restockBatches($ingredient->id, -$change);
+        }
+
+        if ($direction === 1
+            && $ingredient->stock_qty <= $ingredient->low_stock_threshold
+            && $ingredient->stock_qty + $change > $ingredient->low_stock_threshold) {
+            return ["{$ingredient->name} ({$ingredient->stock_qty}{$ingredient->unit} left)"];
+        }
+
+        return [];
+    }
+
+    /**
      * After deductions: auto-mark as sold out any active item sharing these
-     * ingredients that can no longer make a single portion.
+     * ingredients that can no longer make a single portion — both recipe-based
+     * items and unit-stocked (direct-ingredient) items.
      *
      * @param  list<int>  $menuItemIds
+     * @param  list<int>  $addOnIds
      * @return list<string> names marked sold out
      */
-    public function autoSoldOutSweep(array $menuItemIds): array
+    public function autoSoldOutSweep(array $menuItemIds, array $addOnIds = []): array
     {
-        $ingredientIds = RecipeItem::query()->whereIn('menu_item_id', $menuItemIds)->pluck('ingredient_id')->unique()->values();
+        $ingredientIds = RecipeItem::query()->whereIn('menu_item_id', $menuItemIds)->pluck('ingredient_id');
+        if ($addOnIds !== []) {
+            $ingredientIds = $ingredientIds->merge(AddOn::query()->whereIn('id', $addOnIds)->whereNotNull('stock_ingredient_id')->pluck('stock_ingredient_id'));
+        }
+        $ingredientIds = $ingredientIds->unique()->values();
+
         if ($ingredientIds->isEmpty()) {
             return [];
         }
@@ -155,10 +214,22 @@ class InventoryService
             ->with(['ingredient:id,stock_qty', 'menuItem:id,name'])
             ->get();
 
+        // Unit-stocked products (no recipe) — can't fulfil a single unit any more.
+        $direct = MenuItem::query()
+            ->where('active', true)->where('sold_out', false)
+            ->whereIn('stock_ingredient_id', $ingredientIds)
+            ->with('stockIngredient:id,stock_qty')
+            ->get();
+
         $short = [];
         foreach ($affected as $recipeItem) {
             if ($recipeItem->ingredient->stock_qty < $recipeItem->qty) {
                 $short[$recipeItem->menu_item_id] = $recipeItem->menuItem->name;
+            }
+        }
+        foreach ($direct as $item) {
+            if ($item->stockIngredient && $item->stockIngredient->stock_qty < 1) {
+                $short[$item->id] = $item->name;
             }
         }
 

@@ -2,6 +2,7 @@
 
 namespace App\Models\Hotel;
 
+use App\Models\Concerns\BelongsToTenant;
 use App\Models\Lookup;
 use App\Traits\HasUserstamps;
 use Illuminate\Database\Eloquent\Model;
@@ -11,11 +12,12 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class MenuCategory extends Model
 {
-    use HasUserstamps, SoftDeletes;
+    use BelongsToTenant, HasUserstamps, SoftDeletes;
 
     protected $table = 'pos_menu_categories';
 
-    protected $fillable = [
+    protected $fillable = ['tenant_id',
+
         'name',
         'sort_order',
         'is_minibar',

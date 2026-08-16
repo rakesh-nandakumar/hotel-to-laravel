@@ -2,6 +2,7 @@
 
 namespace App\Models\Apartment;
 
+use App\Models\Concerns\BelongsToTenant;
 use App\Models\Lookup;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
@@ -9,9 +10,12 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class UtilityReading extends Model
 {
+    use BelongsToTenant;
+
     protected $table = 'apartment_utility_readings';
 
-    protected $fillable = [
+    protected $fillable = ['tenant_id',
+
         'lease_id',
         'utility_type_id',
         'period_month',

@@ -1,79 +1,70 @@
 /**
- * Browser-side mirror of the backend's config/tenancy.php. Decides whether the
- * current page is "master control" (CentralApp) or a tenant's own app (App).
+ * Browser-side mirror of the backend's relative host resolution
+ * (App\Services\TenantHostResolver): the first DNS label of the hostname is
+ * the identity and everything after it is the base — no domain literal is
+ * ever baked into the bundle.
  *
- * The backend is always the real authority — App\Http\Middleware\IdentifyTenant
- * resolves the tenant from the Host header and EnsureCentralContext rejects any
+ * The backend is always the real authority: IdentifyTenant resolves the
+ * tenant from the Host header and EnsureCentralContext rejects any
  * /api/central/* request that resolved one. What's here only picks which SPA
- * tree to mount, so the worst a mistake can do is render a panel whose every
- * API call then 404s.
+ * tree to mount; the final decision actually comes from the /api/host-context
+ * boot gate (see main.tsx), so the worst a mistake can do is render a panel
+ * whose every API call then 404s.
  */
 
-/** e.g. "vellixglobal.com". Empty when unset — see isCentralHost(). */
-export const BASE_DOMAIN = (import.meta.env.VITE_TENANCY_BASE_DOMAIN ?? "").trim().toLowerCase();
-
-/** The reserved master-control subdomain — matches TENANCY_CENTRAL_SUBDOMAIN. */
+/** The reserved master-control first label — mirrors TENANCY_CENTRAL_SUBDOMAIN. */
 export const CENTRAL_SUBDOMAIN = (import.meta.env.VITE_TENANCY_CENTRAL_SUBDOMAIN ?? "admin").trim().toLowerCase();
 
-/** Hosts with no subdomains to speak of, where the /central path fallback is allowed. */
-const DEV_HOSTS = ["localhost", "127.0.0.1", "[::1]", "::1"];
+/** A bare "co.uk"-style base has no room for a tenant label beneath it. */
+const MIN_BASE_LABELS = 2;
 
-export function isDevHost(hostname = window.location.hostname): boolean {
-  return DEV_HOSTS.includes(hostname.toLowerCase());
+/** *.localhost always gets a floor of 1 label so local subdomains resolve. */
+function isLocalhost(host: string): boolean {
+  return host === "localhost" || host.endsWith(".localhost");
+}
+
+/** Lowercased, trailing-dot stripped, IPv6 brackets removed. */
+function normalise(hostname: string): string {
+  return hostname.toLowerCase().replace(/\.$/, "").replace(/^\[|\]$/g, "");
+}
+
+/** Everything after the first label; the whole host when it is the apex. */
+export function baseOf(hostname: string): string {
+  const host = normalise(hostname);
+  if (!host) return "";
+  const labels = host.split(".");
+  if (labels.length <= 1) return host;
+  const base = labels.slice(1).join(".");
+  return isApex(host, base) ? host : base;
+}
+
+function isApex(host: string, base: string): boolean {
+  if (!base) return true;
+  const min = isLocalhost(host) ? 1 : MIN_BASE_LABELS;
+  return base.split(".").length < min;
 }
 
 /**
- * True on the master-control host: `admin.{base}` or the bare base domain,
- * mirroring IdentifyTenant's own central check.
+ * True on the master-control host: the apex (bare base domain, e.g.
+ * "vellixglobal.com" or "localhost") or a host whose first label is the
+ * central subdomain ("admin.vellixglobal.com", "admin.localhost", ...) —
+ * the same rules TenantHostResolver applies server-side.
  */
-export function isCentralHost(hostname = window.location.hostname): boolean {
-  if (!BASE_DOMAIN) {
-    return false;
-  }
+export function isCentralHost(hostname: string): boolean {
+  const host = normalise(hostname);
+  if (!host) return false;
 
-  const host = hostname.toLowerCase();
+  const labels = host.split(".");
+  const base = labels.slice(1).join(".");
 
-  return host === BASE_DOMAIN || host === `${CENTRAL_SUBDOMAIN}.${BASE_DOMAIN}`;
+  return isApex(host, base) || labels[0] === CENTRAL_SUBDOMAIN;
 }
 
 /**
- * Whether to mount CentralApp instead of the tenant App.
- *
- * With VITE_TENANCY_BASE_DOMAIN set (production), master control lives on its
- * own host and nowhere else — a tenant subdomain hitting /central renders the
- * tenant app instead, so the panel never even paints somewhere it can't work.
- * With it unset, or on localhost where there are no real subdomains, the
- * legacy `/central/*` path still selects it so local dev and the E2E suite
- * keep working unchanged.
- */
-export function shouldMountCentralApp(
-  hostname = window.location.hostname,
-  pathname = window.location.pathname,
-): boolean {
-  if (isCentralHost(hostname)) {
-    return true;
-  }
-
-  const pathFallbackAllowed = !BASE_DOMAIN || isDevHost(hostname);
-
-  return pathFallbackAllowed && pathname.startsWith("/central");
-}
-
-/**
- * Router basename for CentralApp. On the central host the panel owns the whole
- * origin and sits at "/"; under the path fallback it stays beneath "/central".
- */
-export function centralBasename(hostname = window.location.hostname): string {
-  return isCentralHost(hostname) ? "" : "/central";
-}
-
-/**
- * The public host a tenant's own app is reached at — display only. Falls back
- * to stripping the central subdomain off the current host when no base domain
- * is configured, which is all local dev can infer.
+ * The public host a tenant's own app is reached at — display only. Derived
+ * relatively from the current host's base, exactly like the backend derives
+ * landing URLs (Impersonation::landingUrl).
  */
 export function tenantHost(slug: string, hostname = window.location.hostname): string {
-  const base = BASE_DOMAIN || hostname.replace(new RegExp(`^${CENTRAL_SUBDOMAIN}\\.`), "");
-
-  return `${slug}.${base}`;
+  return `${slug}.${baseOf(hostname)}`;
 }

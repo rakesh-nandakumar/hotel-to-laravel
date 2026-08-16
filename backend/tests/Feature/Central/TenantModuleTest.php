@@ -17,9 +17,9 @@ beforeEach(function () {
 /**
  * Provisions a fresh tenant (distinct from the shared demo tenant beforeEach
  * already seeds) with its own Full Administrator, and returns [$tenant, $admin].
- * Requests must carry X-Tenant-Slug so IdentifyTenant's local/testing
- * dev-fallback resolves THIS tenant rather than failing its "exactly one
- * tenant in the DB" convenience (two tenants now exist: demo + this one).
+ * Requests must carry the tenant's own subdomain (absolute URLs — see
+ * CentralHostResolutionTest) so IdentifyTenant resolves THIS tenant rather
+ * than the demo one relative resolution on *.localhost would otherwise give.
  */
 function tenantWithFullAdmin(): array
 {
@@ -50,8 +50,7 @@ it('blocks even a full admin from a module the tenant is not licensed for', func
     // No TenantModule rows exist yet for this tenant — every business module
     // starts disabled until master control turns it on.
     CurrentContext::simulateWebRequest(fn () => $this->actingAs($admin)
-        ->withHeaders(['X-Tenant-Slug' => $tenant->slug])
-        ->getJson(route('apartments.properties.index'))
+        ->getJson("http://{$tenant->slug}.localhost/api/apartments/properties")
         ->assertForbidden());
 });
 
@@ -59,13 +58,11 @@ it('lets a central admin enable a module and the tenant gains access immediately
     [$tenant, $admin] = tenantWithFullAdmin();
 
     actingAsCentral(CentralAdmin::factory()->create());
-    $this->withHeaders(['X-Tenant-Slug' => $tenant->slug])
-        ->putJson("/api/central/tenants/{$tenant->id}/modules/".ModuleCatalog::APARTMENTS, ['enabled' => true])
+    $this->putJson("http://admin.localhost/api/central/tenants/{$tenant->id}/modules/".ModuleCatalog::APARTMENTS, ['enabled' => true])
         ->assertOk();
 
     CurrentContext::simulateWebRequest(fn () => $this->actingAs($admin)
-        ->withHeaders(['X-Tenant-Slug' => $tenant->slug])
-        ->getJson(route('apartments.properties.index'))
+        ->getJson("http://{$tenant->slug}.localhost/api/apartments/properties")
         ->assertOk());
 });
 
@@ -74,8 +71,7 @@ it('never gates core modules like dashboard', function () {
 
     // No modules enabled at all — core must still work.
     CurrentContext::simulateWebRequest(fn () => $this->actingAs($admin)
-        ->withHeaders(['X-Tenant-Slug' => $tenant->slug])
-        ->getJson(route('dashboard'))
+        ->getJson("http://{$tenant->slug}.localhost/api/dashboard")
         ->assertOk());
 });
 
@@ -93,8 +89,7 @@ it('excludes an unlicensed module from /me enabled_modules even for a full admin
     // No TenantModule rows exist yet — every business module starts disabled.
     CurrentContext::simulateWebRequest(function () use ($tenant, $admin) {
         $response = $this->actingAs($admin)
-            ->withHeaders(['X-Tenant-Slug' => $tenant->slug])
-            ->getJson(route('me'))
+            ->getJson("http://{$tenant->slug}.localhost/api/me")
             ->assertOk();
 
         expect($response->json('enabled_modules'))
@@ -110,14 +105,12 @@ it('adds a module to /me enabled_modules once master control licenses it', funct
     [$tenant, $admin] = tenantWithFullAdmin();
 
     actingAsCentral(CentralAdmin::factory()->create());
-    $this->withHeaders(['X-Tenant-Slug' => $tenant->slug])
-        ->putJson('/api/central/tenants/'.$tenant->id.'/modules/'.ModuleCatalog::APARTMENTS, ['enabled' => true])
+    $this->putJson("http://admin.localhost/api/central/tenants/{$tenant->id}/modules/".ModuleCatalog::APARTMENTS, ['enabled' => true])
         ->assertOk();
 
     CurrentContext::simulateWebRequest(function () use ($tenant, $admin) {
         $response = $this->actingAs($admin)
-            ->withHeaders(['X-Tenant-Slug' => $tenant->slug])
-            ->getJson(route('me'))
+            ->getJson("http://{$tenant->slug}.localhost/api/me")
             ->assertOk();
 
         expect($response->json('enabled_modules'))->toContain('apartment_properties');

@@ -7,6 +7,7 @@ use App\Models\Tenant;
 use App\Models\Till;
 use App\Models\TillSession;
 use App\Models\User;
+use App\Services\CurrentContext;
 use App\Services\TillService;
 use Database\Seeders\Menu\SystemRoleDefinition;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -27,6 +28,10 @@ use Tests\TestCase;
 pest()->extend(TestCase::class)
     ->use(RefreshDatabase::class)
     ->in('Feature');
+
+// Pure unit tests still need the framework booted for app()/config().
+pest()->extend(TestCase::class)
+    ->in('Unit');
 
 /*
 |--------------------------------------------------------------------------
@@ -60,20 +65,25 @@ expect()->extend('toBeOne', function () {
  */
 function fullAdmin(): User
 {
-    $role = Role::firstOrCreate(
-        ['name' => 'Test Full Admin'],
-        ['is_full_admin' => true, 'is_active' => true, 'is_system' => false],
-    );
+    // Test setup runs in console with no ambient tenant — bind the demo
+    // tenant explicitly so the scoped queries inside behave exactly like a
+    // real web request (see TenantScope).
+    return app(CurrentContext::class)->runForTenant(Tenant::demo()->id, function (): User {
+        $role = Role::firstOrCreate(
+            ['name' => 'Test Full Admin'],
+            ['is_full_admin' => true, 'is_active' => true, 'is_system' => false],
+        );
 
-    // Every test user belongs to the same demo tenant IdentifyTenant's local/testing
-    // dev-fallback resolves to (the single tenant in the DB) — see config/tenancy.php
-    // and App\Http\Middleware\IdentifyTenant. A mismatched tenant_id here would get
-    // the user logged straight back out by that middleware's cross-tenant guard.
-    $user = User::factory()->create(['tenant_id' => Tenant::demo()->id]);
-    $user->roles()->syncWithoutDetaching([$role->id]);
-    $user->flushPermissionCache();
+        // Every test user belongs to the same demo tenant IdentifyTenant's local/testing
+        // dev-fallback resolves to (the single tenant in the DB) — see config/tenancy.php
+        // and App\Http\Middleware\IdentifyTenant. A mismatched tenant_id here would get
+        // the user logged straight back out by that middleware's cross-tenant guard.
+        $user = User::factory()->create(['tenant_id' => Tenant::demo()->id]);
+        $user->roles()->syncWithoutDetaching([$role->id]);
+        $user->flushPermissionCache();
 
-    return $user;
+        return $user;
+    });
 }
 
 /**
@@ -84,12 +94,14 @@ function fullAdmin(): User
  */
 function staffWithRole(string $roleName): User
 {
-    $role = Role::query()->where('name', $roleName)->firstOrFail();
-    $user = User::factory()->create(['tenant_id' => Tenant::demo()->id]);
-    $user->roles()->sync([$role->id]);
-    $user->flushPermissionCache();
+    return app(CurrentContext::class)->runForTenant(Tenant::demo()->id, function () use ($roleName): User {
+        $role = Role::query()->where('name', $roleName)->firstOrFail();
+        $user = User::factory()->create(['tenant_id' => Tenant::demo()->id]);
+        $user->roles()->sync([$role->id]);
+        $user->flushPermissionCache();
 
-    return $user;
+        return $user;
+    });
 }
 
 /**
@@ -100,14 +112,16 @@ function staffWithRole(string $roleName): User
  */
 function openTillFor(User $staff, int $openingBalance = 100_000_000): TillSession
 {
-    $tillId = Till::query()->value('id');
-    if (! $tillId) {
-        $branchId = Branch::query()->value('id')
-            ?? Branch::create(['tenant_id' => Tenant::demo()->id, 'name' => 'Main Branch', 'is_active' => true, 'country' => 'Sri Lanka'])->id;
-        $tillId = Till::create(['branch_id' => $branchId, 'name' => 'Main Till'])->id;
-    }
+    return app(CurrentContext::class)->runForTenant(Tenant::demo()->id, function () use ($staff, $openingBalance): TillSession {
+        $tillId = Till::query()->value('id');
+        if (! $tillId) {
+            $branchId = Branch::query()->value('id')
+                ?? Branch::create(['tenant_id' => Tenant::demo()->id, 'name' => 'Main Branch', 'is_active' => true, 'country' => 'Sri Lanka'])->id;
+            $tillId = Till::create(['branch_id' => $branchId, 'name' => 'Main Till'])->id;
+        }
 
-    return app(TillService::class)->openTill($tillId, $staff->id, $openingBalance);
+        return app(TillService::class)->openTill($tillId, $staff->id, $openingBalance);
+    });
 }
 
 /**

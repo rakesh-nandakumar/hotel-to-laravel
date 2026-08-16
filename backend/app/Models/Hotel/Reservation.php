@@ -2,6 +2,7 @@
 
 namespace App\Models\Hotel;
 
+use App\Models\Concerns\BelongsToTenant;
 use App\Models\Lookup;
 use App\Traits\HasUserstamps;
 use Illuminate\Database\Eloquent\Builder;
@@ -13,9 +14,10 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Reservation extends Model
 {
-    use HasUserstamps, SoftDeletes;
+    use BelongsToTenant, HasUserstamps, SoftDeletes;
 
-    protected $fillable = [
+    protected $fillable = ['tenant_id',
+
         'code',
         'guest_id',
         'booking_channel_id',

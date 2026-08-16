@@ -2,12 +2,16 @@
 
 namespace App\Models\Hotel;
 
+use App\Models\Concerns\BelongsToTenant;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class OrderItemModifier extends Model
 {
-    protected $fillable = [
+    use BelongsToTenant;
+
+    protected $fillable = ['tenant_id',
+
         'order_item_id',
         'menu_item_modifier_id',
         'name',

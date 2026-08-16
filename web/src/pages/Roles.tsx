@@ -3,7 +3,7 @@ import { Plus, Pencil, Copy, Power, Trash2, Search, ShieldCheck } from "lucide-r
 import { post, put, api } from "../lib/api";
 import { useFetch } from "../lib/util";
 import { Badge, ConfirmDialog, Empty, ErrorText, Field, Modal, Pagination } from "../components/ui";
-import PermissionMatrix, { MatrixSection } from "../components/PermissionMatrix";
+import PermissionMatrix, { MatrixGroup, MatrixSection } from "../components/PermissionMatrix";
 import { usePermissions } from "../lib/auth";
 import { useToast } from "../lib/toast";
 
@@ -175,6 +175,7 @@ function RoleDeleteConfirm({ role, onClose, onDone }: { role: RoleRow; onClose: 
 
 type RoleFormData = {
   matrix: MatrixSection[];
+  groups: MatrixGroup[];
   grantable_permissions: string[] | null;
   is_full_admin: boolean;
   role?: {
@@ -249,7 +250,7 @@ function RoleEditorForm({ data, roleId, onClose }: { data: RoleFormData; roleId:
             <p className="mt-1 text-brand-700/80">This role bypasses every permission check, so individual permissions can't be edited.</p>
           </div>
         ) : (
-          <PermissionMatrix matrix={data.matrix} value={perms} onChange={setPerms} grantable={data.grantable_permissions} />
+          <PermissionMatrix matrix={data.matrix} value={perms} onChange={setPerms} grantable={data.grantable_permissions} groups={data.groups} />
         )}
       </div>
 

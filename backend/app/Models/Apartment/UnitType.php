@@ -2,6 +2,7 @@
 
 namespace App\Models\Apartment;
 
+use App\Models\Concerns\BelongsToTenant;
 use App\Traits\HasUserstamps;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -9,11 +10,12 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class UnitType extends Model
 {
-    use HasUserstamps, SoftDeletes;
+    use BelongsToTenant, HasUserstamps, SoftDeletes;
 
     protected $table = 'apartment_unit_types';
 
-    protected $fillable = [
+    protected $fillable = ['tenant_id',
+
         'name',
         'max_occupancy',
         'bedrooms',

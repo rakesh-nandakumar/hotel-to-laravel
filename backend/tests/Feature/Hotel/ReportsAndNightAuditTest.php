@@ -1,7 +1,9 @@
 <?php
 
 use App\Models\Hotel\Guest;
+use App\Services\CurrentContext;
 use App\Services\Settings;
+use Carbon\Carbon;
 use Database\Seeders\BranchSeeder;
 use Database\Seeders\HotelRoomsSeeder;
 use Database\Seeders\LookupSeeder;
@@ -110,7 +112,11 @@ it('runs a night audit once per business date and blocks a duplicate run', funct
 
     $first = $this->actingAs($manager)->postJson('/api/reports/night-audit/run', ['date' => '2026-07-10'])
         ->assertCreated();
-    expect($first->json('business_date'))->toStartWith('2026-07-10');
+
+    // The tenant's timezone (Asia/Colombo by default) makes a local midnight
+    // serialize as the previous UTC day — compare in the tenant's own zone.
+    $businessDate = Carbon::parse($first->json('business_date'));
+    expect($businessDate->setTimezone(app(CurrentContext::class)->timezone())->toDateString())->toBe('2026-07-10');
 
     $this->actingAs($manager)->postJson('/api/reports/night-audit/run', ['date' => '2026-07-10'])
         ->assertUnprocessable()

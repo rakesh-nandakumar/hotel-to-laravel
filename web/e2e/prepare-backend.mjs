@@ -23,7 +23,7 @@ const OVERRIDES = {
   DB_CONNECTION: "sqlite",
   DB_DATABASE: sqlitePath,
   SESSION_DOMAIN: "null",
-  SANCTUM_STATEFUL_DOMAINS: "127.0.0.1,127.0.0.1:*,localhost,localhost:*",
+  SANCTUM_STATEFUL_DOMAINS: "127.0.0.1,127.0.0.1:*,localhost,localhost:*,default.localhost,default.localhost:*",
   BROADCAST_CONNECTION: "null",
   QUEUE_CONNECTION: "sync",
   SESSION_DRIVER: "file",

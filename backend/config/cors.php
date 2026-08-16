@@ -26,17 +26,22 @@ return [
         explode(',', (string) env('FRONTEND_URL', 'http://localhost:5173')),
     ))),
 
-    // Every tenant is its own origin ({slug}.{base_domain}), so they can't be
+    // Every tenant is its own origin ({slug}.{base}), so they can't be
     // enumerated in allowed_origins ahead of time — one pattern covers the
     // whole wildcard-DNS space instead. Anchored, with the base domain quoted,
     // so it matches exactly one label of subdomain on the configured domain
     // and nothing else (notably not "vellixglobal.com.attacker.test").
     //
+    // The base is RELATIVE by default (see tenancy.php): this app normally
+    // serves SPA + API from the same host, where CORS never applies at all.
+    // The pattern is therefore only emitted when TENANCY_BASE_DOMAIN is
+    // explicitly pinned to a fixed domain (split-host setups).
+    //
     // Reads env() rather than config('tenancy.base_domain') on purpose: config
     // files are loaded alphabetically, so tenancy.php isn't in the repository
     // yet when this one is evaluated. Keep the default in sync with it.
     'allowed_origins_patterns' => array_values(array_filter([
-        ($base = (string) env('TENANCY_BASE_DOMAIN', 'vellixglobal.com'))
+        ($base = trim((string) env('TENANCY_BASE_DOMAIN', '')))
             ? '#^https?://[a-z0-9-]+\.'.preg_quote($base, '#').'$#i'
             : null,
     ])),

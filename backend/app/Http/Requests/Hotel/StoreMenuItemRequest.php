@@ -24,6 +24,8 @@ class StoreMenuItemRequest extends FormRequest
             'description' => ['nullable', 'string', 'max:1000'],
             'image' => ['nullable', 'string', 'max:5000000'],
             'active' => ['nullable', 'boolean'],
+            'send_to_kot' => ['nullable', 'boolean'],
+            'stock_ingredient_id' => ['nullable', 'integer', 'exists:ingredients,id'],
             'recipe' => ['nullable', 'array'],
             'recipe.*.ingredient_id' => ['required', 'integer', 'exists:ingredients,id'],
             'recipe.*.qty' => ['required', 'numeric', 'min:0'],

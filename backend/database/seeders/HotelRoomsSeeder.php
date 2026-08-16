@@ -7,6 +7,7 @@ use App\Models\Hotel\Package;
 use App\Models\Hotel\Room;
 use App\Models\Hotel\RoomType;
 use App\Models\Lookup;
+use App\Models\Tenant;
 use App\Support\Lookups\LookupType;
 use App\Support\Lookups\RoomStatus;
 use Illuminate\Database\Seeder;
@@ -65,12 +66,13 @@ class HotelRoomsSeeder extends Seeder
 
     public function run(): void
     {
+        $tenantId = Tenant::demo()->id;
         $branch = Branch::query()->active()->firstOrFail();
         $availableStatusId = Lookup::id(LookupType::ROOM_STATUS, RoomStatus::AVAILABLE);
 
         foreach (self::ROOM_TYPES as $definition) {
             $roomType = RoomType::query()->firstOrCreate(
-                ['name' => $definition['name']],
+                ['tenant_id' => $tenantId, 'name' => $definition['name']],
                 [
                     'max_occupancy' => $definition['max_occupancy'],
                     'bed_config' => 'TBC — pending from owner',
@@ -83,7 +85,7 @@ class HotelRoomsSeeder extends Seeder
             );
 
             $roomType->seasonalRates()->firstOrCreate(
-                ['name' => 'December Peak'],
+                ['tenant_id' => $tenantId, 'name' => 'December Peak'],
                 [
                     'start_date' => '2026-12-15',
                     'end_date' => '2027-01-05',
@@ -93,7 +95,7 @@ class HotelRoomsSeeder extends Seeder
 
             foreach ($definition['rooms'] as $number) {
                 Room::query()->firstOrCreate(
-                    ['number' => $number],
+                    ['branch_id' => $branch->id, 'number' => $number],
                     [
                         'room_type_id' => $roomType->id,
                         'branch_id' => $branch->id,
@@ -107,7 +109,10 @@ class HotelRoomsSeeder extends Seeder
         }
 
         foreach ($this->packages() as $package) {
-            Package::query()->firstOrCreate(['code' => $package['code']], $package);
+            Package::query()->firstOrCreate(
+                ['tenant_id' => $tenantId, 'code' => $package['code']],
+                $package,
+            );
         }
     }
 

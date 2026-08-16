@@ -115,8 +115,8 @@ it('rejects a leftover two-subdomain env where stateful domains miss the API hos
     ]))->assertFailed();
 });
 
-it('rejects a missing TENANCY_BASE_DOMAIN', function () {
-    stageRelease(releaseEnvFile(['TENANCY_BASE_DOMAIN' => null]))->assertFailed();
+it('accepts a missing TENANCY_BASE_DOMAIN — relative mode needs no pin', function () {
+    stageRelease(releaseEnvFile(['TENANCY_BASE_DOMAIN' => null]))->assertSuccessful();
 });
 
 it('rejects a TENANCY_BASE_DOMAIN that does not match the APP_URL host', function () {

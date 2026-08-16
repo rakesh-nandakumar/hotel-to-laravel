@@ -2,6 +2,7 @@
 
 namespace App\Models\Apartment;
 
+use App\Models\Concerns\BelongsToTenant;
 use App\Traits\HasUserstamps;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -9,11 +10,12 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Customer extends Model
 {
-    use HasUserstamps, SoftDeletes;
+    use BelongsToTenant, HasUserstamps, SoftDeletes;
 
     protected $table = 'apartment_customers';
 
-    protected $fillable = [
+    protected $fillable = ['tenant_id',
+
         'name',
         'email',
         'phone',

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Minus, Plus, Printer, Send, PauseCircle, PlayCircle, BedDouble, User, RefreshCw,
   Search, StickyNote, Trash2, UtensilsCrossed, Timer, ShoppingBag, Bike, Split, Combine,
+  ChefHat, HandPlatter,
 } from "lucide-react";
 import { api, openPdf, post, put } from "../lib/api";
 import { posRequest } from "../lib/offline";
@@ -14,9 +15,10 @@ import clsx from "clsx";
 
 type Modifier = { id: number; name: string; price_delta: number };
 type ModifierGroup = { id: number; name: string; is_required: boolean; max_select: number; modifiers: Modifier[] };
+type AddOn = { id: number; name: string; price: number; send_to_kot: boolean };
 type MenuItem = {
   id: number; item_no?: number | null; name: string; price: number; sold_out: boolean; description: string; image?: string | null;
-  modifier_groups?: ModifierGroup[];
+  send_to_kot: boolean; modifier_groups?: ModifierGroup[]; addons?: AddOn[];
 };
 type MenuCat = { id: number; name: string; is_minibar: boolean; items: MenuItem[] };
 type BoardRoom = { id: number; number: string; status: { code: string }; occupant: { code: string; guest: { name: string } } | null };
@@ -30,12 +32,32 @@ type Order = {
   delivery_address?: string | null; delivery_phone?: string | null;
   delivery_status?: { code: string } | null; delivery_rider?: { id: number; name: string } | null;
   reservation?: { code: string; guest: { id: number; name: string } } | null;
-  items: { id: number; name: string; qty: number; unit_price: number; amount: number; voided: boolean; modifiers?: { id: number; name: string; price_delta: number }[] }[];
+  items: { id: number; name: string; qty: number; unit_price: number; amount: number; voided: boolean; send_to_kot?: boolean; add_on_id?: number | null; modifiers?: { id: number; name: string; price_delta: number }[] }[];
   payments: { id: number; method: { code: string }; amount: number; kind: { code: string } }[];
   staff: { name: string } | null;
 };
 
-type CartLine = { key: string; menuItemId: number; name: string; price: number; qty: number; notes?: string; modifierIds: number[] };
+type CartLine = {
+  key: string;
+  kind: "item" | "addon";
+  menuItemId?: number;
+  addOnId?: number;
+  name: string;
+  price: number;
+  qty: number;
+  notes?: string;
+  modifierIds: number[];
+  sendToKot: boolean;
+};
+
+/** Small routing indicator — kitchen ticket vs front-of-house pickup. */
+function RouteIcon({ sendToKot, className }: { sendToKot: boolean; className?: string }) {
+  return sendToKot ? (
+    <ChefHat size={12} className={className} />
+  ) : (
+    <HandPlatter size={12} className={className} />
+  );
+}
 
 const PAY_METHODS = ["cash", "card", "lankaqr", "bank_transfer"] as const;
 const DELIVERY_STEPS = ["pending", "out_for_delivery", "delivered", "failed"] as const;
@@ -174,7 +196,7 @@ function NewOrder({ menu, rooms, tables, usdRate, scPct, vatPct, onDone }: {
   const vat = Math.round(((subtotal + sc) * vatPct) / 100);
   const itemCount = cart.reduce((s, l) => s + l.qty, 0);
 
-  const add = (item: MenuItem, modifierIds: number[] = [], unitPrice?: number) => {
+  const add = (item: MenuItem, modifierIds: number[] = [], unitPrice?: number, addOnIds: number[] = []) => {
     const key = `${item.id}:${[...modifierIds].sort((a, b) => a - b).join(",")}`;
     const price = unitPrice ?? item.price;
     const modLabel = (item.modifier_groups ?? [])
@@ -185,10 +207,19 @@ function NewOrder({ menu, rooms, tables, usdRate, scPct, vatPct, onDone }: {
     setCart((c) => {
       const existing = c.find((l) => l.key === key);
       if (existing) return c.map((l) => (l.key === key ? { ...l, qty: l.qty + 1 } : l));
-      return [...c, { key, menuItemId: item.id, name: modLabel ? `${item.name} (${modLabel})` : item.name, price, qty: 1, modifierIds }];
+      return [...c, { key, kind: "item", menuItemId: item.id, name: modLabel ? `${item.name} (${modLabel})` : item.name, price, qty: 1, modifierIds, sendToKot: item.send_to_kot }];
     });
+    // Add-ons are their own cart lines with their own routing + stock.
+    for (const addOn of (item.addons ?? []).filter((a) => addOnIds.includes(a.id))) {
+      setCart((c) => {
+        const aKey = `addon:${addOn.id}`;
+        const existing = c.find((l) => l.key === aKey);
+        if (existing) return c.map((l) => (l.key === aKey ? { ...l, qty: l.qty + 1 } : l));
+        return [...c, { key: aKey, kind: "addon", addOnId: addOn.id, name: addOn.name, price: addOn.price, qty: 1, modifierIds: [], sendToKot: addOn.send_to_kot }];
+      });
+    }
   };
-  const tryAdd = (item: MenuItem) => ((item.modifier_groups?.length ?? 0) > 0 ? setPickerItem(item) : add(item));
+  const tryAdd = (item: MenuItem) => ((item.modifier_groups?.length ?? 0) > 0 || (item.addons?.length ?? 0) > 0 ? setPickerItem(item) : add(item));
   const setQty = (key: string, qty: number) =>
     setCart((c) => (qty <= 0 ? c.filter((l) => l.key !== key) : c.map((l) => (l.key === key ? { ...l, qty } : l))));
 
@@ -223,7 +254,11 @@ function NewOrder({ menu, rooms, tables, usdRate, scPct, vatPct, onDone }: {
         delivery_phone: type === "delivery" ? deliveryPhone.trim() : undefined,
         customer_name: type !== "room_guest" ? customerName || undefined : undefined,
         notes: notes || undefined,
-        items: cart.map((l) => ({ menu_item_id: l.menuItemId, qty: l.qty, notes: l.notes, modifier_ids: l.modifierIds.length ? l.modifierIds : undefined })),
+        items: cart.map((l) =>
+          l.kind === "addon"
+            ? { add_on_id: l.addOnId, qty: l.qty, notes: l.notes }
+            : { menu_item_id: l.menuItemId, qty: l.qty, notes: l.notes, modifier_ids: l.modifierIds.length ? l.modifierIds : undefined }
+        ),
       });
       setCart([]);
       setCustomerName("");
@@ -389,7 +424,15 @@ function NewOrder({ menu, rooms, tables, usdRate, scPct, vatPct, onDone }: {
               <div key={l.key}>
                 <div className="flex items-center gap-2 text-sm">
                   <div className="min-w-0 flex-1">
-                    <div className="truncate font-semibold">{l.name}</div>
+                    <div className="flex items-center gap-1.5 truncate font-semibold">
+                      <span className="min-w-0 truncate">{l.name}</span>
+                      <span
+                        className={clsx("shrink-0 rounded px-1 py-0.5", l.sendToKot ? "bg-orange-100 text-orange-600" : "bg-sky-100 text-sky-600")}
+                        title={l.sendToKot ? "Sent to kitchen" : "Picked from counter stock"}
+                      >
+                        <RouteIcon sendToKot={l.sendToKot} />
+                      </span>
+                    </div>
                     <div className="text-xs text-slate-400">{lkr(l.price)}</div>
                   </div>
                   <button
@@ -434,13 +477,13 @@ function NewOrder({ menu, rooms, tables, usdRate, scPct, vatPct, onDone }: {
         <ErrorText error={error} />
         {queuedMsg && <div className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">{queuedMsg}</div>}
         <button className="btn-primary mt-3 w-full !py-3" disabled={busy || cart.length === 0} onClick={send}>
-          <Send size={16} /> Send to kitchen{type === "walkin" ? " + print slip" : ""}
+          <Send size={16} /> Send order{type === "walkin" ? " + print slip" : ""}
         </button>
       </div>
       {pickerItem && (
-        <ModifierPickerModal
+        <ItemCustomizeModal
           item={pickerItem}
-          onAdd={(modifierIds, unitPrice) => add(pickerItem, modifierIds, unitPrice)}
+          onAdd={(modifierIds, unitPrice, addOnIds) => add(pickerItem, modifierIds, unitPrice, addOnIds)}
           onClose={() => setPickerItem(null)}
         />
       )}
@@ -448,10 +491,14 @@ function NewOrder({ menu, rooms, tables, usdRate, scPct, vatPct, onDone }: {
   );
 }
 
-/** Required-group + max-select picker for an item with modifier groups (Size, Spice level, Extras…). */
-function ModifierPickerModal({ item, onAdd, onClose }: { item: MenuItem; onAdd: (modifierIds: number[], unitPrice: number) => void; onClose: () => void }) {
+/** Required-group + max-select picker for modifiers (Size, Spice level…), plus the
+ * item's linked add-ons (extra cheese, extra curry…) — each selected add-on is
+ * added to the cart as its own routed line. */
+function ItemCustomizeModal({ item, onAdd, onClose }: { item: MenuItem; onAdd: (modifierIds: number[], unitPrice: number, addOnIds: number[]) => void; onClose: () => void }) {
   const groups = item.modifier_groups ?? [];
+  const addOns = item.addons ?? [];
   const [selected, setSelected] = useState<Record<number, number[]>>({});
+  const [selectedAddOns, setSelectedAddOns] = useState<number[]>([]);
 
   const toggle = (group: ModifierGroup, modifierId: number) => {
     setSelected((s) => {
@@ -463,9 +510,13 @@ function ModifierPickerModal({ item, onAdd, onClose }: { item: MenuItem; onAdd: 
     });
   };
 
+  const toggleAddOn = (addOnId: number) =>
+    setSelectedAddOns((s) => (s.includes(addOnId) ? s.filter((id) => id !== addOnId) : [...s, addOnId]));
+
   const chosenIds = Object.values(selected).flat();
   const chosenModifiers = groups.flatMap((g) => g.modifiers).filter((m) => chosenIds.includes(m.id));
-  const unitPrice = item.price + chosenModifiers.reduce((s, m) => s + m.price_delta, 0);
+  const chosenAddOns = addOns.filter((a) => selectedAddOns.includes(a.id));
+  const unitPrice = item.price + chosenModifiers.reduce((s, m) => s + m.price_delta, 0) + chosenAddOns.reduce((s, a) => s + a.price, 0);
   const allRequiredSatisfied = groups.every((g) => !g.is_required || (selected[g.id]?.length ?? 0) > 0);
 
   return (
@@ -490,10 +541,30 @@ function ModifierPickerModal({ item, onAdd, onClose }: { item: MenuItem; onAdd: 
             </div>
           </div>
         ))}
+        {addOns.length > 0 && (
+          <div>
+            <div className="label">Add-ons — each added as its own line</div>
+            <div className="mt-1 flex flex-wrap gap-1.5">
+              {addOns.map((a) => (
+                <button
+                  key={a.id}
+                  className={clsx(
+                    "flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-semibold transition",
+                    selectedAddOns.includes(a.id) ? "bg-brand-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                  )}
+                  onClick={() => toggleAddOn(a.id)}
+                >
+                  {a.name} (+{lkr(a.price)})
+                  <RouteIcon sendToKot={a.send_to_kot} className="opacity-60" />
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         <div className="flex justify-between border-t border-slate-100 pt-3 text-sm font-bold">
           <span>Price</span><span>{lkr(unitPrice)}</span>
         </div>
-        <button className="btn-primary w-full !py-3" disabled={!allRequiredSatisfied} onClick={() => onAdd(chosenIds, unitPrice)}>
+        <button className="btn-primary w-full !py-3" disabled={!allRequiredSatisfied} onClick={() => onAdd(chosenIds, unitPrice, selectedAddOns)}>
           Add to cart — {lkr(unitPrice)}
         </button>
       </div>
@@ -693,7 +764,16 @@ function OrderModal({ orderId, usdRate, mergeCandidates, onClose }: { orderId: n
       <div className="divide-y divide-slate-100 text-sm">
         {order.items.map((i) => (
           <div key={i.id} className={clsx("flex items-center justify-between gap-2 py-1.5", i.voided && "text-slate-300 line-through")}>
-            <span className="min-w-0 flex-1">{i.qty} × {i.name}</span>
+            <span className="flex min-w-0 flex-1 items-center gap-1.5">
+              <span className="min-w-0 truncate">{i.qty} × {i.name}</span>
+              {i.add_on_id != null && <Badge color="purple">add-on</Badge>}
+              <span
+                className={clsx("shrink-0 rounded px-1 py-0.5", i.send_to_kot ? "bg-orange-100 text-orange-600" : "bg-sky-100 text-sky-600")}
+                title={i.send_to_kot ? "Sent to kitchen" : "Picked from counter stock"}
+              >
+                <RouteIcon sendToKot={i.send_to_kot ?? true} />
+              </span>
+            </span>
             <span>{lkr(i.amount)}</span>
             {canVoid && !i.voided && can("hotel_orders.void_item") && (
               <button className="rounded px-1.5 py-0.5 text-xs font-bold text-red-400 hover:bg-red-50 hover:text-red-600" title="Void this item (reason required)" onClick={() => setVoidingItem(i)}>

@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Models\Apartment\Payment as ApartmentPayment;
+use App\Models\Concerns\BelongsToTenant;
 use App\Models\Hotel\Payment;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -18,7 +19,10 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  */
 class TillSession extends Model
 {
-    protected $fillable = [
+    use BelongsToTenant;
+
+    protected $fillable = ['tenant_id',
+
         'till_id',
         'status_id',
         'opened_by',

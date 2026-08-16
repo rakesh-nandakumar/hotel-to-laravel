@@ -51,13 +51,58 @@ it('is unscoped for an authenticated central admin', function () {
     });
 });
 
-it('is unscoped for console execution outside a simulated web request', function () {
+it('fails loud for console queries with no tenant bound', function () {
     $tenantA = Tenant::factory()->create();
     $tenantB = Tenant::factory()->create();
     User::factory()->create(['tenant_id' => $tenantA->id]);
     User::factory()->create(['tenant_id' => $tenantB->id]);
 
-    expect(User::query()->count())->toBe(2);
+    // A tenant-scoped query in console without a bound tenant is a missed
+    // context binding — a silent sweep would leak every tenant's rows, so it
+    // must throw instead (see TenantScope). TestCase binds the demo tenant by
+    // default, so unbind explicitly to exercise the guard.
+    app(CurrentContext::class)->setTenant(null);
+
+    expect(fn () => User::query()->count())
+        ->toThrow(RuntimeException::class, 'tenant-scoped query ran in console with no tenant bound');
+});
+
+it('scopes console queries inside runForTenant', function () {
+    $tenantA = Tenant::factory()->create();
+    $tenantB = Tenant::factory()->create();
+    $userA = User::factory()->create(['tenant_id' => $tenantA->id]);
+    User::factory()->create(['tenant_id' => $tenantB->id]);
+
+    $seen = app(CurrentContext::class)->runForTenant($tenantA, fn () => User::query()->pluck('id')->all());
+
+    expect($seen)->toBe([$userA->id]);
+});
+
+it('restores the previous context after runForTenant', function () {
+    $tenantA = Tenant::factory()->create();
+    $tenantB = Tenant::factory()->create();
+    User::factory()->create(['tenant_id' => $tenantA->id]);
+    $userB = User::factory()->create(['tenant_id' => $tenantB->id]);
+
+    app(CurrentContext::class)->setTenant($tenantB->id);
+
+    app(CurrentContext::class)->runForTenant($tenantA, fn () => expect(User::query()->count())->toBe(1));
+
+    // The override survives the callback — TenantScope is still bound to B.
+    CurrentContext::simulateWebRequest(function () use ($userB) {
+        expect(User::query()->pluck('id')->all())->toBe([$userB->id]);
+    });
+});
+
+it('sweeps unscoped inside runWithoutTenant', function () {
+    $tenantA = Tenant::factory()->create();
+    $tenantB = Tenant::factory()->create();
+    User::factory()->create(['tenant_id' => $tenantA->id]);
+    User::factory()->create(['tenant_id' => $tenantB->id]);
+
+    $count = app(CurrentContext::class)->runWithoutTenant(fn () => User::query()->count());
+
+    expect($count)->toBe(2);
 });
 
 it('auto-stamps tenant_id on create from the resolved tenant context', function () {

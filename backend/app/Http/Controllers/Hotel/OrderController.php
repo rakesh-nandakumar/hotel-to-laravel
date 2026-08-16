@@ -28,7 +28,7 @@ use Illuminate\Http\Response;
 class OrderController extends Controller
 {
     private const WITH_FULL = [
-        'items.modifiers', 'room:id,number', 'diningTable:id,table_no', 'reservation:id,code,guest_id', 'reservation.guest:id,name',
+        'items.modifiers', 'items.addOn', 'room:id,number', 'diningTable:id,table_no', 'reservation:id,code,guest_id', 'reservation.guest:id,name',
         'staff:id,name', 'payments.kind', 'payments.method', 'status', 'type', 'kotStatus', 'diningMode', 'deliveryStatus', 'deliveryRider:id,name',
     ];
 
@@ -50,16 +50,26 @@ class OrderController extends Controller
         return response()->json(['orders' => $query->limit(100)->get()]);
     }
 
-    /** Kitchen Order Ticket screen — chef's live queue. */
+    /**
+     * Kitchen Order Ticket screen — chef's live queue. Only orders carrying at
+     * least one send_to_kot (kitchen-routed) item appear; each ticket's items
+     * are trimmed to the kitchen-routed lines so direct-fulfill drinks/snacks
+     * never clutter the kitchen board.
+     */
     public function kot(): JsonResponse
     {
         $orders = Order::query()
             ->with([...self::WITH_FULL, 'items.menuItem.category.kitchenStation'])
             ->whereHas('status', fn ($q) => $q->where('code', '!=', OrderStatus::VOID))
             ->whereHas('kotStatus', fn ($q) => $q->whereIn('code', [KotStatus::NEW, KotStatus::PREPARING, KotStatus::READY]))
+            ->whereHas('items', fn ($q) => $q->where('send_to_kot', true)->where('voided', false))
             ->where('created_at', '>=', now()->subDay())
             ->oldest()
             ->get();
+
+        $orders->each(function (Order $order) {
+            $order->setRelation('items', $order->items->where('send_to_kot', true)->where('voided', false)->values());
+        });
 
         return response()->json(['orders' => $orders]);
     }

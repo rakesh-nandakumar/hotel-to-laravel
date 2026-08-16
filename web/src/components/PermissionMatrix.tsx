@@ -1,11 +1,13 @@
 import { useMemo, useState } from "react";
-import { Check, ChevronDown, Minus, Search } from "lucide-react";
+import { Check, ChevronDown, Layers, Minus, Search } from "lucide-react";
 import clsx from "clsx";
 
 /** One permission module (a `module_key` + the actions it exposes). */
 export type MatrixModule = { key: string; label: string; actions: string[] };
 /** A collapsible group of modules, e.g. "Front Desk" → reservations, rooms… */
-export type MatrixSection = { section: string; modules: MatrixModule[] };
+export type MatrixSection = { section: string; group?: string; modules: MatrixModule[] };
+/** A licensable module group ("Hotel Operations", "Restaurant / POS", …). */
+export type MatrixGroup = { key: string; label: string };
 
 const perm = (moduleKey: string, action: string) => `${moduleKey}.${action}`;
 
@@ -43,18 +45,24 @@ function TriCheck({ state, disabled, onClick, label }: { state: TriState; disabl
  * a flat set of `module_key.action` names (the *effective* set for users; the
  * granted set for roles) and reports the next set via `onChange`.
  *
+ * Sections are grouped under their licensable module group ("Hotel
+ * Operations", "Restaurant / POS", … — see `groups`), and each group header
+ * carries a tri-state checkbox so a whole group can be granted or revoked at
+ * once — no need to walk permission-by-permission.
+ *
  * `grantable` scopes what the current actor may toggle: `null` means everything
  * (Full Administrator), otherwise only listed permissions are interactive —
  * mirroring the server's anti-escalation guard so the UI can't offer to grant
  * something the backend would reject.
  */
 export default function PermissionMatrix({
-  matrix, value, onChange, grantable, disabled = false,
+  matrix, value, onChange, grantable, groups, disabled = false,
 }: {
   matrix: MatrixSection[];
   value: string[];
   onChange: (next: string[]) => void;
   grantable: string[] | null;
+  groups?: MatrixGroup[];
   disabled?: boolean;
 }) {
   const selected = useMemo(() => new Set(value), [value]);
@@ -99,12 +107,30 @@ export default function PermissionMatrix({
   const moduleNames = (m: MatrixModule) => m.actions.map((a) => perm(m.key, a));
   const sectionNames = (s: MatrixSection) => s.modules.flatMap(moduleNames);
 
-  const toggleCollapse = (section: string) =>
+  const toggleCollapse = (key: string) =>
     setCollapsed((c) => {
       const next = new Set(c);
-      next.has(section) ? next.delete(section) : next.add(section);
+      next.has(key) ? next.delete(key) : next.add(key);
       return next;
     });
+
+  /** Sections bucketed by their module group (missing group → "core"). */
+  const grouped = useMemo(() => {
+    const byGroup = new Map<string, MatrixSection[]>();
+    for (const s of matrix) {
+      const key = s.group ?? "core";
+      byGroup.set(key, [...(byGroup.get(key) ?? []), s]);
+    }
+    return byGroup;
+  }, [matrix]);
+
+  /** Group render order: `groups` prop first, then any groups it didn't mention. */
+  const orderedGroups = useMemo(() => {
+    const known = new Set((groups ?? []).map((g) => g.key));
+    return [...(groups ?? []).map((g) => g.key), ...[...grouped.keys()].filter((k) => !known.has(k))];
+  }, [groups, grouped]);
+
+  const groupLabel = (key: string) => groups?.find((g) => g.key === key)?.label ?? humanize(key);
 
   return (
     <div className="space-y-3">
@@ -118,68 +144,110 @@ export default function PermissionMatrix({
         />
       </div>
 
-      {matrix.map((section) => {
-        const modules = section.modules.filter((m) => !q || moduleTextMatches(m) || m.actions.some(actionMatches));
-        if (modules.length === 0) return null;
-        const open = !collapsed.has(section.section) || q !== "";
-        const secState = stateOf(sectionNames(section));
+      {orderedGroups.map((groupKey) => {
+        const sections = grouped.get(groupKey) ?? [];
+        const visible = sections.filter((s) => {
+          const modules = s.modules.filter((m) => !q || moduleTextMatches(m) || m.actions.some(actionMatches));
+          return modules.length > 0;
+        });
+        if (visible.length === 0) return null;
+
+        const open = !collapsed.has(`group:${groupKey}`) || q !== "";
+        const groupState = stateOf(sections.flatMap(sectionNames));
+        const groupCount = sections.reduce((n, s) => n + s.modules.reduce((m, mod) => m + mod.actions.length, 0), 0);
 
         return (
-          <div key={section.section} className="overflow-hidden rounded-xl border border-slate-200">
-            <div className="flex items-center gap-2 bg-slate-50 px-3 py-2">
+          <div key={groupKey} className="overflow-hidden rounded-2xl border border-slate-300">
+            <div className="flex items-center gap-2 bg-slate-100 px-3 py-2">
               <TriCheck
-                state={secState}
+                state={groupState}
                 disabled={disabled}
-                label={`Select all in ${section.section}`}
-                onClick={() => applyBatch(sectionNames(section), secState !== "all")}
+                label={`Select all in ${groupLabel(groupKey)}`}
+                onClick={() => applyBatch(sections.flatMap(sectionNames), groupState !== "all")}
               />
-              <button type="button" className="flex flex-1 items-center gap-1.5 text-left" onClick={() => toggleCollapse(section.section)}>
-                <span className="text-sm font-bold text-slate-700">{section.section}</span>
-                <ChevronDown size={15} className={clsx("text-slate-400 transition-transform", !open && "-rotate-90")} />
+              <Layers size={15} className="text-slate-500" />
+              <button
+                type="button"
+                className="flex flex-1 items-center gap-1.5 text-left"
+                onClick={() => toggleCollapse(`group:${groupKey}`)}
+              >
+                <span className="text-sm font-black text-slate-800">{groupLabel(groupKey)}</span>
+                <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                  {groupCount} permission{groupCount === 1 ? "" : "s"}
+                </span>
+                <ChevronDown size={15} className={clsx("ml-auto text-slate-400 transition-transform", !open && "-rotate-90")} />
               </button>
             </div>
 
             {open && (
-              <div className="divide-y divide-slate-100">
-                {modules.map((m) => {
-                  const modState = stateOf(moduleNames(m));
+              <div className="space-y-1 bg-white p-1.5">
+                {sections.map((section) => {
+                  const modules = section.modules.filter((m) => !q || moduleTextMatches(m) || m.actions.some(actionMatches));
+                  if (modules.length === 0) return null;
+                  const secState = stateOf(sectionNames(section));
+                  const sectionOpen = !collapsed.has(section.section) || q !== "";
+
                   return (
-                    <div key={m.key} className="flex flex-col gap-2 px-3 py-2.5 sm:flex-row sm:items-start">
-                      <div className="flex min-w-[9rem] items-center gap-2 sm:pt-1">
+                    <div key={section.section} className="overflow-hidden rounded-xl border border-slate-200">
+                      <div className="flex items-center gap-2 bg-slate-50 px-3 py-2">
                         <TriCheck
-                          state={modState}
+                          state={secState}
                           disabled={disabled}
-                          label={`All ${m.label}`}
-                          onClick={() => applyBatch(moduleNames(m), modState !== "all")}
+                          label={`Select all in ${section.section}`}
+                          onClick={() => applyBatch(sectionNames(section), secState !== "all")}
                         />
-                        <span className="text-sm font-semibold text-slate-700">{m.label}</span>
+                        <button type="button" className="flex flex-1 items-center gap-1.5 text-left" onClick={() => toggleCollapse(section.section)}>
+                          <span className="text-sm font-bold text-slate-700">{section.section}</span>
+                          <ChevronDown size={15} className={clsx("text-slate-400 transition-transform", !sectionOpen && "-rotate-90")} />
+                        </button>
                       </div>
-                      <div className="flex flex-1 flex-wrap gap-1.5">
-                        {visibleActions(m).map((action) => {
-                          const name = perm(m.key, action);
-                          const on = selected.has(name);
-                          const grantableHere = canGrant(name);
-                          return (
-                            <button
-                              key={action}
-                              type="button"
-                              disabled={!grantableHere}
-                              onClick={() => toggleOne(name)}
-                              title={name}
-                              className={clsx(
-                                "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-semibold transition",
-                                on
-                                  ? "border-brand-500 bg-brand-50 text-brand-700"
-                                  : "border-slate-200 bg-white text-slate-500 hover:border-slate-300",
-                                !grantableHere && "cursor-not-allowed opacity-40 hover:border-slate-200",
-                              )}
-                            >
-                              {on && <Check size={12} />}
-                              {humanize(action)}
-                            </button>
-                          );
-                        })}
-                      </div>
+
+                      {sectionOpen && (
+                        <div className="divide-y divide-slate-100">
+                          {modules.map((m) => {
+                            const modState = stateOf(moduleNames(m));
+                            return (
+                              <div key={m.key} className="flex flex-col gap-2 px-3 py-2.5 sm:flex-row sm:items-start">
+                                <div className="flex min-w-[9rem] items-center gap-2 sm:pt-1">
+                                  <TriCheck
+                                    state={modState}
+                                    disabled={disabled}
+                                    label={`All ${m.label}`}
+                                    onClick={() => applyBatch(moduleNames(m), modState !== "all")}
+                                  />
+                                  <span className="text-sm font-semibold text-slate-700">{m.label}</span>
+                                </div>
+                                <div className="flex flex-1 flex-wrap gap-1.5">
+                                  {visibleActions(m).map((action) => {
+                                    const name = perm(m.key, action);
+                                    const on = selected.has(name);
+                                    const grantableHere = canGrant(name);
+                                    return (
+                                      <button
+                                        key={action}
+                                        type="button"
+                                        disabled={!grantableHere}
+                                        onClick={() => toggleOne(name)}
+                                        title={name}
+                                        className={clsx(
+                                          "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-semibold transition",
+                                          on
+                                            ? "border-brand-500 bg-brand-50 text-brand-700"
+                                            : "border-slate-200 bg-white text-slate-500 hover:border-slate-300",
+                                          !grantableHere && "cursor-not-allowed opacity-40 hover:border-slate-200",
+                                        )}
+                                      >
+                                        {on && <Check size={12} />}
+                                        {humanize(action)}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                   );
                 })}

@@ -8,14 +8,26 @@ One codebase serves two different apps, chosen by hostname:
 
 | Host | What loads | Who signs in |
 | --- | --- | --- |
-| `admin.vellixglobal.com` | Master control | Platform operator (`central_admins`) |
-| `{slug}.vellixglobal.com` | That tenant's hotel/apartment/restaurant app | That tenant's staff (`users`) |
+| `admin.{base}` | Master control | Platform operator (`central_admins`) |
+| `{slug}.{base}` | That tenant's hotel/apartment/restaurant app | That tenant's staff (`users`) |
+
+Where `{base}` is everything after the **first label** of the host you typed
+(resolution is relative — see §1): on `admin.hms.vellixglobal.com` the base is
+`hms.vellixglobal.com` and the panel loads; on `acme.hms.vellixglobal.com` the
+same label logic loads tenant `acme`. The bare base domain itself counts as
+central too.
 
 These are separate login systems. A platform operator is **not** a user of any
 tenant, holds no permissions inside one, and is never subject to tenant
 scoping. A tenant's staff can never reach master control — requesting
 `/api/central/*` from a tenant subdomain returns 404 even with a valid
 operator session.
+
+> Page loads on hosts that own nothing (unknown subdomain, suspended tenant,
+> expired trial) are answered with a plain *"This site isn't available."* page
+> before the app bundle is even downloaded: nginx gates every request through
+> the backend's `/api/host-context` (`auth_request`, see `web/nginx.conf`), and
+> only resolves hosts get the SPA.
 
 ---
 
@@ -40,13 +52,26 @@ In `backend/.env`:
 ```dotenv
 APP_URL=https://vellixglobal.com
 
-TENANCY_BASE_DOMAIN=vellixglobal.com
 TENANCY_CENTRAL_SUBDOMAIN=admin
 
 SANCTUM_STATEFUL_DOMAINS=*.vellixglobal.com,vellixglobal.com
 SESSION_SECURE_COOKIE=true
 SESSION_SAME_SITE=lax
 ```
+
+Resolution is **relative** — the first label of each request's Host header is
+the tenant slug (or the central subdomain), everything after it is the base —
+so nothing per-domain is configured or baked into builds, and one wildcard
+record serves every current and future tenant.
+
+Optional hardening, both off by default:
+
+- `TENANCY_BASE_DOMAIN` — pin to the fixed base domain for **strict mode**:
+  hosts not ending in it are rejected outright instead of resolved relatively.
+  `php artisan release:build` validates a pin against `APP_URL`.
+- `TENANCY_DEV_FALLBACK=true` — dev only: lets a central host serve a tenant
+  when a slug is forced via `?tenant=` / `X-Tenant-Slug`. Keep it off in
+  production, where hosts resolve strictly from the Host header.
 
 > **Leave `SESSION_DOMAIN` unset.** Setting it to a shared parent
 > (`.vellixglobal.com`) makes one session cookie valid on *every* tenant
@@ -56,23 +81,21 @@ SESSION_SAME_SITE=lax
 
 ### Frontend environment
 
-In `web/.env`, then rebuild:
-
-```dotenv
-VITE_TENANCY_BASE_DOMAIN=vellixglobal.com
-VITE_TENANCY_CENTRAL_SUBDOMAIN=admin
-```
+The SPA needs **no tenancy environment** — one build serves every host. At
+runtime the bundle asks the backend which shell this host is
+(`/api/host-context`, resolved from the Host header) before mounting anything,
+and for a tenant the same payload IS its branding (name, logo, theme), so the
+login screen renders with no second round-trip (see `web/src/lib/branding.tsx`).
 
 ```bash
 cd web && npm run build
 ```
 
 Serve the same `dist/` for every host, with `/api` and `/sanctum` passed
-through to Laravel on that same origin. The bundle picks its own app from
-`window.location.hostname`.
-
-Once `VITE_TENANCY_BASE_DOMAIN` is set, master control is served **only** on
-the central host. A tenant subdomain hitting `/central` gets the tenant app.
+through to Laravel on that same origin, and every other request gated by the
+host check in `web/nginx.conf` (see the note at the top of this document).
+Master control is served **only** on the central host — a tenant subdomain can
+never render it.
 
 ### Create the first platform operator
 
@@ -102,8 +125,8 @@ is needed:
 
 This relies on three things, all already configured:
 
-1. `TENANCY_BASE_DOMAIN=localhost` in `backend/.env`, and
-   `VITE_TENANCY_BASE_DOMAIN=localhost` in `web/.env`.
+1. `TENANCY_CENTRAL_SUBDOMAIN=admin` in `backend/.env` (no base domain needed —
+   resolution is relative).
 2. `SANCTUM_STATEFUL_DOMAINS` including `*.localhost:5173`, or login succeeds
    and every call afterwards 401s.
 3. **`changeOrigin: false`** on the Vite proxy (`web/vite.config.ts`).
@@ -112,10 +135,12 @@ This relies on three things, all already configured:
    to — with it on, every tenant subdomain reaches Laravel as `127.0.0.1` and
    resolves nothing, so the whole app answers `{"message":"Unknown host."}`.
 
-> If you'd rather not use subdomains at all, unset `VITE_TENANCY_BASE_DOMAIN`
-> and master control falls back to `http://localhost:5173/central/login`. Tenant
-> apps then need an explicit `?tenant={slug}` (or an `X-Tenant-Slug` header)
-> unless exactly one tenant exists, since nothing in the URL names one.
+> If you'd rather not use subdomains at all, set `TENANCY_DEV_FALLBACK=true`
+> and stay on one host: master control on `http://localhost:5173` (the bare
+> base counts as central), and a tenant app on the same host with an explicit
+> `?tenant={slug}` (or an `X-Tenant-Slug` header). That fallback is strictly
+> dev-only — in production every host resolves purely from its own Host
+> header.
 
 Seed the demo data (`php artisan migrate:fresh --seed`) and sign in with:
 
@@ -132,8 +157,9 @@ Seed the demo data (`php artisan migrate:fresh --seed`) and sign in with:
 > staff. Change one of them locally if the ambiguity bites — nothing depends on
 > the values.
 
-Both path fallbacks are development-only. With `APP_ENV=production` the
-`/central` shortcut is off and only the real central host works.
+The `?tenant=` / `X-Tenant-Slug` fallback is strictly dev-only (it requires
+`TENANCY_DEV_FALLBACK=true`). In production every host resolves purely from
+its own Host header.
 
 ---
 
@@ -144,7 +170,7 @@ Both path fallbacks are development-only. With `APP_ENV=production` the
 | Field | Notes |
 | --- | --- |
 | Business name | Display name, e.g. "Acme Hotels" |
-| Subdomain | Lowercase letters, numbers and dashes. Becomes `{slug}.vellixglobal.com`. `admin` is reserved and rejected |
+| Subdomain | Lowercase letters, numbers and dashes. Becomes `{slug}.{base}`. Infrastructure labels (`admin`, `www`, `api`, `app`, `mail`, `smtp`, `ftp`, `cdn`, `static`, `assets`, `status`, `help`, `support`, `billing`, `dashboard`, `central`) are reserved and rejected |
 | Admin email | The Full Administrator account created for this tenant |
 | Admin name | Optional; defaults to "{Business} Admin" |
 
@@ -340,9 +366,9 @@ you click it, just press the button again.
 
 | Symptom | Cause and fix |
 | --- | --- |
-| **`{"message":"Unknown host."}` on every page** | The Host reaching Laravel doesn't match any tenant. Locally this is almost always `changeOrigin: true` on the Vite proxy rewriting it — it must be `false`. Otherwise check `TENANCY_BASE_DOMAIN` matches the host you're actually visiting. |
+| **`{"message":"Unknown host."}` on every page** | The Host reaching Laravel doesn't match any tenant. Locally this is almost always `changeOrigin: true` on the Vite proxy rewriting it — it must be `false`. Otherwise the host's first label names no tenant (or the tenant is suspended) — check the slug in master control. |
 | Tenant subdomain returns 404 | No tenant with that slug, or the tenant is **suspended**. Check the status in master control. |
-| `admin.` shows the tenant app instead of master control | `VITE_TENANCY_BASE_DOMAIN` wasn't set at build time, or `dist/` wasn't rebuilt after setting it. |
+| *"This site isn't available."* on a host that should work | nginx's host gate (`/_host_check` → `/api/host-context`) got a non-2xx and served `unavailable.html` instead of the app. The host owns nothing from the backend's view — check the slug/status, or that you're on `admin.` for the panel. |
 | Master control renders but every call 404s | You're on a tenant subdomain. `EnsureCentralContext` rejects central APIs there by design — use the `admin.` host. |
 | Signed out immediately on a tenant subdomain | A session for a *different* tenant was replayed against this host. Expected: `IdentifyTenant` invalidates it. Sign in again. |
 | Login succeeds then the next call 401s | The host isn't in `SANCTUM_STATEFUL_DOMAINS`. It needs the wildcard `*.vellixglobal.com`. |
@@ -356,10 +382,13 @@ you click it, just press the button again.
 | Thing | Where |
 | --- | --- |
 | Tenancy config | `backend/config/tenancy.php` |
-| Host → tenant resolution | `backend/app/Http/Middleware/IdentifyTenant.php` |
+| Host → tenant resolution | `backend/app/Services/TenantHostResolver.php` (+ `backend/app/Http/Middleware/IdentifyTenant.php`) |
 | Central-only guard | `backend/app/Http/Middleware/EnsureCentralContext.php` |
+| SPA boot gate (host-context) | `backend/app/Http/Controllers/HostContextController.php` · `web/src/main.tsx` · `web/nginx.conf` |
+| Unavailable page | `web/public/unavailable.html` |
+| Reserved subdomains | `backend/app/Rules/ReservedSlug.php` |
 | Module catalog | `backend/app/Support/ModuleCatalog.php` |
 | Module enforcement | `backend/app/Services/TenantModules.php` |
 | Tenant provisioning | `backend/app/Services/TenantProvisioning.php` |
 | Impersonation | `backend/app/Services/Impersonation.php` |
-| SPA app selection | `web/src/lib/tenancy.ts` |
+| SPA shell selection | `web/src/lib/tenancy.ts` |

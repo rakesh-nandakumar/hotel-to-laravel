@@ -3,6 +3,7 @@
 namespace App\Services\Hotel;
 
 use App\Events\Hotel\RealtimeUpdate;
+use App\Models\Hotel\AddOn;
 use App\Models\Hotel\DiningTable;
 use App\Models\Hotel\FolioLine;
 use App\Models\Hotel\MenuItem;
@@ -37,7 +38,7 @@ use Illuminate\Validation\ValidationException;
 class OrderService
 {
     private const WITH_FULL = [
-        'items.modifiers', 'room:id,number', 'diningTable:id,table_no', 'reservation:id,code,guest_id', 'reservation.guest:id,name',
+        'items.modifiers', 'items.addOn', 'room:id,number', 'diningTable:id,table_no', 'reservation:id,code,guest_id', 'reservation.guest:id,name',
         'staff:id,name', 'payments.kind', 'payments.method', 'status', 'type', 'kotStatus', 'diningMode', 'deliveryStatus', 'deliveryRider:id,name',
     ];
 
@@ -78,8 +79,18 @@ class OrderService
             }
         }
 
-        $menuItems = MenuItem::query()->whereIn('id', collect($data['items'])->pluck('menu_item_id'))->get()->keyBy('id');
+        $menuItems = MenuItem::query()->whereIn('id', collect($data['items'])->pluck('menu_item_id')->filter())->get()->keyBy('id');
+        $addOns = AddOn::query()->whereIn('id', collect($data['items'])->pluck('add_on_id')->filter())->get()->keyBy('id');
         foreach ($data['items'] as $line) {
+            if (isset($line['add_on_id'])) {
+                $addOn = $addOns->get($line['add_on_id']);
+                if (! $addOn || ! $addOn->active) {
+                    throw ValidationException::withMessages(['items' => 'Add-on not found.']);
+                }
+
+                continue;
+            }
+
             $menuItem = $menuItems->get($line['menu_item_id']);
             if (! $menuItem || ! $menuItem->active) {
                 throw ValidationException::withMessages(['items' => 'Menu item not found.']);
@@ -90,7 +101,7 @@ class OrderService
         }
 
         try {
-            $order = DB::transaction(function () use ($data, $diningMode, $reservationId, $menuItems, $table, $staffId) {
+            $order = DB::transaction(function () use ($data, $diningMode, $reservationId, $menuItems, $addOns, $table, $staffId) {
                 $order = Order::create([
                     'client_key' => $data['client_key'] ?? null,
                     'order_type_id' => Lookup::id(LookupType::ORDER_TYPE, $data['type']),
@@ -113,18 +124,29 @@ class OrderService
                     'discount' => 0,
                 ]);
 
+                $menuItemIds = [];
+                $addOnIds = [];
                 foreach ($data['items'] as $line) {
-                    $this->addOrderItem($order, $menuItems->get($line['menu_item_id']), $line);
+                    if (isset($line['add_on_id'])) {
+                        $addOn = $addOns->get($line['add_on_id']);
+                        $this->addAddOnItem($order, $addOn, $line);
+                        $this->inventory->deductAddOn($addOn, $line['qty']);
+                        $addOnIds[] = $addOn->id;
+
+                        continue;
+                    }
+
+                    $menuItem = $menuItems->get($line['menu_item_id']);
+                    $this->addOrderItem($order, $menuItem, $line);
+                    $this->inventory->deductStock($menuItem, $line['qty']);
+                    $menuItemIds[] = $menuItem->id;
                 }
 
                 if ($table) {
                     $table->update(['table_status_id' => Lookup::id(LookupType::TABLE_STATUS, TableStatus::OCCUPIED)]);
                 }
 
-                foreach ($data['items'] as $line) {
-                    $this->inventory->deductStock($menuItems->get($line['menu_item_id']), $line['qty']);
-                }
-                $soldOut = $this->inventory->autoSoldOutSweep($menuItems->keys()->all());
+                $soldOut = $this->inventory->autoSoldOutSweep($menuItemIds, $addOnIds);
                 if ($soldOut !== []) {
                     broadcast(new RealtimeUpdate(RealtimeEvent::MENU, ['sold_out' => $soldOut]));
                 }
@@ -132,7 +154,7 @@ class OrderService
                 return $this->recompute($order);
             });
         } catch (InsufficientStockException $e) {
-            $this->markSoldOutAfterFailure($e, $menuItems);
+            $this->markSoldOutAfterFailure($e, $menuItems, $addOns);
         }
 
         AuditLog::record('order.created', $order, ['order_no' => $order->id, 'type' => $data['type']]);
@@ -142,7 +164,7 @@ class OrderService
     }
 
     /**
-     * @param  list<array{menu_item_id: int, qty: int, notes?: string}>  $items
+     * @param  list<array{menu_item_id?: int, add_on_id?: int, qty: int, notes?: string}>  $items
      */
     public function addItems(Order $order, array $items, ?int $staffId): Order
     {
@@ -151,8 +173,18 @@ class OrderService
             throw ValidationException::withMessages(['status' => "Order is {$order->status->code}."]);
         }
 
-        $menuItems = MenuItem::query()->whereIn('id', collect($items)->pluck('menu_item_id'))->get()->keyBy('id');
+        $menuItems = MenuItem::query()->whereIn('id', collect($items)->pluck('menu_item_id')->filter())->get()->keyBy('id');
+        $addOns = AddOn::query()->whereIn('id', collect($items)->pluck('add_on_id')->filter())->get()->keyBy('id');
         foreach ($items as $line) {
+            if (isset($line['add_on_id'])) {
+                $addOn = $addOns->get($line['add_on_id']);
+                if (! $addOn || ! $addOn->active) {
+                    throw ValidationException::withMessages(['items' => 'Add-on not found.']);
+                }
+
+                continue;
+            }
+
             $menuItem = $menuItems->get($line['menu_item_id']);
             if (! $menuItem || $menuItem->sold_out) {
                 throw ValidationException::withMessages(['items' => '"'.($menuItem->name ?? 'item').'" is unavailable.']);
@@ -160,13 +192,25 @@ class OrderService
         }
 
         try {
-            $order = DB::transaction(function () use ($order, $items, $menuItems) {
+            $order = DB::transaction(function () use ($order, $items, $menuItems, $addOns) {
+                $menuItemIds = [];
+                $addOnIds = [];
                 foreach ($items as $line) {
+                    if (isset($line['add_on_id'])) {
+                        $addOn = $addOns->get($line['add_on_id']);
+                        $this->addAddOnItem($order, $addOn, $line);
+                        $this->inventory->deductAddOn($addOn, $line['qty']);
+                        $addOnIds[] = $addOn->id;
+
+                        continue;
+                    }
+
                     $menuItem = $menuItems->get($line['menu_item_id']);
                     $this->addOrderItem($order, $menuItem, $line);
                     $this->inventory->deductStock($menuItem, $line['qty']);
+                    $menuItemIds[] = $menuItem->id;
                 }
-                $soldOut = $this->inventory->autoSoldOutSweep($menuItems->keys()->all());
+                $soldOut = $this->inventory->autoSoldOutSweep($menuItemIds, $addOnIds);
                 if ($soldOut !== []) {
                     broadcast(new RealtimeUpdate(RealtimeEvent::MENU, ['sold_out' => $soldOut]));
                 }
@@ -180,7 +224,7 @@ class OrderService
                 return $this->recompute($order);
             });
         } catch (InsufficientStockException $e) {
-            $this->markSoldOutAfterFailure($e, $menuItems);
+            $this->markSoldOutAfterFailure($e, $menuItems, $addOns);
         }
 
         broadcast(new RealtimeUpdate(RealtimeEvent::KOT, ['order_id' => $order->id]));
@@ -214,7 +258,7 @@ class OrderService
         $order = DB::transaction(function () use ($order, $item, $reason, $restock) {
             $item->update(['voided' => true, 'void_reason' => $reason]);
             if ($restock) {
-                $this->inventory->deductStock($item->menuItem, $item->qty, -1);
+                $this->restockItem($item);
             }
 
             return $this->recompute($order);
@@ -392,7 +436,7 @@ class OrderService
         DB::transaction(function () use ($order, $reason, $restock) {
             if ($restock) {
                 foreach ($order->items->where('voided', false) as $item) {
-                    $this->inventory->deductStock($item->menuItem, $item->qty, -1);
+                    $this->restockItem($item);
                 }
             }
             $order->update(['order_status_id' => Lookup::id(LookupType::ORDER_STATUS, OrderStatus::VOID), 'void_reason' => $reason]);
@@ -608,6 +652,7 @@ class OrderService
         $item = $order->items()->create([
             'menu_item_id' => $menuItem->id, 'name' => $menuItem->name, 'qty' => $line['qty'],
             'unit_price' => $unitPrice, 'amount' => $unitPrice * $line['qty'],
+            'send_to_kot' => $menuItem->send_to_kot,
             'notes' => $line['notes'] ?? null,
         ]);
 
@@ -619,6 +664,33 @@ class OrderService
         }
 
         return $item;
+    }
+
+    /**
+     * Create a standalone add-on order line — its own price, routing, and
+     * stock snapshot, fully independent of any parent item.
+     *
+     * @param  array{add_on_id: int, qty: int, notes?: string}  $line
+     */
+    private function addAddOnItem(Order $order, AddOn $addOn, array $line): OrderItem
+    {
+        return $order->items()->create([
+            'add_on_id' => $addOn->id, 'name' => $addOn->name, 'qty' => $line['qty'],
+            'unit_price' => $addOn->price, 'amount' => $addOn->price * $line['qty'],
+            'send_to_kot' => $addOn->send_to_kot,
+            'notes' => $line['notes'] ?? null,
+        ]);
+    }
+
+    /** Reverse an order item's inventory deduction — menu items or add-ons. */
+    private function restockItem(OrderItem $item): void
+    {
+        $item->loadMissing('menuItem', 'addOn');
+        if ($item->addOn) {
+            $this->inventory->deductAddOn($item->addOn, $item->qty, -1);
+        } elseif ($item->menuItem) {
+            $this->inventory->deductStock($item->menuItem, $item->qty, -1);
+        }
     }
 
     /**
@@ -675,7 +747,8 @@ class OrderService
     {
         $order->loadMissing('items.menuItem.category');
         $live = $order->items->where('voided', false);
-        $minibar = (int) $live->filter(fn (OrderItem $i) => $i->menuItem->category->is_minibar)->sum('amount');
+        // Add-on lines are never minibar — they're kitchen/front-of-house additions.
+        $minibar = (int) $live->filter(fn (OrderItem $i) => $i->add_on_id === null && $i->menuItem?->category?->is_minibar)->sum('amount');
         $restaurant = (int) $live->sum('amount') - $minibar;
 
         $folioId = $reservation->folio->id;
@@ -708,15 +781,24 @@ class OrderService
 
     /**
      * @param  Collection<int, MenuItem>  $menuItems
+     * @param  Collection<int, AddOn>  $addOns
      */
-    private function markSoldOutAfterFailure(InsufficientStockException $e, $menuItems): never
+    private function markSoldOutAfterFailure(InsufficientStockException $e, $menuItems, $addOns): never
     {
+        if ($e->addOnId) {
+            $name = $addOns->get($e->addOnId)?->name ?? 'Add-on';
+
+            throw ValidationException::withMessages([
+                'items' => $e->getMessage().' can\'t be made right now.',
+            ]);
+        }
+
         $name = $menuItems->get($e->menuItemId)?->name ?? 'Item';
         MenuItem::query()->where('id', $e->menuItemId)->update(['sold_out' => true]);
         broadcast(new RealtimeUpdate(RealtimeEvent::MENU, ['sold_out' => [$name]]));
 
         throw ValidationException::withMessages([
-            'items' => $e->getMessage()." — \"{$name}\" is now marked SOLD OUT.",
+            'items' => $e->getMessage().' — "'.$name.'" is now marked SOLD OUT.',
         ]);
     }
 }

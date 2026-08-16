@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToTenant;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
@@ -13,7 +14,10 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
  */
 class TillMovement extends Model
 {
-    protected $fillable = [
+    use BelongsToTenant;
+
+    protected $fillable = ['tenant_id',
+
         'till_session_id',
         'type_id',
         'amount',

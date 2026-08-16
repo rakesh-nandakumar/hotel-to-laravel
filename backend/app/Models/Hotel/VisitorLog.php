@@ -2,15 +2,19 @@
 
 namespace App\Models\Hotel;
 
+use App\Models\Concerns\BelongsToTenant;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class VisitorLog extends Model
 {
+    use BelongsToTenant;
+
     public $timestamps = false;
 
-    protected $fillable = [
+    protected $fillable = ['tenant_id',
+
         'name',
         'vehicle_no',
         'purpose',

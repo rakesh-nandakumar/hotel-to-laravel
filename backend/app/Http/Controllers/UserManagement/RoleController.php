@@ -5,11 +5,11 @@ namespace App\Http\Controllers\UserManagement;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\UserManagement\StoreRoleRequest;
 use App\Http\Requests\UserManagement\UpdateRoleRequest;
-use App\Models\MenuItem;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\User;
 use App\Services\AuditLog;
+use App\Services\PermissionMatrixBuilder;
 use App\Services\TenantModules;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -312,44 +312,13 @@ class RoleController extends Controller
         $actorPermissions = $actor?->cachedPermissionNames() ?? collect();
         $isFullAdmin = $actor?->isFullAdmin() ?? false;
 
-        $sections = MenuItem::with('children')
-            ->whereNull('parent_id')
-            ->where('is_active', true)
-            ->orderBy('order')
-            ->get();
+        $matrix = app(PermissionMatrixBuilder::class)->for();
 
-        $matrix = $sections->map(function (MenuItem $section) {
-            $modules = $section->isGroup()
-                ? $section->children
-                : collect([$section]);
-
-            return [
-                'section' => $section->name,
-                'modules' => $modules
-                    ->filter(fn (MenuItem $m) => $m->module_key !== null && TenantModules::isEnabled($m->module_key))
-                    ->map(fn (MenuItem $m) => [
-                        'key' => $m->module_key,
-                        'label' => $m->name,
-                        'actions' => $m->actions ?? [],
-                    ])
-                    ->values()
-                    ->all(),
-            ];
-        })->filter(fn ($s) => count($s['modules']) > 0)->values()->all();
-
-        $allActions = collect($matrix)
-            ->flatMap(fn ($s) => collect($s['modules'])->flatMap(fn ($m) => $m['actions']))
-            ->unique()
-            ->values()
-            ->all();
-
-        return [
-            'matrix' => $matrix,
-            'allActions' => $allActions,
+        return array_merge($matrix, [
             'grantable_permissions' => $isFullAdmin
                 ? null
                 : $actorPermissions->values()->all(),
             'is_full_admin' => $isFullAdmin,
-        ];
+        ]);
     }
 }

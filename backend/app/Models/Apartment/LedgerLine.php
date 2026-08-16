@@ -2,6 +2,7 @@
 
 namespace App\Models\Apartment;
 
+use App\Models\Concerns\BelongsToTenant;
 use App\Models\Lookup;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
@@ -10,9 +11,12 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class LedgerLine extends Model
 {
+    use BelongsToTenant;
+
     protected $table = 'apartment_ledger_lines';
 
-    protected $fillable = [
+    protected $fillable = ['tenant_id',
+
         'ledger_id',
         'line_source_id',
         'description',

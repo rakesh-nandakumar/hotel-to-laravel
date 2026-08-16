@@ -8,7 +8,7 @@ import { useFetch } from "../lib/util";
 import {
   Avatar, Badge, ConfirmDialog, Empty, ErrorText, Field, Modal, Pagination, statusColor,
 } from "../components/ui";
-import PermissionMatrix, { MatrixSection } from "../components/PermissionMatrix";
+import PermissionMatrix, { MatrixGroup, MatrixSection } from "../components/PermissionMatrix";
 import { usePermissions } from "../lib/auth";
 import { useToast } from "../lib/toast";
 
@@ -311,6 +311,7 @@ function ResetPasswordModal({ user, onClose }: { user: UserRow; onClose: () => v
 type RoleOption = { id: number; name: string; is_full_admin: boolean; description: string | null };
 type UserFormData = {
   matrix: MatrixSection[];
+  groups: MatrixGroup[];
   roles: RoleOption[];
   rolePermissions: Record<number, string[]>;
   warehouses: Ref[];
@@ -479,7 +480,7 @@ function UserEditorForm({ data, userId, onClose }: { data: UserFormData; userId:
             <p className="mt-1 text-brand-700/80">A full-admin role bypasses every permission check — the matrix below does not apply.</p>
           </div>
         ) : (
-          <PermissionMatrix matrix={data.matrix} value={effective} onChange={onMatrixChange} grantable={data.grantable_permissions} />
+          <PermissionMatrix matrix={data.matrix} value={effective} onChange={onMatrixChange} grantable={data.grantable_permissions} groups={data.groups} />
         )}
       </div>
 

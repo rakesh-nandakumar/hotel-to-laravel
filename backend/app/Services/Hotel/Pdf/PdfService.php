@@ -40,9 +40,10 @@ class PdfService
             ->stream("order-slip-{$order->id}.pdf");
     }
 
+    /** Kitchen Order Ticket — kitchen-only layout: no prices, grouped by station, KOT banner. */
     public function kotTicket(Order $order): Response
     {
-        $order->load(['items', 'room:id,number', 'type', 'diningMode']);
+        $order->load(['items.menuItem.category.kitchenStation', 'room:id,number', 'diningTable:id,table_no', 'type', 'diningMode']);
 
         return Pdf::loadView('hotel.pdf.kot-ticket', ['order' => $order, 'format' => 'thermal'])
             ->setPaper(self::THERMAL_PAPER)

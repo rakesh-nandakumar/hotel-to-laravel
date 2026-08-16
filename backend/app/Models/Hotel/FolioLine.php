@@ -2,6 +2,7 @@
 
 namespace App\Models\Hotel;
 
+use App\Models\Concerns\BelongsToTenant;
 use App\Models\Lookup;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
@@ -10,7 +11,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class FolioLine extends Model
 {
-    protected $fillable = [
+    use BelongsToTenant;
+
+    protected $fillable = ['tenant_id',
+
         'folio_id',
         'order_id',
         'line_source_id',

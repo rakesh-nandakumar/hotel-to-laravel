@@ -2,6 +2,7 @@
 
 namespace App\Models\Apartment;
 
+use App\Models\Concerns\BelongsToTenant;
 use App\Models\Lookup;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -9,9 +10,12 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Ledger extends Model
 {
+    use BelongsToTenant;
+
     protected $table = 'apartment_ledgers';
 
-    protected $fillable = [
+    protected $fillable = ['tenant_id',
+
         'ledger_status_id',
         'invoice_no',
         'booking_id',

@@ -23,7 +23,9 @@ it('creates a platform operator who can then sign in', function () {
         ->and($admin->password)->not->toBe('super-secret-1')
         ->and(Hash::check('super-secret-1', $admin->password))->toBeTrue();
 
-    $this->postJson('/api/central/login', [
+    // /api/central/* only exists on the central host — admin.localhost here
+    // (see CentralHostResolutionTest for why absolute URLs are required).
+    $this->postJson('http://admin.localhost/api/central/login', [
         'email' => 'ops@vellix.test',
         'password' => 'super-secret-1',
     ])->assertOk();

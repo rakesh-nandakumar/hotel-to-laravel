@@ -26,12 +26,19 @@ use App\Http\Controllers\Auth\PinLoginController;
 use App\Http\Controllers\Auth\VerifyEmailController;
 use App\Http\Controllers\BranchContextController;
 use App\Http\Controllers\Central\AuthenticatedSessionController as CentralAuthenticatedSessionController;
+use App\Http\Controllers\Central\CentralAdminController;
+use App\Http\Controllers\Central\CentralBranchController;
+use App\Http\Controllers\Central\CentralDashboardController;
 use App\Http\Controllers\Central\ImpersonationController as CentralImpersonationController;
 use App\Http\Controllers\Central\MeController as CentralMeController;
 use App\Http\Controllers\Central\TenantController;
 use App\Http\Controllers\Central\TenantModuleController;
+use App\Http\Controllers\Central\TenantRoleController;
 use App\Http\Controllers\Central\TenantSettingController;
+use App\Http\Controllers\Central\TestInstanceController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\HostContextController;
+use App\Http\Controllers\Hotel\AddOnController;
 use App\Http\Controllers\Hotel\AttendanceController;
 use App\Http\Controllers\Hotel\CorporateAccountController;
 use App\Http\Controllers\Hotel\DiningAreaController;
@@ -70,6 +77,11 @@ use App\Http\Controllers\TillController;
 use App\Http\Controllers\UserManagement\RoleController;
 use App\Http\Controllers\UserManagement\UserManagementUserController;
 use Illuminate\Support\Facades\Route;
+
+// ── Boot gate ───────────────────────────────────────────────────────────────
+// Tells the SPA which shell to mount (and nginx whether to serve the app at
+// all) purely from the Host header — see HostContextController.
+Route::get('host-context', HostContextController::class)->name('host-context');
 
 // ── Guest auth ──────────────────────────────────────────────────────────────
 Route::middleware('guest')->group(function () {
@@ -136,7 +148,26 @@ Route::prefix('central')->name('central.')->middleware('central_only')->group(fu
 
         Route::get('tenants', [TenantController::class, 'index'])->name('tenants.index');
         Route::post('tenants', [TenantController::class, 'store'])->name('tenants.store');
+        Route::get('tenants/{tenant}', [TenantController::class, 'show'])->name('tenants.show');
         Route::put('tenants/{tenant}', [TenantController::class, 'update'])->name('tenants.update');
+
+        Route::post('tenants/{tenant}/suspend', [TenantController::class, 'suspend'])->name('tenants.suspend');
+        Route::post('tenants/{tenant}/resume', [TenantController::class, 'resume'])->name('tenants.resume');
+        Route::post('tenants/{tenant}/reset-admin-password', [TenantController::class, 'resetAdminPassword'])->name('tenants.reset-admin-password');
+        Route::get('tenants/{tenant}/credentials', [TenantController::class, 'credentials'])->name('tenants.credentials');
+        Route::get('tenants/{tenant}/audit-logs', [TenantController::class, 'auditLogs'])->name('tenants.audit-logs');
+
+        Route::get('tenants/{tenant}/branches', [CentralBranchController::class, 'index'])->name('tenants.branches.index');
+        Route::post('tenants/{tenant}/branches', [CentralBranchController::class, 'store'])->name('tenants.branches.store');
+        Route::put('tenants/{tenant}/branches/{branch}', [CentralBranchController::class, 'update'])->name('tenants.branches.update');
+        Route::delete('tenants/{tenant}/branches/{branch}', [CentralBranchController::class, 'destroy'])->name('tenants.branches.destroy');
+
+        Route::get('admins', [CentralAdminController::class, 'index'])->name('admins.index');
+        Route::post('admins', [CentralAdminController::class, 'store'])->name('admins.store');
+        Route::put('admins/{admin}', [CentralAdminController::class, 'update'])->name('admins.update');
+        Route::delete('admins/{admin}', [CentralAdminController::class, 'destroy'])->name('admins.destroy');
+
+        Route::get('dashboard', [CentralDashboardController::class, 'index'])->name('dashboard');
 
         Route::get('tenants/{tenant}/settings', [TenantSettingController::class, 'index'])->name('tenants.settings.index');
         Route::put('tenants/{tenant}/settings/{key}', [TenantSettingController::class, 'update'])->name('tenants.settings.update');
@@ -144,7 +175,25 @@ Route::prefix('central')->name('central.')->middleware('central_only')->group(fu
         Route::get('tenants/{tenant}/modules', [TenantModuleController::class, 'index'])->name('tenants.modules.index');
         Route::put('tenants/{tenant}/modules/{moduleKey}', [TenantModuleController::class, 'update'])->name('tenants.modules.update');
 
+        Route::prefix('tenants/{tenant}/roles')->name('tenants.roles.')->group(function () {
+            Route::get('/', [TenantRoleController::class, 'index'])->name('index');
+            Route::get('create', [TenantRoleController::class, 'create'])->name('create');
+            Route::post('/', [TenantRoleController::class, 'store'])->name('store');
+            Route::get('{role}', [TenantRoleController::class, 'show'])->name('show');
+            Route::get('{role}/edit', [TenantRoleController::class, 'edit'])->name('edit');
+            Route::put('{role}', [TenantRoleController::class, 'update'])->name('update');
+            Route::delete('{role}', [TenantRoleController::class, 'destroy'])->name('destroy');
+            Route::post('{role}/duplicate', [TenantRoleController::class, 'duplicate'])->name('duplicate');
+            Route::post('{role}/toggle-active', [TenantRoleController::class, 'toggleActive'])->name('toggle-active');
+        });
+
         Route::post('tenants/{tenant}/impersonate', [CentralImpersonationController::class, 'store'])->name('tenants.impersonate');
+
+        Route::get('test-instances', [TestInstanceController::class, 'index'])->name('test-instances.index');
+        Route::get('tenants/{tenant}/test-instance', [TestInstanceController::class, 'show'])->name('tenants.test-instance.show');
+        Route::post('tenants/{tenant}/test-instance', [TestInstanceController::class, 'store'])->name('tenants.test-instance.store');
+        Route::post('tenants/{tenant}/test-instance/sync', [TestInstanceController::class, 'sync'])->name('tenants.test-instance.sync');
+        Route::delete('tenants/{tenant}/test-instance', [TestInstanceController::class, 'destroy'])->name('tenants.test-instance.destroy');
     });
 });
 
@@ -529,6 +578,18 @@ Route::middleware(['auth', 'check_active'])->group(function () {
         Route::delete('modifiers/{modifier}', [MenuItemModifierController::class, 'destroyModifier'])
             ->middleware('can_do:hotel_menu_items.edit')
             ->name('modifiers.destroy');
+        Route::get('add-ons', [AddOnController::class, 'index'])
+            ->middleware('can_do:hotel_menu_items.access')
+            ->name('add-ons.index');
+        Route::post('add-ons', [AddOnController::class, 'store'])
+            ->middleware('can_do:hotel_menu_items.create')
+            ->name('add-ons.store');
+        Route::put('add-ons/{addOn}', [AddOnController::class, 'update'])
+            ->middleware('can_do:hotel_menu_items.edit')
+            ->name('add-ons.update');
+        Route::delete('add-ons/{addOn}', [AddOnController::class, 'destroy'])
+            ->middleware('can_do:hotel_menu_items.delete')
+            ->name('add-ons.destroy');
     });
 
     // ── Ingredients & Stock ───────────────────────────────────────────────────
@@ -1102,7 +1163,7 @@ Route::middleware(['auth', 'check_active'])->group(function () {
             Route::post('{ledger}/lines', [ApartmentLedgerController::class, 'addLine'])
                 ->middleware('can_do:apartment_ledgers.add_line')
                 ->name('lines.store');
-            Route::delete('lines/{line}', [ApartmentLedgerController::class, 'voidLine'])
+            Route::post('lines/{line}/void', [ApartmentLedgerController::class, 'voidLine'])
                 ->middleware('can_do:apartment_ledgers.void_line')
                 ->name('lines.void');
             Route::post('{ledger}/payment', [ApartmentLedgerController::class, 'payment'])

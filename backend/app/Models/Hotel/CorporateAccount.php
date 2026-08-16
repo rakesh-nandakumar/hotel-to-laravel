@@ -2,6 +2,7 @@
 
 namespace App\Models\Hotel;
 
+use App\Models\Concerns\BelongsToTenant;
 use App\Traits\HasUserstamps;
 use Database\Factories\Hotel\CorporateAccountFactory;
 use Illuminate\Database\Eloquent\Builder;
@@ -12,14 +13,15 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class CorporateAccount extends Model
 {
-    use HasFactory, HasUserstamps, SoftDeletes;
+    use BelongsToTenant, HasFactory, HasUserstamps, SoftDeletes;
 
     protected static function newFactory(): CorporateAccountFactory
     {
         return CorporateAccountFactory::new();
     }
 
-    protected $fillable = [
+    protected $fillable = ['tenant_id',
+
         'company_name',
         'contact_name',
         'phone',

@@ -13,4 +13,6 @@ class TenantStatus
     public const ACTIVE = 'active';
 
     public const SUSPENDED = 'suspended';
+
+    public const CANCELLED = 'cancelled';
 }

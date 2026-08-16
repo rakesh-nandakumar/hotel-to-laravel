@@ -17,13 +17,13 @@ beforeEach(function () {
 });
 
 it('requires central authentication to reach master control', function () {
-    $this->getJson('/api/central/tenants')->assertUnauthorized();
+    $this->getJson('http://admin.localhost/api/central/tenants')->assertUnauthorized();
 });
 
 it('lets a central admin create a tenant and auto-provisions its admin user', function () {
     actingAsCentral(CentralAdmin::factory()->create());
 
-    $response = $this->postJson('/api/central/tenants', [
+    $response = $this->postJson('http://admin.localhost/api/central/tenants', [
         'name' => 'Acme Hotels',
         'slug' => 'acme',
         'admin_email' => 'owner@acme.test',
@@ -57,18 +57,30 @@ it('lets a central admin create a tenant and auto-provisions its admin user', fu
 it('rejects a tenant slug matching the reserved central subdomain', function () {
     actingAsCentral(CentralAdmin::factory()->create());
 
-    $this->postJson('/api/central/tenants', [
+    $this->postJson('http://admin.localhost/api/central/tenants', [
         'name' => 'Sneaky',
         'slug' => config('tenancy.central_subdomain'),
         'admin_email' => 'a@b.test',
     ])->assertStatus(422)->assertJsonValidationErrors('slug');
 });
 
+it('rejects infrastructure-host slugs (www, api, cdn, ...)', function () {
+    actingAsCentral(CentralAdmin::factory()->create());
+
+    foreach (['www', 'api', 'cdn', 'mail'] as $slug) {
+        $this->postJson('http://admin.localhost/api/central/tenants', [
+            'name' => 'Sneaky',
+            'slug' => $slug,
+            'admin_email' => 'a@b.test',
+        ])->assertStatus(422)->assertJsonValidationErrors('slug');
+    }
+});
+
 it('rejects a duplicate tenant slug', function () {
     actingAsCentral(CentralAdmin::factory()->create());
     Tenant::factory()->create(['slug' => 'taken']);
 
-    $this->postJson('/api/central/tenants', [
+    $this->postJson('http://admin.localhost/api/central/tenants', [
         'name' => 'Duplicate',
         'slug' => 'taken',
         'admin_email' => 'a@b.test',
@@ -79,7 +91,7 @@ it('lets a central admin update a tenant status', function () {
     actingAsCentral(CentralAdmin::factory()->create());
     $tenant = Tenant::factory()->create();
 
-    $this->putJson("/api/central/tenants/{$tenant->id}", ['status' => 'suspended'])->assertOk();
+    $this->putJson("http://admin.localhost/api/central/tenants/{$tenant->id}", ['status' => 'suspended'])->assertOk();
 
     expect($tenant->fresh()->status)->toBe('suspended');
 });

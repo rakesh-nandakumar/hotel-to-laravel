@@ -25,6 +25,8 @@ class UpdateMenuItemRequest extends FormRequest
             'description' => ['sometimes', 'nullable', 'string', 'max:1000'],
             'image' => ['sometimes', 'nullable', 'string', 'max:5000000'],
             'active' => ['sometimes', 'boolean'],
+            'send_to_kot' => ['sometimes', 'boolean'],
+            'stock_ingredient_id' => ['sometimes', 'nullable', 'integer', 'exists:ingredients,id'],
             'recipe' => ['sometimes', 'array'],
             'recipe.*.ingredient_id' => ['required', 'integer', 'exists:ingredients,id'],
             'recipe.*.qty' => ['required', 'numeric', 'min:0'],

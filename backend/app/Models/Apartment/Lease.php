@@ -2,6 +2,7 @@
 
 namespace App\Models\Apartment;
 
+use App\Models\Concerns\BelongsToTenant;
 use App\Models\Lookup;
 use App\Traits\HasUserstamps;
 use Illuminate\Database\Eloquent\Builder;
@@ -13,11 +14,12 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Lease extends Model
 {
-    use HasUserstamps, SoftDeletes;
+    use BelongsToTenant, HasUserstamps, SoftDeletes;
 
     protected $table = 'apartment_leases';
 
-    protected $fillable = [
+    protected $fillable = ['tenant_id',
+
         'code',
         'unit_id',
         'customer_id',

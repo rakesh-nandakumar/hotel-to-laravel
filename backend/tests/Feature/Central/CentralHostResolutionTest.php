@@ -11,33 +11,30 @@ use Database\Seeders\PermissionsAndRolesSeeder;
  * whole architecture rests on (App\Http\Middleware\IdentifyTenant plus
  * EnsureCentralContext).
  *
- * Every test here turns `tenancy.dev_fallback` OFF. Left on (its default
- * outside production, including the test suite) IdentifyTenant short-circuits
- * any `api/central/*` path straight to central context so local dev on
- * http://localhost works at all — which would make these assertions pass
- * without the Host header ever being consulted.
+ * Resolution is RELATIVE: the first DNS label is the identity, the rest is
+ * the base. Hosts here use the *.localhost base, which resolves without any
+ * hosts-file entry — "admin.localhost" is master control, "acme.localhost"
+ * is tenant "acme", bare "localhost" is the apex (also master control).
  */
 beforeEach(function () {
     $this->seed(MenuSeeder::class);
     $this->seed(PermissionsAndRolesSeeder::class);
-
-    config()->set('tenancy.dev_fallback', false);
 });
 
 /**
  * Absolute URLs, not a `Host` header: Laravel's prepareUrlForRequest() makes a
- * relative test URI absolute against config('app.url'), and Symfony's
- * Request::create() then derives HTTP_HOST from that — silently discarding any
- * Host header passed in. The host has to be in the URL itself to take effect.
+ * relative test URI absolute against config('app.url') ('http://default.localhost'),
+ * and Symfony's Request::create() then derives HTTP_HOST from that — silently
+ * discarding any Host header passed in. The host has to be in the URL itself.
  */
 function centralUrl(string $path = '/api/central/tenants'): string
 {
-    return 'http://'.config('tenancy.central_subdomain').'.'.config('tenancy.base_domain').$path;
+    return 'http://'.config('tenancy.central_subdomain').'.localhost'.$path;
 }
 
 function tenantUrl(string $slug, string $path = '/api/dashboard'): string
 {
-    return 'http://'.$slug.'.'.config('tenancy.base_domain').$path;
+    return 'http://'.$slug.'.localhost'.$path;
 }
 
 it('serves master control on the central subdomain', function () {
@@ -51,7 +48,7 @@ it('serves master control on the central subdomain', function () {
 it('treats the bare base domain as central context too', function () {
     actingAsCentral(CentralAdmin::factory()->create());
 
-    $this->getJson('http://'.config('tenancy.base_domain').'/api/central/tenants')
+    $this->getJson('http://localhost/api/central/tenants')
         ->assertOk();
 });
 

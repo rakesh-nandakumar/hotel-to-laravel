@@ -2,6 +2,7 @@
 
 namespace App\Models\Hotel;
 
+use App\Models\Concerns\BelongsToTenant;
 use App\Traits\HasUserstamps;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -9,9 +10,10 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class MenuItemModifierGroup extends Model
 {
-    use HasUserstamps;
+    use BelongsToTenant, HasUserstamps;
 
-    protected $fillable = [
+    protected $fillable = ['tenant_id',
+
         'menu_item_id',
         'name',
         'is_required',

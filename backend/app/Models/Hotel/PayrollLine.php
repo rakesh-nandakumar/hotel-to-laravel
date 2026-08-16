@@ -2,13 +2,17 @@
 
 namespace App\Models\Hotel;
 
+use App\Models\Concerns\BelongsToTenant;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class PayrollLine extends Model
 {
-    protected $fillable = [
+    use BelongsToTenant;
+
+    protected $fillable = ['tenant_id',
+
         'run_id',
         'user_id',
         'base_salary',

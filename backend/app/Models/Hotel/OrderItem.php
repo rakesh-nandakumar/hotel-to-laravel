@@ -2,16 +2,22 @@
 
 namespace App\Models\Hotel;
 
+use App\Models\Concerns\BelongsToTenant;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class OrderItem extends Model
 {
-    protected $fillable = [
+    use BelongsToTenant;
+
+    protected $fillable = ['tenant_id',
+
         'order_id',
         'menu_item_id',
+        'add_on_id',
         'name',
+        'send_to_kot',
         'qty',
         'unit_price',
         'amount',
@@ -23,6 +29,7 @@ class OrderItem extends Model
     protected function casts(): array
     {
         return [
+            'send_to_kot' => 'boolean',
             'qty' => 'integer',
             'unit_price' => 'integer',
             'amount' => 'integer',
@@ -38,6 +45,11 @@ class OrderItem extends Model
     public function menuItem(): BelongsTo
     {
         return $this->belongsTo(MenuItem::class);
+    }
+
+    public function addOn(): BelongsTo
+    {
+        return $this->belongsTo(AddOn::class);
     }
 
     public function modifiers(): HasMany

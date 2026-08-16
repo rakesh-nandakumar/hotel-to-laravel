@@ -4,10 +4,12 @@ namespace App\Models;
 
 use App\Support\TenantStatus;
 use Database\Factories\TenantFactory;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
@@ -21,10 +23,23 @@ class Tenant extends Model
     /** @use HasFactory<TenantFactory> */
     use HasFactory, SoftDeletes;
 
+    public const ENV_LIVE = 'live';
+
+    public const ENV_TEST = 'test';
+
+    /**
+     * @var list<string>
+     */
+    public const ENVIRONMENTS = [self::ENV_LIVE, self::ENV_TEST];
+
     protected $fillable = [
         'name',
         'slug',
         'status',
+        'environment',
+        'parent_tenant_id',
+        'last_synced_at',
+        'last_synced_by',
         'trial_ends_at',
         'created_by',
         'updated_by',
@@ -34,6 +49,7 @@ class Tenant extends Model
     {
         return [
             'trial_ends_at' => 'datetime',
+            'last_synced_at' => 'datetime',
         ];
     }
 
@@ -84,5 +100,81 @@ class Tenant extends Model
     public function updatedBy(): BelongsTo
     {
         return $this->belongsTo(CentralAdmin::class, 'updated_by');
+    }
+
+    public function parentTenant(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'parent_tenant_id');
+    }
+
+    /**
+     * The single test instance this live tenant owns, if one exists.
+     */
+    public function testInstance(): HasOne
+    {
+        return $this->hasOne(self::class, 'parent_tenant_id')
+            ->where('environment', self::ENV_TEST);
+    }
+
+    /**
+     * The central admin who last synced this test instance from its parent.
+     */
+    public function lastSyncAdmin(): BelongsTo
+    {
+        return $this->belongsTo(CentralAdmin::class, 'last_synced_by');
+    }
+
+    public function auditLogs(): HasMany
+    {
+        return $this->hasMany(AuditLog::class);
+    }
+
+    public function isActive(): bool
+    {
+        return $this->status === TenantStatus::ACTIVE;
+    }
+
+    public function isSuspended(): bool
+    {
+        return $this->status === TenantStatus::SUSPENDED;
+    }
+
+    public function isCancelled(): bool
+    {
+        return $this->status === TenantStatus::CANCELLED;
+    }
+
+    public function isTestInstance(): bool
+    {
+        return $this->environment === self::ENV_TEST;
+    }
+
+    public function environmentLabel(): string
+    {
+        return $this->isTestInstance() ? 'Test' : 'Live';
+    }
+
+    /**
+     * @param  Builder<self>  $query
+     */
+    public function scopeActive(Builder $query): void
+    {
+        $query->where('status', TenantStatus::ACTIVE);
+    }
+
+    /**
+     * @param  Builder<self>  $query
+     */
+    public function scopeLive(Builder $query): void
+    {
+        $query->where('environment', self::ENV_LIVE);
+    }
+
+    /**
+     * @param  Builder<self>  $query
+     */
+    public function scopeTestInstances(Builder $query): void
+    {
+        $query->where('environment', self::ENV_TEST);
     }
 }

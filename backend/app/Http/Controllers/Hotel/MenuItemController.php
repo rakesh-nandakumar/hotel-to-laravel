@@ -24,17 +24,29 @@ class MenuItemController extends Controller
     /** Full menu for the POS grid — every active staff member can see it. */
     public function full(): JsonResponse
     {
-        return response()->json([
-            'categories' => MenuCategory::query()
-                ->where('active', true)
-                ->orderBy('sort_order')
-                ->with([
-                    'kitchenStation',
-                    'items' => fn ($q) => $q->where('active', true)->orderBy('item_no')->orderBy('name')
-                        ->with(['modifierGroups' => fn ($g) => $g->orderBy('sort_order')->with(['modifiers' => fn ($m) => $m->where('active', true)->orderBy('sort_order')])]),
-                ])
-                ->get(),
-        ]);
+        $categories = MenuCategory::query()
+            ->where('active', true)
+            ->orderBy('sort_order')
+            ->with([
+                'kitchenStation',
+                'items' => fn ($q) => $q->where('active', true)->orderBy('item_no')->orderBy('name')
+                    ->with([
+                        'modifierGroups' => fn ($g) => $g->orderBy('sort_order')->with(['modifiers' => fn ($m) => $m->where('active', true)->orderBy('sort_order')]),
+                        'linkedAddOns' => fn ($a) => $a->active()->orderBy('sort_order'),
+                        'categoryAddOns' => fn ($a) => $a->active()->orderBy('sort_order'),
+                    ]),
+            ])
+            ->get();
+
+        // Fold item-scoped + category-scoped add-ons into one `addons` list per item.
+        $categories->each(function (MenuCategory $category) {
+            $category->items->each(function (MenuItem $item) {
+                $item->setAttribute('addons', $item->linkedAddOns->concat($item->categoryAddOns)->unique('id')->values());
+                $item->unsetRelation('linkedAddOns')->unsetRelation('categoryAddOns');
+            });
+        });
+
+        return response()->json(['categories' => $categories]);
     }
 
     public function index(Request $request): JsonResponse
@@ -81,6 +93,8 @@ class MenuItemController extends Controller
                 'item_no' => $itemNo,
                 'description' => $data['description'] ?? '',
                 'image' => $data['image'] ?? null,
+                'send_to_kot' => $data['send_to_kot'] ?? true,
+                'stock_ingredient_id' => $data['stock_ingredient_id'] ?? null,
             ]);
 
             if (! empty($data['recipe'])) {

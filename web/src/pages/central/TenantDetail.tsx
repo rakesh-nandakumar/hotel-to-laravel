@@ -1,26 +1,44 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
-import { api, put } from "../../lib/api";
-import { Card, Badge, Field, ErrorText, Tabs, statusColor } from "../../components/ui";
+import { api, post, put } from "../../lib/api";
+import {
+  Card, Badge, Field, ErrorText, Tabs, statusColor, SimpleTable, Pagination, ConfirmDialog, Modal,
+} from "../../components/ui";
 import { ThemeCustomizer, ThemeColors } from "../../components/ThemeCustomizer";
 import { applyTheme } from "../../lib/theme";
-import { LogIn } from "lucide-react";
+import { RolesTab } from "./TenantRoles";
+import { KeyRound, LogIn, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
 
-type Tenant = { id: number; name: string; slug: string; status: "trial" | "active" | "suspended" };
+type Tenant = {
+  id: number;
+  name: string;
+  slug: string;
+  status: "trial" | "active" | "suspended" | "cancelled";
+  environment: "live" | "test";
+  branches_count: number;
+  users_count: number;
+  audit_logs_count: number;
+};
+type OwnerAdmin = { id: number; name: string; email: string; status: string; created_at: string; impersonation_only: boolean };
 type SettingRow = { key: string; type: string; category: string; label: string; hint: string | null; value: string; overridden: boolean };
 type ModuleRow = { key: string; name: string; description: string; enabled: boolean };
 
-type Tab = "overview" | "settings" | "modules";
+type Tab = "overview" | "settings" | "modules" | "roles" | "branches" | "test-instance" | "audit";
 
 export default function CentralTenantDetail() {
   const { id } = useParams<{ id: string }>();
   const [tenant, setTenant] = useState<Tenant | null>(null);
+  const [owner, setOwner] = useState<OwnerAdmin | null>(null);
   const [tab, setTab] = useState<Tab>("overview");
   const [error, setError] = useState("");
   const [impersonateUrl, setImpersonateUrl] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const load = () => api<{ tenant: Tenant }>(`/central/tenants/${id}/settings`).then((d) => setTenant(d.tenant));
+  const load = () =>
+    api<{ tenant: Tenant; owner_admin: OwnerAdmin | null }>(`/central/tenants/${id}`).then((d) => {
+      setTenant(d.tenant);
+      setOwner(d.owner_admin);
+    });
 
   useEffect(() => {
     load();
@@ -56,8 +74,10 @@ export default function CentralTenantDetail() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-lg font-black text-slate-900">{tenant.name}</h1>
-          <p className="text-sm text-slate-500">
-            {tenant.slug} <Badge color={statusColor(tenant.status)}>{tenant.status}</Badge>
+          <p className="flex items-center gap-2 text-sm text-slate-500">
+            {tenant.slug}
+            <Badge color={statusColor(tenant.status)}>{tenant.status}</Badge>
+            <Badge color={tenant.environment === "test" ? "purple" : "slate"}>{tenant.environment}</Badge>
           </p>
         </div>
         <button className="btn-primary" onClick={impersonate} disabled={busy}>
@@ -79,23 +99,39 @@ export default function CentralTenantDetail() {
           { id: "overview", label: "Overview" },
           { id: "settings", label: "Settings" },
           { id: "modules", label: "Modules" },
+          { id: "roles", label: "Roles" },
+          { id: "branches", label: "Branches" },
+          { id: "test-instance", label: "Test instance" },
+          { id: "audit", label: "Audit log" },
         ]}
         active={tab}
         onChange={setTab}
       />
 
-      {tab === "overview" && <OverviewTab tenant={tenant} onSaved={setTenant} />}
+      {tab === "overview" && <OverviewTab tenant={tenant} owner={owner} onSaved={setTenant} />}
       {tab === "settings" && <SettingsTab tenantId={tenant.id} />}
       {tab === "modules" && <ModulesTab tenantId={tenant.id} />}
+      {tab === "roles" && <RolesTab tenantId={tenant.id} tenantName={tenant.name} />}
+      {tab === "branches" && <BranchesTab tenantId={tenant.id} />}
+      {tab === "test-instance" && <TestInstanceTab tenant={tenant} />}
+      {tab === "audit" && <AuditLogTab tenantId={tenant.id} />}
     </div>
   );
 }
 
-function OverviewTab({ tenant, onSaved }: { tenant: Tenant; onSaved: (t: Tenant) => void }) {
+function OverviewTab({
+  tenant, owner, onSaved,
+}: { tenant: Tenant; owner: OwnerAdmin | null; onSaved: (t: Tenant) => void }) {
   const [name, setName] = useState(tenant.name);
   const [status, setStatus] = useState(tenant.status);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [lifecycleBusy, setLifecycleBusy] = useState(false);
+  const [lifecycleError, setLifecycleError] = useState("");
+  const [confirmSuspend, setConfirmSuspend] = useState(false);
+  const [resetPassword, setResetPassword] = useState<{ password: string; email: string } | null>(null);
+  const [resetBusy, setResetBusy] = useState(false);
+  const [resetError, setResetError] = useState("");
 
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -111,23 +147,114 @@ function OverviewTab({ tenant, onSaved }: { tenant: Tenant; onSaved: (t: Tenant)
     }
   };
 
+  const lifecycle = async (action: "suspend" | "resume") => {
+    setLifecycleBusy(true);
+    setLifecycleError("");
+    setConfirmSuspend(false);
+    try {
+      const { tenant: updated } = await post<{ tenant: Tenant }>(`/central/tenants/${tenant.id}/${action}`);
+      onSaved(updated);
+      setStatus(updated.status);
+    } catch (err) {
+      setLifecycleError((err as Error).message);
+    } finally {
+      setLifecycleBusy(false);
+    }
+  };
+
+  const doResetPassword = async () => {
+    setResetBusy(true);
+    setResetError("");
+    try {
+      const r = await post<{ password: string; admin: { email: string } }>(`/central/tenants/${tenant.id}/reset-admin-password`);
+      setResetPassword({ password: r.password, email: r.admin.email });
+    } catch (err) {
+      setResetError((err as Error).message);
+    } finally {
+      setResetBusy(false);
+    }
+  };
+
   return (
-    <Card>
-      <form onSubmit={save} className="max-w-sm space-y-3">
-        <ErrorText error={error} />
-        <Field label="Business name">
-          <input className="input" value={name} onChange={(e) => setName(e.target.value)} required />
-        </Field>
-        <Field label="Status">
-          <select className="input" value={status} onChange={(e) => setStatus(e.target.value as Tenant["status"])}>
-            <option value="trial">Trial</option>
-            <option value="active">Active</option>
-            <option value="suspended">Suspended</option>
-          </select>
-        </Field>
-        <button className="btn-primary" disabled={busy}>{busy ? "Saving…" : "Save"}</button>
-      </form>
-    </Card>
+    <div className="space-y-4">
+      <Card>
+        <form onSubmit={save} className="max-w-sm space-y-3">
+          <ErrorText error={error} />
+          <Field label="Business name">
+            <input className="input" value={name} onChange={(e) => setName(e.target.value)} required />
+          </Field>
+          <Field label="Status">
+            <select className="input" value={status} onChange={(e) => setStatus(e.target.value as Tenant["status"])}>
+              <option value="trial">Trial</option>
+              <option value="active">Active</option>
+              <option value="suspended">Suspended</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
+          </Field>
+          <button className="btn-primary" disabled={busy}>{busy ? "Saving…" : "Save"}</button>
+        </form>
+      </Card>
+
+      <Card title="Owner admin & credentials">
+        <ErrorText error={lifecycleError} />
+        {owner ? (
+          <div className="space-y-2 text-sm">
+            <p className="font-semibold text-slate-800">{owner.name}</p>
+            <p className="text-slate-500">{owner.email}</p>
+            <p className="text-xs text-slate-400">
+              Credentials are never handed out — the only way in is Impersonate. A reset mints a new
+              never-communicated password and forces a change on next sign-in.
+            </p>
+            <div className="flex flex-wrap gap-2 pt-1">
+              {tenant.status === "suspended" ? (
+                <button className="btn-secondary" onClick={() => lifecycle("resume")} disabled={lifecycleBusy}>
+                  {lifecycleBusy ? "Working…" : "Resume"}
+                </button>
+              ) : tenant.status === "cancelled" ? null : (
+                <button className="btn-secondary" onClick={() => setConfirmSuspend(true)} disabled={lifecycleBusy}>
+                  Suspend
+                </button>
+              )}
+              <button className="btn-secondary" onClick={doResetPassword} disabled={resetBusy}>
+                <KeyRound size={14} /> {resetBusy ? "Resetting…" : "Reset admin password"}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <p className="text-sm text-slate-400">No administrator account found for this tenant.</p>
+        )}
+      </Card>
+
+      <ConfirmDialog
+        open={confirmSuspend}
+        title="Suspend tenant"
+        message={`Suspending ${tenant.name} blocks all sign-ins and API access until it's resumed. Continue?`}
+        confirmLabel="Suspend"
+        tone="danger"
+        busy={lifecycleBusy}
+        onConfirm={() => lifecycle("suspend")}
+        onClose={() => setConfirmSuspend(false)}
+      />
+
+      {resetPassword && (
+        <Card title="New password — shown once">
+          <ErrorText error={resetError} />
+          <div className="space-y-3">
+            <p className="text-sm text-slate-500">
+              {owner?.name ?? "The tenant's administrator"} ({resetPassword.email}) can sign in with:
+            </p>
+            <code className="block rounded-lg bg-slate-950 px-4 py-3 font-mono text-lg text-emerald-300">{resetPassword.password}</code>
+            <p className="text-xs text-slate-400">
+              They'll be forced to change it on first sign-in. The password is not stored anywhere else — close this
+              dialog to discard it.
+            </p>
+            <div className="flex justify-end">
+              <button className="btn-primary" onClick={() => setResetPassword(null)}>Done</button>
+            </div>
+          </div>
+        </Card>
+      )}
+    </div>
   );
 }
 
@@ -206,7 +333,7 @@ function SettingsTab({ tenantId }: { tenantId: number }) {
       <Card title="Theme & live preview">
         <ErrorText error={themeError} />
         <ThemeCustomizer
-          // Remount on tenant change so the customizer's own draft state can't
+          // Remount on change so the customizer's own draft state can't
           // carry one tenant's unsaved colors onto another's.
           key={tenantId}
           initialPrimary={themeValue("theme.primary", "#0462d3")}
@@ -326,5 +453,429 @@ function ModulesTab({ tenantId }: { tenantId: number }) {
         ))}
       </div>
     </Card>
+  );
+}
+
+type Branch = {
+  id: number;
+  name: string;
+  phone: string | null;
+  email: string | null;
+  address: string | null;
+  city: string | null;
+  country: string | null;
+  is_active: boolean;
+  tills_count: number;
+};
+
+function BranchesTab({ tenantId }: { tenantId: number }) {
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState<Branch | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [deleting, setDeleting] = useState<Branch | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const load = () => api<{ branches: Branch[] }>(`/central/tenants/${tenantId}/branches`).then((d) => setBranches(d.branches));
+
+  useEffect(() => {
+    load().finally(() => setLoading(false));
+  }, [tenantId]);
+
+  const doDelete = async () => {
+    if (!deleting) return;
+    setBusy(true);
+    setError("");
+    try {
+      await api(`/central/tenants/${tenantId}/branches/${deleting.id}`, { method: "DELETE" });
+      setDeleting(null);
+      load();
+    } catch (err) {
+      setError((err as Error).message);
+      setDeleting(null);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-sm font-black text-slate-700">Branches ({branches.length})</h2>
+        <button className="btn-primary" onClick={() => setCreating(true)}>
+          <Plus size={16} /> New branch
+        </button>
+      </div>
+      <ErrorText error={error} />
+
+      <Card>
+        {loading ? (
+          <p className="py-8 text-center text-sm text-slate-400">Loading…</p>
+        ) : (
+          <SimpleTable<Branch>
+            columns={[
+              { key: "name", label: "Name", render: (b) => <span className="font-semibold text-slate-800">{b.name}</span> },
+              { key: "city", label: "City", render: (b) => <span className="text-slate-500">{b.city ?? "—"}</span> },
+              { key: "is_active", label: "Status", render: (b) => <Badge color={b.is_active ? "emerald" : "slate"}>{b.is_active ? "Active" : "Inactive"}</Badge> },
+              { key: "tills_count", label: "Tills", align: "right" },
+              {
+                key: "actions",
+                label: "",
+                align: "right",
+                render: (b) => (
+                  <div className="flex justify-end gap-1">
+                    <button className="btn-ghost" title="Edit" onClick={() => setEditing(b)}><Pencil size={14} /></button>
+                    <button className="btn-ghost text-red-500" title="Delete" onClick={() => setDeleting(b)}><Trash2 size={14} /></button>
+                  </div>
+                ),
+              },
+            ]}
+            rows={branches}
+            rowKey={(b) => b.id}
+            empty="No branches yet"
+          />
+        )}
+      </Card>
+
+      {(creating || editing) && (
+        <BranchModal
+          tenantId={tenantId}
+          branch={editing}
+          onClose={() => { setCreating(false); setEditing(null); }}
+          onSaved={() => { setCreating(false); setEditing(null); load(); }}
+        />
+      )}
+
+      <ConfirmDialog
+        open={deleting !== null}
+        title="Delete branch"
+        message={<>Deleting <strong>{deleting?.name}</strong> is only possible while it has no tills or rooms.</>}
+        confirmLabel="Delete"
+        tone="danger"
+        busy={busy}
+        onConfirm={doDelete}
+        onClose={() => setDeleting(null)}
+      />
+    </div>
+  );
+}
+
+function BranchModal({ tenantId, branch, onClose, onSaved }: { tenantId: number; branch: Branch | null; onClose: () => void; onSaved: () => void }) {
+  const [name, setName] = useState(branch?.name ?? "");
+  const [phone, setPhone] = useState(branch?.phone ?? "");
+  const [email, setEmail] = useState(branch?.email ?? "");
+  const [address, setAddress] = useState(branch?.address ?? "");
+  const [city, setCity] = useState(branch?.city ?? "");
+  const [country, setCountry] = useState(branch?.country ?? "");
+  const [isActive, setIsActive] = useState(branch?.is_active ?? true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      const body = { name, phone: phone || null, email: email || null, address: address || null, city: city || null, country: country || null, is_active: isActive };
+      if (branch) await put(`/central/tenants/${tenantId}/branches/${branch.id}`, body);
+      else await post(`/central/tenants/${tenantId}/branches`, body);
+      onSaved();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal open onClose={onClose} title={branch ? `Edit ${branch.name}` : "New branch"}>
+      <form onSubmit={submit} className="space-y-3">
+        <ErrorText error={error} />
+        <Field label="Name" hint="Unique within the tenant.">
+          <input className="input" value={name} onChange={(e) => setName(e.target.value)} required autoFocus />
+        </Field>
+        <Field label="Phone">
+          <input className="input" value={phone} onChange={(e) => setPhone(e.target.value)} />
+        </Field>
+        <Field label="Email">
+          <input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+        </Field>
+        <Field label="Address">
+          <input className="input" value={address} onChange={(e) => setAddress(e.target.value)} />
+        </Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="City">
+            <input className="input" value={city} onChange={(e) => setCity(e.target.value)} />
+          </Field>
+          <Field label="Country">
+            <input className="input" value={country} onChange={(e) => setCountry(e.target.value)} />
+          </Field>
+        </div>
+        <label className="flex items-center gap-2 text-sm text-slate-600">
+          <input type="checkbox" className="h-4 w-4 rounded accent-brand-600" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} />
+          Branch active
+        </label>
+        <div className="flex justify-end gap-2 pt-2">
+          <button type="button" className="btn-secondary" onClick={onClose} disabled={busy}>Cancel</button>
+          <button className="btn-primary" disabled={busy}>{busy ? "Saving…" : "Save"}</button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+type TestInstance = {
+  id: number;
+  name: string;
+  slug: string;
+  status: string;
+  environment: "test";
+  created_at: string;
+};
+
+type CloneSummary = {
+  headline: Record<string, number>;
+  total_rows: number;
+  dropped_rows: number;
+  seconds: number;
+};
+
+function TestInstanceTab({ tenant }: { tenant: Tenant }) {
+  const [instance, setInstance] = useState<TestInstance | null>(null);
+  const [summary, setSummary] = useState<CloneSummary | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [confirmDestroy, setConfirmDestroy] = useState(false);
+
+  const load = () =>
+    api<{ instance: TestInstance | null }>(`/central/tenants/${tenant.id}/test-instance`).then((d) => {
+      setInstance(d.instance);
+      setSummary(null);
+    });
+
+  useEffect(() => {
+    load().finally(() => setLoading(false));
+  }, [tenant.id]);
+
+  const create = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      const r = await post<{ instance: TestInstance }>(`/central/tenants/${tenant.id}/test-instance`);
+      setInstance(r.instance);
+      setSummary(null);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const sync = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      const r = await post<{ instance: TestInstance; summary: CloneSummary }>(`/central/tenants/${tenant.id}/test-instance/sync`);
+      setInstance(r.instance);
+      setSummary(r.summary);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const destroy = async () => {
+    setBusy(true);
+    setError("");
+    setConfirmDestroy(false);
+    try {
+      await api(`/central/tenants/${tenant.id}/test-instance`, { method: "DELETE" });
+      setInstance(null);
+      setSummary(null);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (loading) return <p className="py-8 text-center text-sm text-slate-400">Loading…</p>;
+
+  return (
+    <div className="space-y-4">
+      <ErrorText error={error} />
+
+      {tenant.environment === "test" ? (
+        <Card>
+          <p className="text-sm text-slate-500">
+            This tenant is itself a test instance — test instances can't have their own.
+          </p>
+        </Card>
+      ) : instance ? (
+        <>
+          <Card>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-bold text-slate-800">{instance.name}</p>
+                <p className="text-xs text-slate-500">{instance.slug} · created {new Date(instance.created_at).toLocaleString()}</p>
+              </div>
+              <div className="flex gap-2">
+                <button className="btn-secondary" onClick={sync} disabled={busy}>
+                  <RefreshCw size={14} /> {busy ? "Syncing…" : "Sync from live"}
+                </button>
+                <button className="btn-danger" onClick={() => setConfirmDestroy(true)} disabled={busy}>
+                  <Trash2 size={14} /> Destroy
+                </button>
+              </div>
+            </div>
+          </Card>
+
+          {summary && (
+            <Card title="Last sync">
+              <div className="grid grid-cols-3 gap-3 md:grid-cols-6">
+                {Object.entries(summary.headline).map(([label, count]) => (
+                  <div key={label} className="rounded-lg bg-slate-50 p-3 text-center">
+                    <p className="text-lg font-black text-slate-800">{count.toLocaleString()}</p>
+                    <p className="text-xs capitalize text-slate-400">{label.replace("_", " ")}</p>
+                  </div>
+                ))}
+              </div>
+              <p className="mt-3 text-xs text-slate-500">
+                {summary.total_rows.toLocaleString()} rows cloned ({summary.dropped_rows.toLocaleString()} dropped for
+                missing references) in {summary.seconds}s.
+              </p>
+            </Card>
+          )}
+        </>
+      ) : (
+        <Card>
+          <p className="text-sm text-slate-500">
+            A test instance is an isolated copy of this tenant's data — safe to play with, and re-syncable
+            whenever the live data changes.
+          </p>
+          <button className="btn-primary mt-3" onClick={create} disabled={busy}>
+            <Plus size={16} /> {busy ? "Creating…" : "Create test instance"}
+          </button>
+        </Card>
+      )}
+
+      <ConfirmDialog
+        open={confirmDestroy}
+        title="Destroy test instance"
+        message={<>All data in <strong>{instance?.name}</strong> will be permanently deleted.</>}
+        confirmLabel="Destroy"
+        tone="danger"
+        busy={busy}
+        onConfirm={destroy}
+        onClose={() => setConfirmDestroy(false)}
+      />
+    </div>
+  );
+}
+
+type AuditLog = {
+  id: number;
+  action: string;
+  description: string;
+  actor: { id: number; name: string; email: string } | null;
+  central_admin: string | null;
+  created_at: string;
+};
+
+type AuditPage = { data: AuditLog[]; total: number; per_page: number; current_page: number };
+
+/** Exact-match options — a curated subset of the actions that matter here. */
+const AUDIT_ACTIONS = [
+  "impersonation.started",
+  "tenant.created", "tenant.updated", "tenant.suspended", "tenant.resumed", "tenant.admin_password_reset",
+  "tenant_setting.changed", "tenant_module.toggled",
+  "branch.created", "branch.updated", "branch.deleted",
+  "admin.created", "admin.updated", "admin.deleted",
+  "test_instance.created", "test_instance.synced", "test_instance.destroyed",
+  "role.created", "role.updated", "role.deleted", "role.duplicated", "role.toggled_active",
+  "user.created", "user.updated", "user.deleted", "user.suspended", "user.reactivated", "user.deactivated",
+  "user.unlocked", "user.password_reset_by_admin", "user.login", "user.logout",
+];
+
+function AuditLogTab({ tenantId }: { tenantId: number }) {
+  const [page, setPage] = useState<AuditPage>({ data: [], total: 0, per_page: 25, current_page: 1 });
+  const [action, setAction] = useState("");
+  const [actor, setActor] = useState("");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const params = new URLSearchParams({ page: String(page.current_page) });
+    if (action) params.set("action", action);
+    if (actor) params.set("actor", actor);
+    if (from) params.set("from", from);
+    if (to) params.set("to", to);
+    setLoading(true);
+    api<{ logs: AuditPage }>(`/central/tenants/${tenantId}/audit-logs?${params}`)
+      .then((d) => setPage(d.logs))
+      .finally(() => setLoading(false));
+  }, [tenantId, page.current_page, action, actor, from, to]);
+
+  return (
+    <div className="space-y-3">
+      <Card>
+        <div className="grid gap-3 md:grid-cols-4">
+          <Field label="Action">
+            <select className="input" value={action} onChange={(e) => setAction(e.target.value)}>
+              <option value="">All actions</option>
+              {AUDIT_ACTIONS.map((a) => <option key={a} value={a}>{a}</option>)}
+            </select>
+          </Field>
+          <Field label="Actor">
+            <input className="input" placeholder="Name or email…" value={actor} onChange={(e) => setActor(e.target.value)} />
+          </Field>
+          <Field label="From">
+            <input className="input" type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+          </Field>
+          <Field label="To">
+            <input className="input" type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+          </Field>
+        </div>
+      </Card>
+
+      <Card>
+        {loading ? (
+          <p className="py-8 text-center text-sm text-slate-400">Loading…</p>
+        ) : (
+          <>
+            <SimpleTable<AuditLog>
+              columns={[
+                { key: "action", label: "Action", render: (l) => <code className="text-xs font-semibold text-brand-700">{l.action}</code> },
+                { key: "description", label: "What happened", render: (l) => <span className="text-slate-700">{l.description}</span> },
+                {
+                  key: "actor",
+                  label: "Who",
+                  render: (l) => l.central_admin ? (
+                    <span className="text-xs text-violet-700">{l.central_admin} (operator)</span>
+                  ) : l.actor ? (
+                    <span className="text-slate-600">{l.actor.name}</span>
+                  ) : <span className="text-slate-400">—</span>,
+                },
+                { key: "created_at", label: "When", render: (l) => <span className="text-xs text-slate-500">{new Date(l.created_at).toLocaleString()}</span> },
+              ]}
+              rows={page.data}
+              rowKey={(l) => l.id}
+              empty="No audit entries match these filters"
+            />
+            <Pagination
+              page={page.current_page}
+              pageSize={page.per_page}
+              total={page.total}
+              onPage={(p) => setPage((prev) => ({ ...prev, current_page: p }))}
+              onPageSize={(s) => setPage((prev) => ({ ...prev, per_page: s, current_page: 1 }))}
+            />
+          </>
+        )}
+      </Card>
+    </div>
   );
 }

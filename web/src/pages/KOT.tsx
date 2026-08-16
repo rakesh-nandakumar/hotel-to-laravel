@@ -18,7 +18,7 @@ type KotOrder = {
   reservation?: { guest: { name: string } } | null;
   customer_name?: string;
   placed_via_qr?: boolean;
-  items: { id: number; name: string; qty: number; notes?: string; voided: boolean; menu_item?: { category?: { kitchen_station?: { code: string; name: string } | null } | null } | null }[];
+  items: { id: number; name: string; qty: number; notes?: string; voided: boolean; send_to_kot?: boolean; add_on_id?: number | null; menu_item?: { category?: { kitchen_station?: { code: string; name: string } | null } | null } | null }[];
 };
 type RecentOrder = {
   id: number; type: { code: string }; kot_status: { code: string }; created_at: string;
@@ -369,7 +369,7 @@ export default function KOT() {
                         )}
                       </div>
                       <ul className={clsx("mt-3 space-y-1.5 border-t pt-3", T.itemDivider)}>
-                        {o.items.filter((i) => !i.voided).map((i) => (
+                        {o.items.filter((i) => !i.voided && i.send_to_kot !== false).map((i) => (
                           <li key={i.id} className={clsx("text-lg font-bold leading-tight lg:text-xl", T.itemText)}>
                             {i.qty} × {i.name}
                             {i.notes && <div className="text-xs font-semibold text-amber-500">→ {i.notes}</div>}
