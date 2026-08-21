@@ -5,6 +5,7 @@ namespace Database\Seeders;
 use App\Models\Role;
 use App\Models\Tenant;
 use App\Models\User;
+use App\Services\CurrentContext;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
 
@@ -24,6 +25,16 @@ class AdminUsersSeeder extends Seeder
         // out on the very next request after login).
         $tenantId = Tenant::demo()->id;
 
+        // User and Role rows are tenant-scoped, and a seeder runs in console
+        // with no ambient tenant — bind it explicitly so every query below
+        // behaves exactly like the tenant's own app would (see TenantScope).
+        app(CurrentContext::class)->runForTenant($tenantId, function () use ($tenantId): void {
+            $this->seedAccounts($tenantId);
+        });
+    }
+
+    private function seedAccounts(int $tenantId): void
+    {
         $admin = User::updateOrCreate(
             ['tenant_id' => $tenantId, 'email' => 'admin@vellix.com'],
             [

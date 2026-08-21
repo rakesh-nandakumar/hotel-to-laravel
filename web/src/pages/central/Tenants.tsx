@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, post } from "../../lib/api";
 import { tenantHost } from "../../lib/tenancy";
+import { slugify } from "../../lib/util";
 import { Card, Badge, Modal, Field, ErrorText, SimpleTable, statusColor } from "../../components/ui";
 import { Plus } from "lucide-react";
 
@@ -74,6 +75,9 @@ function CreateTenantModal({ open, onClose, onCreated }: { open: boolean; onClos
   const [slug, setSlug] = useState("");
   const [adminEmail, setAdminEmail] = useState("");
   const [adminName, setAdminName] = useState("");
+  const [slugTouched, setSlugTouched] = useState(false);
+  const [emailTouched, setEmailTouched] = useState(false);
+  const [nameTouched, setNameTouched] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -82,7 +86,20 @@ function CreateTenantModal({ open, onClose, onCreated }: { open: boolean; onClos
     setSlug("");
     setAdminEmail("");
     setAdminName("");
+    setSlugTouched(false);
+    setEmailTouched(false);
+    setNameTouched(false);
     setError("");
+  };
+
+  // As the business name is typed, pre-fill the subdomain, admin email and
+  // admin name — but only while the operator hasn't overridden each field.
+  const onNameChange = (value: string) => {
+    setName(value);
+    const derived = slugify(value);
+    if (!slugTouched) setSlug(derived);
+    if (!emailTouched) setAdminEmail(derived ? `admin@${derived}.com` : "");
+    if (!nameTouched) setAdminName(value ? `${value} Admin` : "");
   };
 
   const submit = async (e: React.FormEvent) => {
@@ -105,21 +122,41 @@ function CreateTenantModal({ open, onClose, onCreated }: { open: boolean; onClos
       <form onSubmit={submit} className="space-y-3">
         <ErrorText error={error} />
         <Field label="Business name">
-          <input className="input" value={name} onChange={(e) => setName(e.target.value)} required autoFocus />
+          <input className="input" value={name} onChange={(e) => onNameChange(e.target.value)} required autoFocus />
         </Field>
         <Field label="Subdomain" hint="Lowercase letters, numbers and dashes only — e.g. 'acme' for acme.yourdomain.com.">
           <input
             className="input"
             value={slug}
-            onChange={(e) => setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))}
+            onChange={(e) => {
+              setSlugTouched(true);
+              setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""));
+            }}
             required
           />
         </Field>
         <Field label="Admin email" hint="The tenant's first Full Administrator account is created automatically — you'll access it via Impersonate, never a password.">
-          <input className="input" type="email" value={adminEmail} onChange={(e) => setAdminEmail(e.target.value)} required />
+          <input
+            className="input"
+            type="email"
+            value={adminEmail}
+            onChange={(e) => {
+              setEmailTouched(true);
+              setAdminEmail(e.target.value);
+            }}
+            required
+          />
         </Field>
         <Field label="Admin name (optional)">
-          <input className="input" value={adminName} onChange={(e) => setAdminName(e.target.value)} placeholder={`${name || "Business"} Admin`} />
+          <input
+            className="input"
+            value={adminName}
+            onChange={(e) => {
+              setNameTouched(true);
+              setAdminName(e.target.value);
+            }}
+            placeholder={`${name || "Business"} Admin`}
+          />
         </Field>
         <div className="flex justify-end gap-2 pt-2">
           <button type="button" className="btn-secondary" onClick={onClose} disabled={busy}>Cancel</button>

@@ -108,6 +108,18 @@ export function useSettings() {
   };
 }
 
+/** Turn a business name into a slug-safe subdomain label (lowercase, dashes). */
+export function slugify(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[^\w\s-]/g, "")
+    .trim()
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
 /**
  * Mirrors the backend's Settings::depositAmount() — a deposit/advance that's
  * either a percentage of the total or a flat LKR-cents figure, capped to the

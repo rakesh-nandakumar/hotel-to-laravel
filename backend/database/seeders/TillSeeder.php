@@ -3,7 +3,9 @@
 namespace Database\Seeders;
 
 use App\Models\Branch;
+use App\Models\Tenant;
 use App\Models\Till;
+use App\Services\CurrentContext;
 use Illuminate\Database\Seeder;
 
 /**
@@ -15,11 +17,15 @@ class TillSeeder extends Seeder
 {
     public function run(): void
     {
-        foreach (Branch::query()->active()->get() as $branch) {
-            Till::query()->updateOrCreate(
-                ['branch_id' => $branch->id, 'name' => 'Main Till'],
-                ['is_active' => true],
-            );
-        }
+        // Branch rows are tenant-scoped, and a seeder runs in console with no
+        // ambient tenant — bind the demo tenant explicitly (see TenantScope).
+        app(CurrentContext::class)->runForTenant(Tenant::demo()->id, function (): void {
+            foreach (Branch::query()->active()->get() as $branch) {
+                Till::query()->updateOrCreate(
+                    ['branch_id' => $branch->id, 'name' => 'Main Till'],
+                    ['is_active' => true],
+                );
+            }
+        });
     }
 }

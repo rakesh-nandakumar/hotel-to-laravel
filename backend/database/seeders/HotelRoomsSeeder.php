@@ -8,6 +8,7 @@ use App\Models\Hotel\Room;
 use App\Models\Hotel\RoomType;
 use App\Models\Lookup;
 use App\Models\Tenant;
+use App\Services\CurrentContext;
 use App\Support\Lookups\LookupType;
 use App\Support\Lookups\RoomStatus;
 use Illuminate\Database\Seeder;
@@ -67,6 +68,17 @@ class HotelRoomsSeeder extends Seeder
     public function run(): void
     {
         $tenantId = Tenant::demo()->id;
+
+        // Branches, room types, seasonal rates and packages are all
+        // tenant-scoped, and a seeder runs in console with no ambient tenant —
+        // bind it explicitly (see TenantScope).
+        app(CurrentContext::class)->runForTenant($tenantId, function () use ($tenantId): void {
+            $this->seedRoomsAndPackages($tenantId);
+        });
+    }
+
+    private function seedRoomsAndPackages(int $tenantId): void
+    {
         $branch = Branch::query()->active()->firstOrFail();
         $availableStatusId = Lookup::id(LookupType::ROOM_STATUS, RoomStatus::AVAILABLE);
 

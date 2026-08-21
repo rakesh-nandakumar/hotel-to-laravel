@@ -75,7 +75,7 @@ class TenantController extends Controller
         $tenant = Tenant::create([
             'name' => $data['name'],
             'slug' => $data['slug'],
-            'status' => $data['status'] ?? TenantStatus::TRIAL,
+            'status' => $data['status'] ?? TenantStatus::ACTIVE,
             'trial_ends_at' => $data['trial_ends_at'] ?? null,
             'created_by' => $request->user('central')->id,
         ]);

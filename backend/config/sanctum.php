@@ -18,12 +18,40 @@ return [
     |
     */
 
-    'stateful' => explode(',', env('SANCTUM_STATEFUL_DOMAINS', sprintf(
-        '%s%s',
-        'localhost,localhost:3000,127.0.0.1,127.0.0.1:8000,::1',
-        Sanctum::currentApplicationUrlWithPort(),
-        // Sanctum::currentRequestHost(),
-    ))),
+    'stateful' => (function (): array {
+        $explicit = env('SANCTUM_STATEFUL_DOMAINS');
+
+        $domains = $explicit !== null
+            ? explode(',', $explicit)
+            : [
+                'localhost',
+                'localhost:3000',
+                '127.0.0.1',
+                '127.0.0.1:8000',
+                '::1',
+                Sanctum::currentApplicationUrlWithPort(),
+            ];
+
+        // First-party subdomains are the whole point of this app: the central
+        // "master control" panel sits on its own reserved subdomain and every
+        // tenant runs on {slug}.{base}. Sanctum only attaches the session store
+        // (so $request->session() works) for requests whose Origin/Referer
+        // matches a `stateful` domain, so a bare-host entry leaves subdomain
+        // traffic stateless and any session read then throws
+        // "Session store not set on request". Always treat the app host and the
+        // tenant base domain's subdomains as first-party, whatever the TLD.
+        $hosts = array_filter([
+            parse_url((string) env('APP_URL', ''), PHP_URL_HOST),
+            trim((string) env('TENANCY_BASE_DOMAIN', '')),
+        ]);
+
+        foreach (array_unique($hosts) as $host) {
+            $domains[] = "*.{$host}";
+            $domains[] = "*.{$host}:*";
+        }
+
+        return array_values(array_filter(array_unique($domains)));
+    })(),
 
     /*
     |--------------------------------------------------------------------------
