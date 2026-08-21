@@ -19,6 +19,8 @@ use App\Support\Lookups\DiningMode;
 use App\Support\Lookups\DurationType;
 use App\Support\Lookups\FolioStatus;
 use App\Support\Lookups\FolioType;
+use App\Support\Lookups\GrnStatus;
+use App\Support\Lookups\InventoryKind;
 use App\Support\Lookups\KitchenStation;
 use App\Support\Lookups\KotStatus;
 use App\Support\Lookups\LineSource;
@@ -33,6 +35,7 @@ use App\Support\Lookups\PaymentMethod;
 use App\Support\Lookups\PayrollStatus;
 use App\Support\Lookups\ReservationStatus;
 use App\Support\Lookups\RoomStatus;
+use App\Support\Lookups\StockMovementType;
 use App\Support\Lookups\TableStatus;
 use App\Support\Lookups\TaskStatus;
 use App\Support\Lookups\TillMovementType;
@@ -158,6 +161,7 @@ class LookupSeeder extends Seeder
             [LineSource::DAMAGE, 'Damage', 'red'],
             [LineSource::ADJUSTMENT, 'Adjustment', 'gray'],
             [LineSource::LOYALTY_REDEMPTION, 'Loyalty Redemption', 'pink'],
+            [LineSource::CANCELLATION_FEE, 'Cancellation Fee', 'red'],
         ]);
 
         $this->seedType(LookupType::BOOKING_CHANNEL, [
@@ -297,6 +301,25 @@ class LookupSeeder extends Seeder
             [ApartmentSaleStatus::AGREEMENT_SIGNED, 'Agreement Signed', 'blue'],
             [ApartmentSaleStatus::COMPLETED, 'Completed', 'green'],
             [ApartmentSaleStatus::CANCELLED, 'Cancelled', 'red'],
+        ]);
+
+        $this->seedType(LookupType::INVENTORY_KIND, [
+            [InventoryKind::INGREDIENT, 'Ingredient', 'orange'],
+            [InventoryKind::PRODUCT, 'Product', 'blue'],
+        ]);
+
+        $this->seedType(LookupType::GRN_STATUS, [
+            [GrnStatus::DRAFT, 'Draft', 'gray'],
+            [GrnStatus::RECEIVED, 'Received', 'green'],
+            [GrnStatus::CANCELLED, 'Cancelled', 'red'],
+        ]);
+
+        $this->seedType(LookupType::STOCK_MOVEMENT_TYPE, [
+            [StockMovementType::GRN_RECEIPT, 'GRN Receipt', 'green'],
+            [StockMovementType::ADJUSTMENT, 'Adjustment', 'gray'],
+            [StockMovementType::SALE, 'Sale', 'blue'],
+            [StockMovementType::SALE_REVERSAL, 'Sale Reversal', 'orange'],
+            [StockMovementType::WRITE_OFF, 'Write Off', 'red'],
         ]);
     }
 

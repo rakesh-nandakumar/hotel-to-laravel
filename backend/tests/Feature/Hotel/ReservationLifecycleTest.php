@@ -251,7 +251,7 @@ it('cancels a reservation more than 7 days out with a full refund per policy', f
         ->and($response->json('refunded'))->toBe(100_000);
 });
 
-it('cancels a reservation inside the final tier with no refund', function () {
+it('cancels a reservation inside the final tier with no refund and posts a matching cancellation fee', function () {
     $manager = staffWithRole('Manager');
     openTillFor($manager);
     $room = Room::query()->where('number', '102')->firstOrFail();
@@ -264,13 +264,50 @@ it('cancels a reservation inside the final tier with no refund', function () {
         'adults' => 1, 'rooms' => [['room_id' => $room->id]],
         'deposit_payment' => ['method' => 'cash', 'amount' => 100_000],
     ])->assertCreated();
+    $folioId = $created->json('reservation.folio.id');
 
     $response = $this->actingAs($manager)
         ->postJson("/api/reservations/{$created->json('reservation.id')}/cancel", ['reason' => 'No-show risk'])
         ->assertOk();
 
     expect($response->json('refund_pct'))->toBe(0)
-        ->and($response->json('refunded'))->toBe(0);
+        ->and($response->json('refunded'))->toBe(0)
+        ->and($response->json('fee'))->toBe(100_000);
+
+    // The forfeited deposit is now a real, printable charge — total/balance must
+    // reconcile instead of leaving an invisible shortfall (see cancel()'s note).
+    $folio = $this->actingAs($manager)->getJson("/api/folios/{$folioId}")->assertOk();
+    expect($folio->json('folio.total'))->toBe(100_000)
+        ->and($folio->json('folio.balance'))->toBe(0)
+        ->and(collect($folio->json('folio.lines'))->firstWhere('source.code', 'cancellation_fee'))->not->toBeNull();
+});
+
+it('cancels a reservation inside the middle tier with a partial refund and a matching partial fee', function () {
+    $manager = staffWithRole('Manager');
+    openTillFor($manager);
+    $room = Room::query()->where('number', '102')->firstOrFail();
+    $guest = Guest::factory()->create();
+    $checkIn = now()->addDays(5)->toDateString();
+    $checkOut = now()->addDays(7)->toDateString();
+
+    $created = $this->actingAs($manager)->postJson('/api/reservations', [
+        'guest_id' => $guest->id, 'channel' => 'walkin', 'check_in' => $checkIn, 'check_out' => $checkOut,
+        'adults' => 1, 'rooms' => [['room_id' => $room->id]],
+        'deposit_payment' => ['method' => 'cash', 'amount' => 100_000],
+    ])->assertCreated();
+    $folioId = $created->json('reservation.folio.id');
+
+    $response = $this->actingAs($manager)
+        ->postJson("/api/reservations/{$created->json('reservation.id')}/cancel", ['reason' => 'Change of plans'])
+        ->assertOk();
+
+    expect($response->json('refund_pct'))->toBe(50)
+        ->and($response->json('refunded'))->toBe(50_000)
+        ->and($response->json('fee'))->toBe(50_000);
+
+    $folio = $this->actingAs($manager)->getJson("/api/folios/{$folioId}")->assertOk();
+    expect($folio->json('folio.total'))->toBe(50_000)
+        ->and($folio->json('folio.balance'))->toBe(0);
 });
 
 it('blocks cancelling a reservation that is already checked in', function () {
@@ -287,6 +324,82 @@ it('blocks cancelling a reservation that is already checked in', function () {
 
     $this->actingAs($manager)->postJson("/api/reservations/{$reservationId}/cancel", ['reason' => 'test'])
         ->assertUnprocessable();
+});
+
+it('applies a percentage discount to a reservation and taxes only the discounted base at checkout', function () {
+    $manager = staffWithRole('Manager');
+    openTillFor($manager);
+    ['room' => $room, 'check_in' => $checkIn, 'check_out' => $checkOut] = bookTwoPersonRoom();
+    $guest = Guest::factory()->create();
+
+    $created = $this->actingAs($manager)->postJson('/api/reservations', [
+        'guest_id' => $guest->id, 'channel' => 'walkin', 'check_in' => $checkIn, 'check_out' => $checkOut,
+        'adults' => 1, 'rooms' => [['room_id' => $room->id]],
+    ])->assertCreated();
+    $reservationId = $created->json('reservation.id');
+
+    // Stay total 1,200,000 * 2 nights = 2,400,000 → 10% off = 240,000, applied
+    // before check-in even exists — it must still net correctly once room
+    // charges post.
+    $response = $this->actingAs($manager)->putJson("/api/reservations/{$reservationId}/discount", [
+        'mode' => 'PCT', 'value' => 10, 'reason' => 'Low occupancy promo',
+    ])->assertOk();
+
+    expect($response->json('folio.total'))->toBe(-240_000);
+
+    $this->actingAs($manager)->postJson("/api/reservations/{$reservationId}/check-in", [])->assertOk();
+
+    $checkout = $this->actingAs($manager)->postJson("/api/reservations/{$reservationId}/checkout", [
+        'payments' => [['method' => 'cash', 'amount' => 2_160_000]],
+    ])->assertOk();
+
+    expect($checkout->json('total'))->toBe(2_160_000)
+        ->and($checkout->json('lines'))->toHaveCount(3); // 2 room + 1 discount, no SC/VAT configured
+});
+
+it('caps a fixed-amount discount at the stay total and replaces rather than stacks on reapply', function () {
+    $manager = staffWithRole('Manager');
+    ['room' => $room, 'check_in' => $checkIn, 'check_out' => $checkOut] = bookTwoPersonRoom();
+    $guest = Guest::factory()->create();
+
+    $created = $this->actingAs($manager)->postJson('/api/reservations', [
+        'guest_id' => $guest->id, 'channel' => 'walkin', 'check_in' => $checkIn, 'check_out' => $checkOut,
+        'adults' => 1, 'rooms' => [['room_id' => $room->id]],
+    ])->assertCreated();
+    $reservationId = $created->json('reservation.id');
+
+    $capped = $this->actingAs($manager)->putJson("/api/reservations/{$reservationId}/discount", [
+        'mode' => 'FIXED', 'value' => 3_000_000, 'reason' => 'Overzealous manual entry',
+    ])->assertOk();
+    expect($capped->json('folio.total'))->toBe(-2_400_000); // capped at the 2,400,000 stay total
+
+    $replaced = $this->actingAs($manager)->putJson("/api/reservations/{$reservationId}/discount", [
+        'mode' => 'PCT', 'value' => 20, 'reason' => 'Actually just 20%',
+    ])->assertOk();
+
+    expect($replaced->json('folio.lines'))->toHaveCount(1) // the first discount line was voided, not stacked
+        ->and($replaced->json('folio.total'))->toBe(-480_000);
+});
+
+it('blocks applying a discount once the folio is settled', function () {
+    $manager = staffWithRole('Manager');
+    openTillFor($manager);
+    ['room' => $room, 'check_in' => $checkIn, 'check_out' => $checkOut] = bookTwoPersonRoom();
+    $guest = Guest::factory()->create();
+
+    $created = $this->actingAs($manager)->postJson('/api/reservations', [
+        'guest_id' => $guest->id, 'channel' => 'walkin', 'check_in' => $checkIn, 'check_out' => $checkOut,
+        'adults' => 1, 'rooms' => [['room_id' => $room->id]],
+    ])->assertCreated();
+    $reservationId = $created->json('reservation.id');
+    $this->actingAs($manager)->postJson("/api/reservations/{$reservationId}/check-in", [])->assertOk();
+    $this->actingAs($manager)->postJson("/api/reservations/{$reservationId}/checkout", [
+        'payments' => [['method' => 'cash', 'amount' => 2_400_000]],
+    ])->assertOk();
+
+    $this->actingAs($manager)->putJson("/api/reservations/{$reservationId}/discount", [
+        'mode' => 'PCT', 'value' => 10, 'reason' => 'Too late',
+    ])->assertUnprocessable()->assertJsonValidationErrors('folio');
 });
 
 it('adds and voids a manual folio line', function () {

@@ -38,7 +38,6 @@ class AddOnController extends Controller
             $addOn = AddOn::create([
                 'name' => $data['name'],
                 'price' => $data['price'],
-                'send_to_kot' => $data['send_to_kot'] ?? true,
                 'active' => $data['active'] ?? true,
                 'stock_ingredient_id' => $data['stock_ingredient_id'] ?? null,
             ]);

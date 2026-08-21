@@ -11,10 +11,11 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
- * Standalone sellable add-on (extra cheese, extra curry…). Owns its own
- * `send_to_kot` routing and inventory tracking — a unit-based add-on links
- * straight to a batch-tracked ingredient via `stock_ingredient_id`, so it
- * deducts FEFO from expiry batches just like a recipe product does.
+ * Standalone sellable add-on (extra cheese, extra curry…). Always routes to
+ * the kitchen (KOT) — an add-on is inherently an addition to a kitchen-routed
+ * order. Owns its own inventory tracking — a unit-based add-on links straight
+ * to a batch-tracked ingredient via `stock_ingredient_id`, so it deducts FEFO
+ * from expiry batches just like a recipe product does.
  */
 class AddOn extends Model
 {
@@ -24,7 +25,6 @@ class AddOn extends Model
 
         'name',
         'price',
-        'send_to_kot',
         'active',
         'stock_ingredient_id',
         'sort_order',
@@ -33,7 +33,6 @@ class AddOn extends Model
     ];
 
     protected $attributes = [
-        'send_to_kot' => true,
         'active' => true,
     ];
 
@@ -41,7 +40,6 @@ class AddOn extends Model
     {
         return [
             'price' => 'integer',
-            'send_to_kot' => 'boolean',
             'active' => 'boolean',
             'sort_order' => 'integer',
         ];

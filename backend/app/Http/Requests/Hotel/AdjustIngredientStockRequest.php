@@ -8,7 +8,7 @@ class AdjustIngredientStockRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return $this->user()?->hasPermissionTo('hotel_ingredients.adjust_stock') ?? false;
+        return $this->user()?->hasAnyPermission(['hotel_ingredients.adjust_stock', 'hotel_products.adjust_stock']) ?? false;
     }
 
     /**

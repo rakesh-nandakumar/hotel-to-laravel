@@ -30,4 +30,6 @@ class LineSource
     public const ADJUSTMENT = 'adjustment';
 
     public const LOYALTY_REDEMPTION = 'loyalty_redemption';
+
+    public const CANCELLATION_FEE = 'cancellation_fee';
 }

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus, Search, ClipboardList, Trash2, ArchiveRestore, ImageOff, ChefHat, HandPlatter, ListPlus } from "lucide-react";
+import { Plus, Search, ClipboardList, Trash2, ArchiveRestore, ImageOff, ListPlus } from "lucide-react";
 import { api, post, put } from "../lib/api";
 import { useFetch, lkr, toCents, centsToRupees } from "../lib/util";
 import { Badge, Empty, ErrorText, Field, Modal, Pagination } from "../components/ui";
@@ -13,13 +13,13 @@ type Modifier = { id: number; name: string; price_delta: number };
 type ModifierGroup = { id: number; name: string; is_required: boolean; max_select: number; modifiers: Modifier[] };
 type AddOnLink = { id: number; menu_item_id?: number | null; menu_item?: { id: number; name: string } | null; menu_category_id?: number | null; menu_category?: { id: number; name: string } | null };
 type AddOn = {
-  id: number; name: string; price: number; send_to_kot: boolean; active: boolean; sort_order: number;
+  id: number; name: string; price: number; active: boolean; sort_order: number;
   stock_ingredient_id?: number | null; stock_ingredient?: { id: number; name: string; unit: string } | null;
   links: AddOnLink[];
 };
 type Item = {
   id: number; item_no?: number | null; name: string; price: number; sold_out: boolean; active: boolean; description: string;
-  image?: string | null; send_to_kot: boolean; stock_ingredient_id?: number | null; stock_ingredient?: { id: number; name: string; unit: string } | null;
+  image?: string | null; stock_ingredient_id?: number | null; stock_ingredient?: { id: number; name: string; unit: string } | null;
   category: { id: number; name: string };
   recipe: { ingredient_id: number; qty: number; ingredient: { name: string; unit: string } }[];
   modifier_groups: ModifierGroup[];
@@ -153,9 +153,6 @@ export default function MenuAdmin() {
               <div className="flex items-center gap-1 text-[11px] text-slate-400">
                 <span>{i.category.name}</span>
                 {i.recipe.length > 0 && <span>· BOM: {i.recipe.length} ingredient{i.recipe.length === 1 ? "" : "s"}</span>}
-                {i.send_to_kot === false && (
-                  <span className="flex items-center gap-0.5 rounded bg-sky-100 px-1 py-px font-semibold text-sky-600"><HandPlatter size={9} /> counter</span>
-                )}
                 {i.stock_ingredient && <span className="rounded bg-slate-100 px-1 py-px font-semibold text-slate-500">unit stock</span>}
               </div>
             </div>
@@ -307,7 +304,6 @@ function ItemEditor({ item, cats, ingredients, onClose }: { item: Item | null; c
     itemNo: item?.item_no != null ? String(item.item_no) : "",
     description: item?.description ?? "",
     image: item?.image ?? "",
-    sendToKot: item?.send_to_kot ?? true,
     stockIngredientId: item?.stock_ingredient_id != null ? String(item.stock_ingredient_id) : "",
   });
   const [recipe, setRecipe] = useState<{ ingredientId: string; qty: string }[]>(
@@ -324,7 +320,6 @@ function ItemEditor({ item, cats, ingredients, onClose }: { item: Item | null; c
       item_no: f.itemNo.trim() ? parseInt(f.itemNo) : null,
       description: f.description,
       image: f.image || null,
-      send_to_kot: f.sendToKot,
       stock_ingredient_id: f.stockIngredientId ? Number(f.stockIngredientId) : null,
       recipe: recipe.filter((r) => r.ingredientId && parseFloat(r.qty) > 0).map((r) => ({ ingredient_id: Number(r.ingredientId), qty: parseFloat(r.qty) })),
     };
@@ -366,17 +361,7 @@ function ItemEditor({ item, cats, ingredients, onClose }: { item: Item | null; c
         <Field label="Description"><input className="input" value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} /></Field>
       </div>
       <div className="mt-3 grid gap-3 sm:grid-cols-2">
-        <Field label="Routing">
-          <label className="flex cursor-pointer items-center gap-2 rounded-lg bg-slate-50 px-3 py-2.5 text-sm font-semibold">
-            <input type="checkbox" checked={f.sendToKot} onChange={(e) => setF({ ...f, sendToKot: e.target.checked })} />
-            {f.sendToKot ? (
-              <><ChefHat size={14} className="text-orange-500" /> Send to kitchen (KOT ticket)</>
-            ) : (
-              <><HandPlatter size={14} className="text-sky-500" /> Front-counter pickup (no KOT)</>
-            )}
-          </label>
-        </Field>
-        <Field label="Unit stock ingredient" hint="For products without a recipe (bottled drinks, snacks): 1 unit = 1 portion, deducted FEFO from expiry batches. Ignored when a recipe is set.">
+        <Field label="Unit stock ingredient" hint="A shortcut for a one-line recipe (1 unit = 1 portion, deducted FEFO from expiry batches) that still routes to the kitchen. Ignored when a recipe is set. Directly-sellable items with no kitchen ticket are Products, not menu items.">
           <select className="input" value={f.stockIngredientId} onChange={(e) => setF({ ...f, stockIngredientId: e.target.value })}>
             <option value="">No unit stock (recipe only)</option>
             {ingredients.map((ing) => <option key={ing.id} value={ing.id}>{ing.name} ({ing.unit})</option>)}
@@ -502,7 +487,7 @@ function AddOnsManager({ cats, ingredients, onClose }: { cats: Cat[]; ingredient
   return (
     <Modal open onClose={onClose} title="Add-ons — extra cheese, extra curry, sides…" wide>
       <p className="mb-3 text-xs text-slate-500">
-        Add-ons are standalone order lines with their own price, routing (kitchen ticket vs counter pickup) and stock. Link each to menu items or whole categories — the POS offers them when that item is tapped.
+        Add-ons are standalone order lines with their own price and stock — every add-on prints a kitchen ticket. Link each to menu items or whole categories — the POS offers them when that item is tapped.
       </p>
       <div className="mb-2 flex items-center justify-between">
         <span className="text-xs font-bold uppercase tracking-wide text-slate-400">{allAddOns.length} add-on{allAddOns.length === 1 ? "" : "s"}</span>
@@ -514,11 +499,6 @@ function AddOnsManager({ cats, ingredients, onClose }: { cats: Cat[]; ingredient
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5 text-sm font-bold">
                 <span className="truncate">{a.name}</span>
-                {a.send_to_kot ? (
-                  <span className="flex shrink-0 items-center gap-0.5 rounded bg-orange-100 px-1 py-px text-[10px] font-bold text-orange-600"><ChefHat size={9} /> kitchen</span>
-                ) : (
-                  <span className="flex shrink-0 items-center gap-0.5 rounded bg-sky-100 px-1 py-px text-[10px] font-bold text-sky-600"><HandPlatter size={9} /> counter</span>
-                )}
                 {!a.active && <Badge color="amber">inactive</Badge>}
               </div>
               <div className="text-[11px] text-slate-400">
@@ -562,7 +542,6 @@ function AddOnEditor({ addOn, items, cats, ingredients, onClose }: { addOn: AddO
   const [f, setF] = useState({
     name: addOn?.name ?? "",
     price: addOn ? centsToRupees(addOn.price) : "",
-    sendToKot: addOn?.send_to_kot ?? true,
     stockIngredientId: addOn?.stock_ingredient_id != null ? String(addOn.stock_ingredient_id) : "",
     itemIds: new Set<number>(addOn?.links.filter((l) => l.menu_item_id).map((l) => l.menu_item_id as number) ?? []),
     catIds: new Set<number>(addOn?.links.filter((l) => l.menu_category_id).map((l) => l.menu_category_id as number) ?? []),
@@ -582,7 +561,6 @@ function AddOnEditor({ addOn, items, cats, ingredients, onClose }: { addOn: AddO
     const body = {
       name: f.name.trim(),
       price: toCents(f.price),
-      send_to_kot: f.sendToKot,
       stock_ingredient_id: f.stockIngredientId ? Number(f.stockIngredientId) : null,
       menu_item_ids: [...f.itemIds],
       menu_category_ids: [...f.catIds],
@@ -606,16 +584,6 @@ function AddOnEditor({ addOn, items, cats, ingredients, onClose }: { addOn: AddO
             <option value="">No stock tracking</option>
             {ingredients.map((ing) => <option key={ing.id} value={ing.id}>{ing.name} ({ing.unit})</option>)}
           </select>
-        </Field>
-        <Field label="Routing">
-          <label className="flex cursor-pointer items-center gap-2 rounded-lg bg-slate-50 px-3 py-2.5 text-sm font-semibold">
-            <input type="checkbox" checked={f.sendToKot} onChange={(e) => setF({ ...f, sendToKot: e.target.checked })} />
-            {f.sendToKot ? (
-              <><ChefHat size={14} className="text-orange-500" /> Send to kitchen (KOT ticket)</>
-            ) : (
-              <><HandPlatter size={14} className="text-sky-500" /> Front-counter pickup (no KOT)</>
-            )}
-          </label>
         </Field>
       </div>
       <div className="mt-3 grid gap-3 sm:grid-cols-2">

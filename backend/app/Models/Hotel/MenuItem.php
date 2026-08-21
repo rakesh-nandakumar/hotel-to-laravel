@@ -15,6 +15,11 @@ use Illuminate\Database\Eloquent\Relations\HasManyThrough;
  * (matches the Node app exactly, see the migration comment): an item that
  * appears in past orders is archived, never soft-deleted, so it stays fully
  * visible in order history and reports.
+ *
+ * Every menu item routes to the kitchen (KOT) — a directly-sellable,
+ * non-recipe item (bottled drink, packaged snack) is a Product
+ * (App\Models\Hotel\Ingredient with kind=product), not a MenuItem; KOT
+ * routing is derived from line kind, not a per-row toggle.
  */
 class MenuItem extends Model
 {
@@ -31,15 +36,10 @@ class MenuItem extends Model
         'description',
         'image',
         'sold_out',
-        'send_to_kot',
         'active',
         'stock_ingredient_id',
         'created_by',
         'updated_by',
-    ];
-
-    protected $attributes = [
-        'send_to_kot' => true,
     ];
 
     protected function casts(): array
@@ -48,7 +48,6 @@ class MenuItem extends Model
             'item_no' => 'integer',
             'price' => 'integer',
             'sold_out' => 'boolean',
-            'send_to_kot' => 'boolean',
             'active' => 'boolean',
         ];
     }

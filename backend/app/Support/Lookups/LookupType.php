@@ -76,4 +76,10 @@ class LookupType
     public const TILL_SESSION_STATUS = 'till_session_status';
 
     public const TILL_MOVEMENT_TYPE = 'till_movement_type';
+
+    public const INVENTORY_KIND = 'inventory_kind';
+
+    public const GRN_STATUS = 'grn_status';
+
+    public const STOCK_MOVEMENT_TYPE = 'stock_movement_type';
 }

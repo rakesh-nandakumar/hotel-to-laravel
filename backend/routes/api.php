@@ -44,6 +44,7 @@ use App\Http\Controllers\Hotel\CorporateAccountController;
 use App\Http\Controllers\Hotel\DiningAreaController;
 use App\Http\Controllers\Hotel\DiningTableController;
 use App\Http\Controllers\Hotel\FolioController;
+use App\Http\Controllers\Hotel\GrnController;
 use App\Http\Controllers\Hotel\GuestController;
 use App\Http\Controllers\Hotel\HousekeepingTaskController;
 use App\Http\Controllers\Hotel\IngredientController;
@@ -487,6 +488,9 @@ Route::middleware(['auth', 'check_active'])->group(function () {
         Route::post('{reservation}/cancel', [ReservationController::class, 'cancel'])
             ->middleware('can_do:hotel_reservations.cancel')
             ->name('cancel');
+        Route::put('{reservation}/discount', [ReservationController::class, 'discount'])
+            ->middleware('can_do:hotel_reservations.discount')
+            ->name('discount');
         Route::post('{reservation}/item-check', [ReservationController::class, 'itemCheck'])
             ->middleware('can_do:hotel_reservations.edit')
             ->name('item-check');
@@ -616,6 +620,53 @@ Route::middleware(['auth', 'check_active'])->group(function () {
         Route::post('{ingredient}/adjust', [IngredientController::class, 'adjustStock'])
             ->middleware('can_do:hotel_ingredients.adjust_stock')
             ->name('adjust');
+    });
+
+    // ── Products (directly-sellable, non-recipe stock items) ──────────────────
+    // Same IngredientController/Ingredient model as above (behind `kind`) —
+    // this is an independently-licensable/permissioned surface, not a
+    // separate resource, so its form requests accept either permission.
+    Route::prefix('products')->name('hotel.products.')->group(function () {
+        Route::get('/', [IngredientController::class, 'index'])
+            ->middleware('can_do:hotel_products.access')
+            ->name('index');
+        Route::post('/', [IngredientController::class, 'store'])
+            ->middleware('can_do:hotel_products.create')
+            ->name('store');
+        Route::put('{ingredient}', [IngredientController::class, 'update'])
+            ->middleware('can_do:hotel_products.edit')
+            ->name('update');
+        Route::delete('{ingredient}', [IngredientController::class, 'destroy'])
+            ->middleware('can_do:hotel_products.delete')
+            ->name('destroy');
+        Route::post('{ingredient}/adjust', [IngredientController::class, 'adjustStock'])
+            ->middleware('can_do:hotel_products.adjust_stock')
+            ->name('adjust');
+    });
+
+    // ── Goods Received Notes (purchases) ───────────────────────────────────────
+    Route::prefix('grns')->name('hotel.grns.')->group(function () {
+        Route::get('/', [GrnController::class, 'index'])
+            ->middleware('can_do:hotel_grn.access')
+            ->name('index');
+        Route::post('/', [GrnController::class, 'store'])
+            ->middleware('can_do:hotel_grn.create')
+            ->name('store');
+        Route::get('{grn}', [GrnController::class, 'show'])
+            ->middleware('can_do:hotel_grn.view')
+            ->name('show');
+        Route::put('{grn}', [GrnController::class, 'update'])
+            ->middleware('can_do:hotel_grn.edit')
+            ->name('update');
+        Route::delete('{grn}', [GrnController::class, 'destroy'])
+            ->middleware('can_do:hotel_grn.delete')
+            ->name('destroy');
+        Route::post('{grn}/receive', [GrnController::class, 'receive'])
+            ->middleware('can_do:hotel_grn.receive')
+            ->name('receive');
+        Route::post('{grn}/cancel', [GrnController::class, 'cancel'])
+            ->middleware('can_do:hotel_grn.edit')
+            ->name('cancel');
     });
 
     // ── Orders (POS) ────────────────────────────────────────────────────────

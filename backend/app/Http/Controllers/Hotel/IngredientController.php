@@ -9,9 +9,12 @@ use App\Http\Requests\Hotel\UpdateIngredientRequest;
 use App\Http\Requests\Hotel\WriteOffIngredientBatchRequest;
 use App\Models\Hotel\Ingredient;
 use App\Models\Hotel\IngredientBatch;
+use App\Models\Lookup;
 use App\Services\AuditLog;
 use App\Services\Hotel\InventoryService;
 use App\Services\Settings;
+use App\Support\Lookups\InventoryKind;
+use App\Support\Lookups\LookupType;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
@@ -24,13 +27,22 @@ class IngredientController extends Controller
     {
         $today = now()->startOfDay();
 
-        $all = Ingredient::query()
+        $query = Ingredient::query()
             ->with([
+                'kind:id,code',
                 'batches' => fn ($q) => $q->where('qty', '>', 0)->whereNotNull('expiry_date')->orderBy('expiry_date')->limit(5),
                 'recipeItems.menuItem:id,name',
             ])
-            ->orderBy('name')
-            ->get()
+            ->orderBy('name');
+
+        $kind = $request->string('kind')->toString();
+        if ($kind === InventoryKind::INGREDIENT) {
+            $query->ingredients();
+        } elseif ($kind === InventoryKind::PRODUCT) {
+            $query->products();
+        }
+
+        $all = $query->get()
             ->map(function (Ingredient $ingredient) use ($today) {
                 $row = $ingredient->toArray();
                 unset($row['recipe_items']);
@@ -78,7 +90,11 @@ class IngredientController extends Controller
 
     public function store(StoreIngredientRequest $request): JsonResponse
     {
-        $ingredient = Ingredient::create($request->validated());
+        $data = $request->validated();
+        $data['inventory_kind_id'] = Lookup::id(LookupType::INVENTORY_KIND, $data['kind']);
+        unset($data['kind']);
+
+        $ingredient = Ingredient::create($data);
 
         AuditLog::record('ingredient.created', $ingredient, ['name' => $ingredient->name]);
 
@@ -87,7 +103,13 @@ class IngredientController extends Controller
 
     public function update(UpdateIngredientRequest $request, Ingredient $ingredient): JsonResponse
     {
-        $ingredient->update($request->validated());
+        $data = $request->validated();
+        if (array_key_exists('kind', $data)) {
+            $data['inventory_kind_id'] = Lookup::id(LookupType::INVENTORY_KIND, $data['kind']);
+            unset($data['kind']);
+        }
+
+        $ingredient->update($data);
 
         AuditLog::record('ingredient.updated', $ingredient, ['name' => $ingredient->name]);
 

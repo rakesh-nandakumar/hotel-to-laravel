@@ -92,7 +92,7 @@ class MenuDefinition
                         'name' => 'Reservations',
                         'route_name' => 'hotel.reservations.index',
                         'module_key' => 'hotel_reservations',
-                        'actions' => ['access', 'view', 'create', 'edit', 'check_in', 'checkout', 'cancel'],
+                        'actions' => ['access', 'view', 'create', 'edit', 'check_in', 'checkout', 'cancel', 'discount'],
                     ],
                     [
                         'name' => 'Folios',
@@ -118,11 +118,29 @@ class MenuDefinition
                         'module_key' => 'hotel_menu_items',
                         'actions' => ['access', 'create', 'edit', 'delete', 'sold_out'],
                     ],
+                ],
+            ],
+            [
+                'name' => 'Inventory',
+                'icon' => 'boxes',
+                'children' => [
                     [
                         'name' => 'Ingredients',
                         'route_name' => 'hotel.ingredients.index',
                         'module_key' => 'hotel_ingredients',
                         'actions' => ['access', 'create', 'edit', 'delete', 'adjust_stock', 'write_off'],
+                    ],
+                    [
+                        'name' => 'Products',
+                        'route_name' => 'hotel.products.index',
+                        'module_key' => 'hotel_products',
+                        'actions' => ['access', 'create', 'edit', 'delete', 'adjust_stock'],
+                    ],
+                    [
+                        'name' => 'Goods Received Notes',
+                        'route_name' => 'hotel.grns.index',
+                        'module_key' => 'hotel_grn',
+                        'actions' => ['access', 'view', 'create', 'edit', 'delete', 'receive'],
                     ],
                 ],
             ],

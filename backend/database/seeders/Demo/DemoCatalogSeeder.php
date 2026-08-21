@@ -10,6 +10,11 @@ use App\Models\Hotel\MenuCategory;
 use App\Models\Hotel\MenuItem;
 use App\Models\Hotel\RecipeItem;
 use App\Models\Hotel\Venue;
+use App\Models\Lookup;
+use App\Services\Hotel\GrnService;
+use App\Services\Hotel\InventoryService;
+use App\Support\Lookups\InventoryKind;
+use App\Support\Lookups\LookupType;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Carbon;
 
@@ -114,6 +119,21 @@ class DemoCatalogSeeder extends Seeder
         ]],
     ];
 
+    /**
+     * Directly-sellable, non-recipe stock items (bottled drinks) — Products,
+     * not menu items. The first is received through a real GRN with two
+     * lines at different costs/expiries, demonstrating the full
+     * purchase → batch → stock flow in one fixture; the rest get a plain
+     * opening stock adjustment.
+     *
+     * @var list<array{name: string, price: int, category: string}>
+     */
+    private const PRODUCTS = [
+        ['name' => 'Coca-Cola 500ml', 'price' => 250, 'category' => 'Beverages'],
+        ['name' => 'Sprite 500ml', 'price' => 250, 'category' => 'Beverages'],
+        ['name' => 'Mineral Water 500ml', 'price' => 150, 'category' => 'Beverages'],
+    ];
+
     /** @var list<array{name: string, price: int}> */
     private const LAUNDRY_ITEMS = [
         ['name' => 'Shirt', 'price' => 250],
@@ -140,6 +160,7 @@ class DemoCatalogSeeder extends Seeder
     {
         $ingredients = $this->seedIngredients();
         $this->seedMenu($ingredients);
+        $this->seedProducts();
         $this->seedLaundry();
         $this->seedVenues();
     }
@@ -239,6 +260,59 @@ class DemoCatalogSeeder extends Seeder
                 }
             }
         }
+    }
+
+    private function seedProducts(): void
+    {
+        $productKindId = Lookup::id(LookupType::INVENTORY_KIND, InventoryKind::PRODUCT);
+        $grnReceived = false;
+
+        foreach (self::PRODUCTS as $def) {
+            $category = MenuCategory::query()->where('name', $def['category'])->first();
+
+            $product = Ingredient::query()->firstOrCreate(
+                ['name' => $def['name']],
+                [
+                    'unit' => 'pcs', 'stock_qty' => 0, 'low_stock_threshold' => 20,
+                    'inventory_kind_id' => $productKindId,
+                    'selling_price' => $def['price'] * 100,
+                    'menu_category_id' => $category?->id,
+                    'active' => true,
+                ],
+            );
+
+            if (! $product->wasRecentlyCreated) {
+                continue;
+            }
+
+            if (! $grnReceived) {
+                $this->receiveDemoGrn($product);
+                $grnReceived = true;
+            } else {
+                app(InventoryService::class)->adjustStock(
+                    $product, 100, 'Initial stock — bulk delivery',
+                    Carbon::now()->addMonths(6)->toDateString(),
+                );
+            }
+        }
+    }
+
+    /** One GRN, two lines for the same product at different costs/expiries — the whole GRN spec in one fixture. */
+    private function receiveDemoGrn(Ingredient $product): void
+    {
+        $grns = app(GrnService::class);
+
+        $grn = $grns->create([
+            'reference' => 'SUPP-INV-0001',
+            'received_at' => Carbon::now()->subDays(5)->toDateString(),
+            'notes' => 'Demo delivery — two batches at different costs/expiries.',
+            'lines' => [
+                ['ingredient_id' => $product->id, 'qty' => 50, 'unit_cost' => 18000, 'expiry_date' => Carbon::now()->addMonths(6)->toDateString()],
+                ['ingredient_id' => $product->id, 'qty' => 30, 'unit_cost' => 18500, 'expiry_date' => Carbon::now()->addMonths(7)->toDateString()],
+            ],
+        ]);
+
+        $grns->receive($grn);
     }
 
     private function seedLaundry(): void

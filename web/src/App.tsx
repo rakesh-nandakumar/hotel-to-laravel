@@ -17,7 +17,9 @@ import Tables from "./pages/Tables";
 import QrOrdering from "./pages/QrOrdering";
 import QrOrder from "./pages/QrOrder";
 import MenuAdmin from "./pages/MenuAdmin";
-import Inventory from "./pages/Inventory";
+import IngredientsTab from "./pages/inventory/IngredientsTab";
+import ProductsTab from "./pages/inventory/ProductsTab";
+import GrnTab from "./pages/inventory/GrnTab";
 import Venues from "./pages/Venues";
 import Housekeeping from "./pages/Housekeeping";
 import Laundry from "./pages/Laundry";
@@ -93,7 +95,9 @@ export default function App() {
           <Route path="/tables" element={<Guard permission="hotel_dining_tables.access"><Tables /></Guard>} />
           <Route path="/qr-ordering" element={<Guard permission="hotel_qr_ordering.access"><QrOrdering /></Guard>} />
           <Route path="/menu" element={<Guard permission="hotel_menu_items.access"><MenuAdmin /></Guard>} />
-          <Route path="/inventory" element={<Guard permission="hotel_ingredients.access"><Inventory /></Guard>} />
+          <Route path="/inventory" element={<Guard permission="hotel_ingredients.access"><IngredientsTab /></Guard>} />
+          <Route path="/inventory/products" element={<Guard permission="hotel_products.access"><ProductsTab /></Guard>} />
+          <Route path="/inventory/grn" element={<Guard permission="hotel_grn.access"><GrnTab /></Guard>} />
           <Route path="/venues" element={<Guard permission="hotel_venues.access"><Venues /></Guard>} />
           <Route path="/housekeeping" element={<Guard permission="hotel_housekeeping.access"><Housekeeping /></Guard>} />
           <Route path="/laundry" element={<Guard permission="hotel_laundry.access"><Laundry /></Guard>} />

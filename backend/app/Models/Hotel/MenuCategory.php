@@ -41,6 +41,12 @@ class MenuCategory extends Model
         return $this->hasMany(MenuItem::class);
     }
 
+    /** Directly-sellable, non-recipe stock items grouped under this POS category. */
+    public function products(): HasMany
+    {
+        return $this->hasMany(Ingredient::class, 'menu_category_id');
+    }
+
     public function kitchenStation(): BelongsTo
     {
         return $this->belongsTo(Lookup::class, 'kitchen_station_id');

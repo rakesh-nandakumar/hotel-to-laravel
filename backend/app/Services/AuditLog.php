@@ -200,6 +200,10 @@ class AuditLog
                 .(! empty($ctx['loyalty_earned']) ? ', earned '.$ctx['loyalty_earned'].' loyalty point(s)' : '').'.',
             'reservation.cancelled' => "{$actor} cancelled reservation ".($subject ?? 'unknown')
                 .' — '.($ctx['refund_pct'] ?? 0).'% refund (LKR '.number_format(($ctx['refunded'] ?? 0) / 100, 2).')'
+                .(($ctx['fee'] ?? 0) > 0 ? ', LKR '.number_format($ctx['fee'] / 100, 2).' cancellation fee applied' : '')
+                .'. Reason: '.($ctx['reason'] ?? 'unspecified').'.',
+            'reservation.discount_applied' => "{$actor} applied a ".($ctx['mode'] ?? '?').' discount of '.($ctx['value'] ?? '?')
+                .' (LKR '.number_format(($ctx['discount'] ?? 0) / 100, 2).') to reservation '.($subject ?? 'unknown')
                 .'. Reason: '.($ctx['reason'] ?? 'unspecified').'.',
             'folio.line_added' => "{$actor} added a ".($ctx['source'] ?? 'folio').' charge of LKR '
                 .number_format(($ctx['amount'] ?? 0) / 100, 2).' to '.($subject ?? 'a folio').'.',
@@ -229,6 +233,12 @@ class AuditLog
                 .($ctx['delta'] ?? '?').' — reason: '.($ctx['reason'] ?? 'unspecified').'.',
             'ingredient.batch_written_off' => "{$actor} wrote off ".($ctx['qty'] ?? '?').' of '
                 .($ctx['ingredient'] ?? 'a batch').' — reason: '.($ctx['reason'] ?? 'unspecified').'.',
+            'grn.created' => "{$actor} created GRN \"".($ctx['grn_no'] ?? $subject ?? 'unknown').'".',
+            'grn.updated' => "{$actor} updated GRN \"".($ctx['grn_no'] ?? $subject ?? 'unknown').'".',
+            'grn.received' => "{$actor} received GRN \"".($ctx['grn_no'] ?? $subject ?? 'unknown')
+                .'\" — '.($ctx['lines'] ?? '?').' line(s), total LKR '.number_format(($ctx['total_cost'] ?? 0) / 100, 2).'.',
+            'grn.cancelled' => "{$actor} cancelled GRN \"".($ctx['grn_no'] ?? $subject ?? 'unknown').'".',
+            'grn.deleted' => "{$actor} deleted GRN \"".($ctx['grn_no'] ?? $subject ?? 'unknown').'".',
 
             // ── POS Orders ────────────────────────────────────────────────────────
             'order.created' => "{$actor} created order #".($ctx['order_no'] ?? $subject ?? 'unknown').' ('.($ctx['type'] ?? '?').').',

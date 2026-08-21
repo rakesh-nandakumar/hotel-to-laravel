@@ -16,6 +16,7 @@ class OrderItem extends Model
         'order_id',
         'menu_item_id',
         'add_on_id',
+        'product_id',
         'name',
         'send_to_kot',
         'qty',
@@ -50,6 +51,11 @@ class OrderItem extends Model
     public function addOn(): BelongsTo
     {
         return $this->belongsTo(AddOn::class);
+    }
+
+    public function product(): BelongsTo
+    {
+        return $this->belongsTo(Ingredient::class, 'product_id');
     }
 
     public function modifiers(): HasMany

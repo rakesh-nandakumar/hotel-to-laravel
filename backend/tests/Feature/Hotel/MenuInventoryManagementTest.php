@@ -3,6 +3,9 @@
 use App\Models\Hotel\Ingredient;
 use App\Models\Hotel\MenuCategory;
 use App\Models\Hotel\MenuItem;
+use App\Models\Lookup;
+use App\Support\Lookups\InventoryKind;
+use App\Support\Lookups\LookupType;
 use Database\Seeders\BranchSeeder;
 use Database\Seeders\LookupSeeder;
 use Database\Seeders\MenuSeeder;
@@ -201,6 +204,48 @@ it('drains batches FEFO on a negative stock adjustment', function () {
 
     expect($soonBatch->fresh()->qty)->toBe(0.0)
         ->and($laterBatch->fresh()->qty)->toBe(150.0);
+});
+
+it('creates an ingredient via the API from a posted kind', function () {
+    $manager = staffWithRole('Manager');
+
+    $response = $this->actingAs($manager)->postJson('/api/ingredients', [
+        'name' => 'Flour', 'unit' => 'g', 'stock_qty' => 1000, 'low_stock_threshold' => 100, 'kind' => 'ingredient',
+    ])->assertCreated();
+
+    expect($response->json('ingredient.name'))->toBe('Flour');
+    $this->assertDatabaseHas('ingredients', ['name' => 'Flour']);
+});
+
+it('creates a product via the API and lists it separately from ingredients via the kind filter', function () {
+    $manager = staffWithRole('Manager');
+    Ingredient::create([
+        'name' => 'Rice', 'unit' => 'g', 'stock_qty' => 5000, 'low_stock_threshold' => 500,
+        'inventory_kind_id' => Lookup::id(LookupType::INVENTORY_KIND, InventoryKind::INGREDIENT),
+    ]);
+
+    $response = $this->actingAs($manager)->postJson('/api/ingredients', [
+        'name' => 'Coca-Cola 500ml', 'unit' => 'pcs', 'stock_qty' => 0, 'low_stock_threshold' => 10,
+        'kind' => 'product', 'selling_price' => 25000,
+    ])->assertCreated();
+
+    expect($response->json('ingredient.selling_price'))->toBe(25000);
+
+    $ingredientsOnly = $this->actingAs($manager)->getJson('/api/ingredients?kind=ingredient')->assertOk();
+    $productsOnly = $this->actingAs($manager)->getJson('/api/ingredients?kind=product')->assertOk();
+
+    expect(collect($ingredientsOnly->json('ingredients'))->pluck('name'))->toContain('Rice')
+        ->and(collect($ingredientsOnly->json('ingredients'))->pluck('name'))->not->toContain('Coca-Cola 500ml')
+        ->and(collect($productsOnly->json('ingredients'))->pluck('name'))->toContain('Coca-Cola 500ml')
+        ->and(collect($productsOnly->json('ingredients'))->pluck('name'))->not->toContain('Rice');
+});
+
+it('requires a selling price when creating a product', function () {
+    $manager = staffWithRole('Manager');
+
+    $this->actingAs($manager)->postJson('/api/ingredients', [
+        'name' => 'Sprite 500ml', 'unit' => 'pcs', 'stock_qty' => 0, 'low_stock_threshold' => 10, 'kind' => 'product',
+    ])->assertUnprocessable()->assertJsonValidationErrors('selling_price');
 });
 
 it('shows the expiry board and writes off a batch with a mandatory reason', function () {

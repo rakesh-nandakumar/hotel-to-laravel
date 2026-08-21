@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Hotel;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Hotel\ApplyReservationDiscountRequest;
 use App\Http\Requests\Hotel\CancelReservationRequest;
 use App\Http\Requests\Hotel\CheckInReservationRequest;
 use App\Http\Requests\Hotel\CheckoutReservationRequest;
@@ -225,6 +226,16 @@ class ReservationController extends Controller
         return response()->json($this->reservations->cancel(
             $reservation, $data['reason'], $data['refund_method'] ?? PaymentMethod::CASH, $request->user()->id,
         ));
+    }
+
+    /** Manual room-rate discount (PCT/FIXED + reason) — posted as a folio line. */
+    public function discount(ApplyReservationDiscountRequest $request, Reservation $reservation): JsonResponse
+    {
+        $data = $request->validated();
+
+        return response()->json(['folio' => $this->reservations->applyDiscount(
+            $reservation, $data['mode'], $data['value'], $data['reason'], $request->user()->id,
+        )]);
     }
 
     /** Standalone room item check (either kind) — e.g. re-verify during stay. */

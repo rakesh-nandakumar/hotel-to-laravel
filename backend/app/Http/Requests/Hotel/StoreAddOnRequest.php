@@ -19,7 +19,6 @@ class StoreAddOnRequest extends FormRequest
         return [
             'name' => ['required', 'string', 'max:150'],
             'price' => ['required', 'integer', 'min:0'],
-            'send_to_kot' => ['nullable', 'boolean'],
             'active' => ['nullable', 'boolean'],
             'stock_ingredient_id' => ['nullable', 'integer', 'exists:ingredients,id'],
             'menu_item_ids' => ['nullable', 'array'],

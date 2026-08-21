@@ -437,7 +437,7 @@ class ReservationService
     }
 
     /**
-     * @return array{ok: bool, refund_pct: float|int, refunded: int}
+     * @return array{ok: bool, refund_pct: float|int, refunded: int, fee: int}
      */
     public function cancel(Reservation $reservation, string $reason, string $refundMethodCode, int $staffId): array
     {
@@ -457,10 +457,25 @@ class ReservationService
         $refundPct = $rule['refundPct'] ?? 0;
 
         $refunded = 0;
+        $fee = 0;
         if ($reservation->folio) {
             $totals = $this->billing->totals($reservation->folio);
             $paidNet = $totals['paid'] - $totals['refunded'];
             $refunded = (int) round($paidNet * $refundPct / 100);
+            $fee = $paidNet - $refunded;
+
+            if ($fee > 0) {
+                // Makes the forfeited amount a real, printable charge instead of
+                // an invisible shortfall between paid and refunded — otherwise
+                // the folio's total/balance never reconciles (see cancel()'s
+                // doc comment history / phase2-nodejs-schema money-integrity rule).
+                FolioLine::create([
+                    'folio_id' => $reservation->folio->id,
+                    'line_source_id' => Lookup::id(LookupType::LINE_SOURCE, LineSource::CANCELLATION_FEE),
+                    'description' => 'Cancellation fee — '.(100 - $refundPct)."% forfeited per policy ({$daysUntil} days before check-in)",
+                    'qty' => 1, 'unit_price' => $fee, 'amount' => $fee, 'staff_id' => $staffId,
+                ]);
+            }
 
             if ($refunded > 0) {
                 $this->billing->recordPayment([
@@ -481,10 +496,65 @@ class ReservationService
         ]);
 
         AuditLog::record('reservation.cancelled', $reservation, [
-            'reason' => $reason, 'refund_pct' => $refundPct, 'refunded' => $refunded,
+            'reason' => $reason, 'refund_pct' => $refundPct, 'refunded' => $refunded, 'fee' => $fee,
         ]);
 
-        return ['ok' => true, 'refund_pct' => $refundPct, 'refunded' => $refunded];
+        return ['ok' => true, 'refund_pct' => $refundPct, 'refunded' => $refunded, 'fee' => $fee];
+    }
+
+    /**
+     * Room-rate discount — mirrors OrderService::applyDiscount() (PCT/FIXED,
+     * capped at the base, posted as a negative folio line). Computed off the
+     * locked per-room rate rather than the current folio-line sum so it works
+     * whether applied before check-in (no room lines exist yet) or mid-stay.
+     */
+    public function applyDiscount(Reservation $reservation, string $mode, float $value, string $reason, int $staffId): array
+    {
+        $reservation->loadMissing('folio.status', 'rooms', 'package');
+
+        if (! $reservation->folio || $reservation->folio->status->code !== FolioStatus::OPEN) {
+            throw ValidationException::withMessages([
+                'folio' => 'Folio is settled or void — discount not allowed.',
+            ]);
+        }
+
+        $base = $this->stayTotal($reservation);
+        $discount = $mode === 'PCT'
+            ? (int) round($base * min($value, 100) / 100)
+            : min((int) round($value), $base);
+
+        DB::transaction(function () use ($reservation, $discount, $reason, $staffId) {
+            $discountSourceId = Lookup::id(LookupType::LINE_SOURCE, LineSource::DISCOUNT);
+
+            // Replace, don't stack — re-applying a discount voids the previous one.
+            FolioLine::where('folio_id', $reservation->folio->id)
+                ->where('line_source_id', $discountSourceId)->where('voided', false)
+                ->update(['voided' => true, 'void_reason' => 'Replaced by updated discount']);
+
+            FolioLine::create([
+                'folio_id' => $reservation->folio->id, 'line_source_id' => $discountSourceId,
+                'description' => "Discount — {$reason}", 'qty' => 1,
+                'unit_price' => -$discount, 'amount' => -$discount, 'staff_id' => $staffId,
+            ]);
+        });
+
+        AuditLog::record('reservation.discount_applied', $reservation, [
+            'mode' => $mode, 'value' => $value, 'discount' => $discount, 'reason' => $reason,
+        ]);
+
+        return $this->billing->present($reservation->folio->fresh());
+    }
+
+    private function stayTotal(Reservation $reservation): int
+    {
+        $nights = count($this->pricing->nights($reservation->check_in, $reservation->check_out));
+        $total = (int) $reservation->rooms->sum('nightly_rate') * $nights;
+
+        if ($reservation->package && $reservation->package->price_per_person_per_night > 0) {
+            $total += $reservation->package->price_per_person_per_night * $reservation->adults * $nights;
+        }
+
+        return $total;
     }
 
     /**

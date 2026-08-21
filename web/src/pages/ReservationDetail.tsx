@@ -4,7 +4,7 @@ import { Printer, LogIn, LogOut, Ban, Plus, Pencil, Trash2, Check, CircleDot, Ci
 import { openPdf, post, put } from "../lib/api";
 import { useFetch, lkr, usd, fmtDate, fmtDateTime, toCents, useSettings } from "../lib/util";
 import { Badge, Card, Empty, ErrorText, Field, Modal, statusColor } from "../components/ui";
-import { SplitPay, ReasonModal } from "./POS";
+import { SplitPay, ReasonModal, DiscountModal } from "./POS";
 import { useToast } from "../lib/toast";
 import { useAuth } from "../lib/auth";
 import clsx from "clsx";
@@ -60,6 +60,7 @@ export default function ReservationDetail() {
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [addLineOpen, setAddLineOpen] = useState(false);
+  const [discountOpen, setDiscountOpen] = useState(false);
   const [payOpen, setPayOpen] = useState(false);
   const [refundOpen, setRefundOpen] = useState(false);
   const [editStayOpen, setEditStayOpen] = useState(false);
@@ -158,6 +159,7 @@ export default function ReservationDetail() {
             f.status.code === "open" && (
               <>
                 {can("hotel_folios.add_line") && <button className="btn-secondary !py-1" onClick={() => setAddLineOpen(true)}><Plus size={14} /> Add charge</button>}
+                {can("hotel_reservations.discount") && <button className="btn-secondary !py-1" onClick={() => setDiscountOpen(true)}>Discount</button>}
                 {f.balance > 0 && can("hotel_folios.payment") && <button className="btn-secondary !py-1" onClick={() => setPayOpen(true)}>Take payment</button>}
                 {f.paid - f.refunded > 0 && can("hotel_folios.refund") && <button className="btn-ghost !py-1 text-red-600" onClick={() => setRefundOpen(true)}>Refund…</button>}
               </>
@@ -228,8 +230,10 @@ export default function ReservationDetail() {
           title="Cancel booking — policy refund applied automatically"
           onSubmit={async (reason) => {
             try {
-              const res = await post<{ ok: boolean; refund_pct: number; refunded: number }>(`/reservations/${r.id}/cancel`, { reason });
-              toast.info(`Booking ${r.code} cancelled`, res.refunded > 0 ? `${res.refund_pct}% refund — LKR ${(res.refunded / 100).toFixed(2)}` : "No refund per policy");
+              const res = await post<{ ok: boolean; refund_pct: number; refunded: number; fee: number }>(`/reservations/${r.id}/cancel`, { reason });
+              const refundMsg = res.refunded > 0 ? `${res.refund_pct}% refund — LKR ${(res.refunded / 100).toFixed(2)}` : "No refund per policy";
+              const feeMsg = res.fee > 0 ? ` · LKR ${(res.fee / 100).toFixed(2)} cancellation fee applied` : "";
+              toast.info(`Booking ${r.code} cancelled`, refundMsg + feeMsg);
               setCancelOpen(false);
               reload();
             } catch (e) {
@@ -241,6 +245,22 @@ export default function ReservationDetail() {
         />
       )}
       {addLineOpen && f && <AddLineModal folioId={f.id} onClose={() => setAddLineOpen(false)} onDone={() => { setAddLineOpen(false); reload(); }} />}
+      {discountOpen && (
+        <DiscountModal
+          onApply={async (mode, value, reason) => {
+            try {
+              await put(`/reservations/${r.id}/discount`, { mode, value, reason });
+              toast.success(`Discount applied to ${r.code}`, reason);
+              setDiscountOpen(false);
+              reload();
+            } catch (e) {
+              setActErr((e as Error).message);
+              setDiscountOpen(false);
+            }
+          }}
+          onClose={() => setDiscountOpen(false)}
+        />
+      )}
       {payOpen && f && (
         <SplitPay
           due={Math.max(f.balance, 0)}

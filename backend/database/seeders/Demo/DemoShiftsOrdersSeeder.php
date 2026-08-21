@@ -41,6 +41,9 @@ class DemoShiftsOrdersSeeder extends Seeder
     private array $menuItemIds;
 
     /** @var list<int> */
+    private array $productIds;
+
+    /** @var list<int> */
     private array $staffIds;
 
     private Carbon $today;
@@ -58,6 +61,7 @@ class DemoShiftsOrdersSeeder extends Seeder
             'branch_id' => Branch::query()->value('id'), 'name' => 'Main Till',
         ])->id;
         $this->menuItemIds = MenuItem::query()->pluck('id')->all();
+        $this->productIds = Ingredient::query()->products()->where('active', true)->pluck('id')->all();
         $this->staffIds = User::query()->where('status', User::STATUS_ACTIVE)->pluck('id')->all();
         $this->today = Carbon::today();
 
@@ -133,6 +137,10 @@ class DemoShiftsOrdersSeeder extends Seeder
             'menu_item_id' => $this->pick($this->menuItemIds),
             'qty' => random_int(1, 3),
         ])->all();
+
+        if ($this->productIds !== [] && random_int(1, 100) <= 30) {
+            $items[] = ['product_id' => $this->pick($this->productIds), 'qty' => random_int(1, 2)];
+        }
 
         try {
             $order = $this->orders->create([

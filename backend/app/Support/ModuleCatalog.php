@@ -49,6 +49,7 @@ class ModuleCatalog
                 'description' => 'Menu management, point-of-sale ordering, dining tables, QR ordering and restaurant reporting.',
                 'module_keys' => [
                     'hotel_menu_categories', 'hotel_menu_items', 'hotel_ingredients',
+                    'hotel_products', 'hotel_grn',
                     'hotel_orders', 'hotel_dining_tables', 'hotel_qr_ordering',
                     'restaurant_reports',
                 ],

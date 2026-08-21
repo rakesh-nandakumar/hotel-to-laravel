@@ -21,6 +21,7 @@ class StoreOrderItemsRequest extends FormRequest
             'items' => ['required', 'array', 'min:1'],
             'items.*.menu_item_id' => ['nullable', 'integer', 'exists:pos_menu_items,id'],
             'items.*.add_on_id' => ['nullable', 'integer', 'exists:add_ons,id'],
+            'items.*.product_id' => ['nullable', 'integer', 'exists:ingredients,id'],
             'items.*.qty' => ['required', 'integer', 'min:1'],
             'items.*.notes' => ['nullable', 'string', 'max:500'],
             'items.*.modifier_ids' => ['nullable', 'array'],
@@ -32,10 +33,9 @@ class StoreOrderItemsRequest extends FormRequest
     {
         $validator->after(function ($validator) {
             foreach ($validator->getData()['items'] ?? [] as $i => $line) {
-                $hasItem = ! empty($line['menu_item_id']);
-                $hasAddOn = ! empty($line['add_on_id']);
-                if ($hasItem === $hasAddOn) {
-                    $validator->errors()->add("items.$i", 'Each line must have exactly one of menu_item_id or add_on_id.');
+                $kinds = array_filter([! empty($line['menu_item_id']), ! empty($line['add_on_id']), ! empty($line['product_id'])]);
+                if (count($kinds) !== 1) {
+                    $validator->errors()->add("items.$i", 'Each line must have exactly one of menu_item_id, add_on_id, or product_id.');
                 }
             }
         });

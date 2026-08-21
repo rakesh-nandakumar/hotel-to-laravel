@@ -15,12 +15,14 @@ import clsx from "clsx";
 
 type Modifier = { id: number; name: string; price_delta: number };
 type ModifierGroup = { id: number; name: string; is_required: boolean; max_select: number; modifiers: Modifier[] };
-type AddOn = { id: number; name: string; price: number; send_to_kot: boolean };
+type AddOn = { id: number; name: string; price: number };
 type MenuItem = {
   id: number; item_no?: number | null; name: string; price: number; sold_out: boolean; description: string; image?: string | null;
-  send_to_kot: boolean; modifier_groups?: ModifierGroup[]; addons?: AddOn[];
+  modifier_groups?: ModifierGroup[]; addons?: AddOn[];
 };
-type MenuCat = { id: number; name: string; is_minibar: boolean; items: MenuItem[] };
+/** Directly-sellable, non-recipe stock item (bottled drink, packaged snack) — never routes to the kitchen. */
+type Product = { id: number; name: string; selling_price: number; stock_qty: number; image?: string | null };
+type MenuCat = { id: number; name: string; is_minibar: boolean; items: MenuItem[]; products: Product[] };
 type BoardRoom = { id: number; number: string; status: { code: string }; occupant: { code: string; guest: { name: string } } | null };
 type DiningTable = { id: number; table_no: string; capacity: number; status: { code: string }; area: { name: string } | null };
 type StaffLite = { id: number; name: string };
@@ -32,16 +34,17 @@ type Order = {
   delivery_address?: string | null; delivery_phone?: string | null;
   delivery_status?: { code: string } | null; delivery_rider?: { id: number; name: string } | null;
   reservation?: { code: string; guest: { id: number; name: string } } | null;
-  items: { id: number; name: string; qty: number; unit_price: number; amount: number; voided: boolean; send_to_kot?: boolean; add_on_id?: number | null; modifiers?: { id: number; name: string; price_delta: number }[] }[];
+  items: { id: number; name: string; qty: number; unit_price: number; amount: number; voided: boolean; send_to_kot?: boolean; add_on_id?: number | null; product_id?: number | null; modifiers?: { id: number; name: string; price_delta: number }[] }[];
   payments: { id: number; method: { code: string }; amount: number; kind: { code: string } }[];
   staff: { name: string } | null;
 };
 
 type CartLine = {
   key: string;
-  kind: "item" | "addon";
+  kind: "item" | "addon" | "product";
   menuItemId?: number;
   addOnId?: number;
+  productId?: number;
   name: string;
   price: number;
   qty: number;
@@ -49,6 +52,11 @@ type CartLine = {
   modifierIds: number[];
   sendToKot: boolean;
 };
+
+/** Unified POS-grid tile — a menu item or a directly-sellable product. */
+type GridEntry =
+  | { key: string; kind: "item"; id: number; name: string; price: number; itemNo: number | null; image?: string | null; soldOut: boolean; item: MenuItem }
+  | { key: string; kind: "product"; id: number; name: string; price: number; itemNo: null; image?: string | null; soldOut: boolean; product: Product };
 
 /** Small routing indicator — kitchen ticket vs front-of-house pickup. */
 function RouteIcon({ sendToKot, className }: { sendToKot: boolean; className?: string }) {
@@ -180,14 +188,20 @@ function NewOrder({ menu, rooms, tables, usdRate, scPct, vatPct, onDone }: {
   const [quickNo, setQuickNo] = useState("");
 
   const allItems = useMemo(() => menu.flatMap((c) => c.items), [menu]);
-  const gridItems = useMemo(() => {
-    let list = catId === "ALL" ? allItems : (menu.find((c) => String(c.id) === catId)?.items ?? []);
+  const allProducts = useMemo(() => menu.flatMap((c) => c.products), [menu]);
+  const gridEntries = useMemo(() => {
+    const items = catId === "ALL" ? allItems : (menu.find((c) => String(c.id) === catId)?.items ?? []);
+    const products = catId === "ALL" ? allProducts : (menu.find((c) => String(c.id) === catId)?.products ?? []);
+    let list: GridEntry[] = [
+      ...items.map((i): GridEntry => ({ key: `item:${i.id}`, kind: "item", id: i.id, name: i.name, price: i.price, itemNo: i.item_no ?? null, image: i.image, soldOut: i.sold_out, item: i })),
+      ...products.map((p): GridEntry => ({ key: `product:${p.id}`, kind: "product", id: p.id, name: p.name, price: p.selling_price, itemNo: null, image: p.image, soldOut: p.stock_qty <= 0, product: p })),
+    ];
     if (q.trim()) {
       const needle = q.toLowerCase();
-      list = list.filter((i) => i.name.toLowerCase().includes(needle) || String(i.item_no ?? "").includes(needle));
+      list = list.filter((i) => i.name.toLowerCase().includes(needle) || String(i.itemNo ?? "").includes(needle));
     }
     return list;
-  }, [menu, allItems, catId, q]);
+  }, [menu, allItems, allProducts, catId, q]);
 
   const subtotal = cart.reduce((s, l) => s + l.price * l.qty, 0);
   // Takeaway and delivery are exempt from service charge — no table service (VAT still applies)
@@ -207,7 +221,7 @@ function NewOrder({ menu, rooms, tables, usdRate, scPct, vatPct, onDone }: {
     setCart((c) => {
       const existing = c.find((l) => l.key === key);
       if (existing) return c.map((l) => (l.key === key ? { ...l, qty: l.qty + 1 } : l));
-      return [...c, { key, kind: "item", menuItemId: item.id, name: modLabel ? `${item.name} (${modLabel})` : item.name, price, qty: 1, modifierIds, sendToKot: item.send_to_kot }];
+      return [...c, { key, kind: "item", menuItemId: item.id, name: modLabel ? `${item.name} (${modLabel})` : item.name, price, qty: 1, modifierIds, sendToKot: true }];
     });
     // Add-ons are their own cart lines with their own routing + stock.
     for (const addOn of (item.addons ?? []).filter((a) => addOnIds.includes(a.id))) {
@@ -215,9 +229,17 @@ function NewOrder({ menu, rooms, tables, usdRate, scPct, vatPct, onDone }: {
         const aKey = `addon:${addOn.id}`;
         const existing = c.find((l) => l.key === aKey);
         if (existing) return c.map((l) => (l.key === aKey ? { ...l, qty: l.qty + 1 } : l));
-        return [...c, { key: aKey, kind: "addon", addOnId: addOn.id, name: addOn.name, price: addOn.price, qty: 1, modifierIds: [], sendToKot: addOn.send_to_kot }];
+        return [...c, { key: aKey, kind: "addon", addOnId: addOn.id, name: addOn.name, price: addOn.price, qty: 1, modifierIds: [], sendToKot: true }];
       });
     }
+  };
+  const addProduct = (product: Product) => {
+    const key = `product:${product.id}`;
+    setCart((c) => {
+      const existing = c.find((l) => l.key === key);
+      if (existing) return c.map((l) => (l.key === key ? { ...l, qty: l.qty + 1 } : l));
+      return [...c, { key, kind: "product", productId: product.id, name: product.name, price: product.selling_price, qty: 1, modifierIds: [], sendToKot: false }];
+    });
   };
   const tryAdd = (item: MenuItem) => ((item.modifier_groups?.length ?? 0) > 0 || (item.addons?.length ?? 0) > 0 ? setPickerItem(item) : add(item));
   const setQty = (key: string, qty: number) =>
@@ -257,7 +279,9 @@ function NewOrder({ menu, rooms, tables, usdRate, scPct, vatPct, onDone }: {
         items: cart.map((l) =>
           l.kind === "addon"
             ? { add_on_id: l.addOnId, qty: l.qty, notes: l.notes }
-            : { menu_item_id: l.menuItemId, qty: l.qty, notes: l.notes, modifier_ids: l.modifierIds.length ? l.modifierIds : undefined }
+            : l.kind === "product"
+              ? { product_id: l.productId, qty: l.qty, notes: l.notes }
+              : { menu_item_id: l.menuItemId, qty: l.qty, notes: l.notes, modifier_ids: l.modifierIds.length ? l.modifierIds : undefined }
         ),
       });
       setCart([]);
@@ -315,31 +339,33 @@ function NewOrder({ menu, rooms, tables, usdRate, scPct, vatPct, onDone }: {
 
         {/* Item grid */}
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
-          {gridItems.map((item) => {
-            const inCart = cart.filter((l) => l.menuItemId === item.id).reduce((s, l) => s + l.qty, 0);
+          {gridEntries.map((entry) => {
+            const inCart = cart
+              .filter((l) => (entry.kind === "product" ? l.productId === entry.id : l.menuItemId === entry.id))
+              .reduce((s, l) => s + l.qty, 0);
             return (
               <button
-                key={item.id}
-                disabled={item.sold_out}
-                onClick={() => tryAdd(item)}
+                key={entry.key}
+                disabled={entry.soldOut}
+                onClick={() => (entry.kind === "product" ? addProduct(entry.product) : tryAdd(entry.item))}
                 className={clsx(
                   "card relative p-3 text-left transition",
-                  item.sold_out ? "opacity-40" : "hover:-translate-y-0.5 hover:shadow-md active:scale-[.98]",
+                  entry.soldOut ? "opacity-40" : "hover:-translate-y-0.5 hover:shadow-md active:scale-[.98]",
                   inCart && "ring-2 ring-brand-500"
                 )}
               >
-                {item.image && <img src={item.image} alt="" className="mb-2 aspect-square w-full rounded-lg object-cover" />}
+                {entry.image && <img src={entry.image} alt="" className="mb-2 aspect-square w-full rounded-lg object-cover" />}
                 <div className="flex items-start justify-between gap-1">
-                  {item.item_no != null && <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] font-black text-slate-500">#{item.item_no}</span>}
+                  {entry.itemNo != null && <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] font-black text-slate-500">#{entry.itemNo}</span>}
                   {inCart > 0 && <span className="rounded-full bg-brand-600 px-1.5 py-0.5 text-[10px] font-black text-white">{inCart}</span>}
                 </div>
-                <div className="mt-1 text-sm font-bold leading-tight">{item.name}</div>
-                <div className="mt-1 text-sm font-semibold text-brand-600">{lkr(item.price)}</div>
-                {item.sold_out && <Badge color="red">SOLD OUT</Badge>}
+                <div className="mt-1 text-sm font-bold leading-tight">{entry.name}</div>
+                <div className="mt-1 text-sm font-semibold text-brand-600">{lkr(entry.price)}</div>
+                {entry.soldOut && <Badge color="red">{entry.kind === "product" ? "OUT OF STOCK" : "SOLD OUT"}</Badge>}
               </button>
             );
           })}
-          {gridItems.length === 0 && <Empty text="No items match" />}
+          {gridEntries.length === 0 && <Empty text="No items match" />}
         </div>
       </div>
 
@@ -555,7 +581,6 @@ function ItemCustomizeModal({ item, onAdd, onClose }: { item: MenuItem; onAdd: (
                   onClick={() => toggleAddOn(a.id)}
                 >
                   {a.name} (+{lkr(a.price)})
-                  <RouteIcon sendToKot={a.send_to_kot} className="opacity-60" />
                 </button>
               ))}
             </div>
@@ -767,6 +792,7 @@ function OrderModal({ orderId, usdRate, mergeCandidates, onClose }: { orderId: n
             <span className="flex min-w-0 flex-1 items-center gap-1.5">
               <span className="min-w-0 truncate">{i.qty} × {i.name}</span>
               {i.add_on_id != null && <Badge color="purple">add-on</Badge>}
+              {i.product_id != null && <Badge color="blue">product</Badge>}
               <span
                 className={clsx("shrink-0 rounded px-1 py-0.5", i.send_to_kot ? "bg-orange-100 text-orange-600" : "bg-sky-100 text-sky-600")}
                 title={i.send_to_kot ? "Sent to kitchen" : "Picked from counter stock"}
@@ -1091,7 +1117,7 @@ export function SplitPay({ due, onDone, onClose }: { due: number; onDone: (p: { 
   );
 }
 
-function DiscountModal({ onApply, onClose }: { onApply: (mode: "PCT" | "FIXED", value: number, reason: string) => void; onClose: () => void }) {
+export function DiscountModal({ onApply, onClose }: { onApply: (mode: "PCT" | "FIXED", value: number, reason: string) => void; onClose: () => void }) {
   const [mode, setMode] = useState<"PCT" | "FIXED">("PCT");
   const [value, setValue] = useState("");
   const [reason, setReason] = useState("");

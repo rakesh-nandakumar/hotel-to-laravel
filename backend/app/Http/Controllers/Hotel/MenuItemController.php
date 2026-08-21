@@ -35,6 +35,7 @@ class MenuItemController extends Controller
                         'linkedAddOns' => fn ($a) => $a->active()->orderBy('sort_order'),
                         'categoryAddOns' => fn ($a) => $a->active()->orderBy('sort_order'),
                     ]),
+                'products' => fn ($q) => $q->products()->active()->where('stock_qty', '>', 0)->orderBy('name'),
             ])
             ->get();
 
@@ -93,7 +94,6 @@ class MenuItemController extends Controller
                 'item_no' => $itemNo,
                 'description' => $data['description'] ?? '',
                 'image' => $data['image'] ?? null,
-                'send_to_kot' => $data['send_to_kot'] ?? true,
                 'stock_ingredient_id' => $data['stock_ingredient_id'] ?? null,
             ]);
 

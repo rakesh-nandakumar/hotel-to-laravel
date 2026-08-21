@@ -15,8 +15,12 @@ class IngredientBatch extends Model
         'ingredient_id',
         'qty',
         'initial_qty',
+        'unit_cost',
         'expiry_date',
+        'manufactured_at',
+        'batch_no',
         'received_at',
+        'grn_line_id',
         'note',
     ];
 
@@ -25,7 +29,9 @@ class IngredientBatch extends Model
         return [
             'qty' => 'float',
             'initial_qty' => 'float',
+            'unit_cost' => 'integer',
             'expiry_date' => 'date',
+            'manufactured_at' => 'date',
             'received_at' => 'datetime',
         ];
     }
@@ -33,5 +39,10 @@ class IngredientBatch extends Model
     public function ingredient(): BelongsTo
     {
         return $this->belongsTo(Ingredient::class);
+    }
+
+    public function grnLine(): BelongsTo
+    {
+        return $this->belongsTo(GrnLine::class);
     }
 }

@@ -19,7 +19,6 @@ class UpdateAddOnRequest extends FormRequest
         return [
             'name' => ['sometimes', 'string', 'max:150'],
             'price' => ['sometimes', 'integer', 'min:0'],
-            'send_to_kot' => ['sometimes', 'boolean'],
             'active' => ['sometimes', 'boolean'],
             'stock_ingredient_id' => ['sometimes', 'nullable', 'integer', 'exists:ingredients,id'],
             'menu_item_ids' => ['sometimes', 'array'],

@@ -47,6 +47,8 @@ import {
   HandCoins,
   Grid2x2,
   QrCode,
+  ShoppingBasket,
+  Truck,
 } from "lucide-react";
 import { useAuth } from "../lib/auth";
 import { useBranding, brandInitials } from "../lib/branding";
@@ -144,9 +146,21 @@ const SECTIONS: Section[] = [
       },
       {
         to: "/inventory",
-        label: "Inventory",
+        label: "Ingredients",
         icon: <Package size={18} />,
         permission: "hotel_ingredients.access",
+      },
+      {
+        to: "/inventory/products",
+        label: "Products",
+        icon: <ShoppingBasket size={18} />,
+        permission: "hotel_products.access",
+      },
+      {
+        to: "/inventory/grn",
+        label: "Goods Received",
+        icon: <Truck size={18} />,
+        permission: "hotel_grn.access",
       },
       {
         to: "/restaurant/reports",
