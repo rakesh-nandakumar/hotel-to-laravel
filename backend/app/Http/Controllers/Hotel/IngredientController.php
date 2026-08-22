@@ -182,4 +182,126 @@ class IngredientController extends Controller
 
         return response()->json(['ok' => true, 'written_off' => $writtenOff, 'unit' => $unit]);
     }
+
+    /** Lightweight product search for POS — returns only sellable products with stock. */
+    public function searchProducts(Request $request): JsonResponse
+    {
+        $q = $request->string('q')->toString();
+        $limit = min(50, max(1, $request->integer('limit', 20)));
+
+        $query = Ingredient::query()
+            ->products()
+            ->active()
+            ->where('stock_qty', '>', 0)
+            ->whereNotNull('selling_price')
+            ->where('selling_price', '>', 0)
+            ->select('id', 'name', 'selling_price', 'stock_qty', 'image', 'menu_category_id', 'unit')
+            ->orderBy('name');
+
+        if ($q !== '') {
+            $query->where(function ($qb) use ($q) {
+                $qb->where('name', 'like', "%{$q}%")
+                    ->orWhere('id', 'like', "%{$q}%");
+            });
+        }
+
+        $products = $query->limit($limit)->get()->map(function (Ingredient $p) {
+            return [
+                'id' => $p->id,
+                'name' => $p->name,
+                'selling_price' => $p->selling_price,
+                'stock_qty' => $p->stock_qty,
+                'image' => $p->image,
+                'unit' => $p->unit,
+            ];
+        });
+
+return response()->json(['products' => $products]);
+    }
+
+    /** Dedicated barcode scan endpoint — fast path for POS scanners. */
+    public function scanBarcode(Request $request): JsonResponse
+    {
+        $code = $request->string('code')->toString();
+        if ($code === '') {
+            return response()->json(['error' => 'Barcode required'], 400);
+        }
+
+        // Try exact match on item_no first (for products with barcode)
+        $product = Ingredient::query()
+            ->products()
+            ->active()
+            ->where('stock_qty', '>', 0)
+            ->where(function ($q) use ($code) {
+                $q->where('item_no', (int) $code)
+                    ->orWhere('id', (int) $code)
+                    ->orWhere('name', 'like', "%{$code}%");
+            })
+            ->select('id', 'name', 'selling_price', 'stock_qty', 'image', 'menu_category_id', 'unit')
+            ->first();
+
+        if ($product) {
+            return response()->json([
+                'found' => true,
+                'type' => 'product',
+                'data' => [
+                    'id' => $product->id,
+                    'name' => $product->name,
+                    'selling_price' => $product->selling_price,
+                    'stock_qty' => $product->stock_qty,
+                    'image' => $product->image,
+                    'unit' => $product->unit,
+                ],
+            ]);
+        }
+
+        // Fallback to menu item search by item_no
+        $menuItem = \App\Models\Hotel\MenuItem::query()
+            ->where('active', true)
+            ->where('sold_out', false)
+            ->where('item_no', (int) $code)
+            ->select('id', 'name', 'price', 'item_no', 'description', 'image', 'menu_category_id', 'stock_ingredient_id')
+            ->with([
+                'modifierGroups' => fn ($g) => $g->orderBy('sort_order')->with(['modifiers' => fn ($m) => $m->where('active', true)->orderBy('sort_order')]),
+                'linkedAddOns' => fn ($a) => $a->active()->orderBy('sort_order'),
+                'categoryAddOns' => fn ($a) => $a->active()->orderBy('sort_order'),
+            ])
+            ->first();
+
+        if ($menuItem) {
+            $addOns = $menuItem->linkedAddOns->concat($menuItem->categoryAddOns)->unique('id')->values();
+            return response()->json([
+                'found' => true,
+                'type' => 'menu_item',
+                'data' => [
+                    'id' => $menuItem->id,
+                    'name' => $menuItem->name,
+                    'price' => $menuItem->price,
+                    'item_no' => $menuItem->item_no,
+                    'description' => $menuItem->description,
+                    'image' => $menuItem->image,
+                    'menu_category_id' => $menuItem->menu_category_id,
+                    'stock_ingredient_id' => $menuItem->stock_ingredient_id,
+                    'modifier_groups' => $menuItem->modifierGroups->map(fn ($g) => [
+                        'id' => $g->id,
+                        'name' => $g->name,
+                        'is_required' => $g->is_required,
+                        'max_select' => $g->max_select,
+                        'modifiers' => $g->modifiers->map(fn ($m) => [
+                            'id' => $m->id,
+                            'name' => $m->name,
+                            'price_delta' => $m->price_delta,
+                        ])->values(),
+                    ])->values(),
+                    'addons' => $addOns->map(fn ($a) => [
+                        'id' => $a->id,
+                        'name' => $a->name,
+                        'price' => $a->price,
+                    ])->values(),
+                ],
+            ]);
+        }
+
+        return response()->json(['found' => false, 'message' => 'No item found for barcode: '.$code], 404);
+    }
 }

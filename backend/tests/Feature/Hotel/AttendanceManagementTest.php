@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Hotel\Attendance;
 use Database\Seeders\LookupSeeder;
 use Database\Seeders\MenuSeeder;
 use Database\Seeders\PermissionsAndRolesSeeder;
@@ -69,7 +70,7 @@ it('computes hours worked once clocked out', function () {
     $manager = staffWithRole('Manager');
 
     $created = $this->actingAs($manager)->postJson('/api/attendance/clock-in')->json('attendance');
-    \App\Models\Hotel\Attendance::where('id', $created['id'])->update(['clock_in' => now()->subHours(8)]);
+    Attendance::where('id', $created['id'])->update(['clock_in' => now()->subHours(8)]);
 
     $this->actingAs($manager)->postJson('/api/attendance/clock-out')->assertOk();
 

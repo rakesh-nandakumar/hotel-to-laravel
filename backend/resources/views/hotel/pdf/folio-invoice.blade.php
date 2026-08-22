@@ -3,6 +3,7 @@
 @section('content')
 @php
     $title = $folio->type->code === \App\Support\Lookups\FolioType::VENUE ? 'VENUE EVENT INVOICE' : 'GUEST STAY INVOICE';
+    $stripBatch = fn(string $s): string => trim(preg_replace('/\s*Batch\s+[\w\-]+\s*·\s*exp\s+[\d\s\w]+\s*/iu', '', $s) ?? $s);
 @endphp
 
 <x-pdf-row bold :left="$title" :right="$folio->invoice_no ?? 'PROFORMA'" />
@@ -28,14 +29,14 @@
         @foreach($folio->lines as $line)
             <tr>
                 <td>{{ $line->created_at->format('d/m') }}</td>
-                <td>{{ $line->description }}</td>
+                <td>{{ $stripBatch($line->description) }}</td>
                 <td class="right">{{ \App\Support\Money::format($line->amount) }}</td>
             </tr>
         @endforeach
     </table>
 @else
     @foreach($folio->lines as $line)
-        <x-pdf-row :left="$line->description" :right="\App\Support\Money::format($line->amount)" />
+        <x-pdf-row :left="$stripBatch($line->description)" :right="\App\Support\Money::format($line->amount)" />
     @endforeach
 @endif
 <hr class="hr">

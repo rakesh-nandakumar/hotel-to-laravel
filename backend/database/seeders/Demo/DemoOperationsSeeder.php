@@ -2,7 +2,6 @@
 
 namespace Database\Seeders\Demo;
 
-use App\Models\Hotel\HousekeepingTask;
 use App\Models\Hotel\MaintenanceIssue;
 use App\Models\Hotel\Room;
 use App\Models\Hotel\Venue;

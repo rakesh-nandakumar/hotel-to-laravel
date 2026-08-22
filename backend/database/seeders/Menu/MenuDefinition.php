@@ -125,7 +125,7 @@ class MenuDefinition
                 'icon' => 'boxes',
                 'children' => [
                     [
-                        'name' => 'Ingredients',
+                        'name' => 'Inventory',
                         'route_name' => 'hotel.ingredients.index',
                         'module_key' => 'hotel_ingredients',
                         'actions' => ['access', 'create', 'edit', 'delete', 'adjust_stock', 'write_off'],

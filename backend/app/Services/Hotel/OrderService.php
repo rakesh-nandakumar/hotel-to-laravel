@@ -80,7 +80,16 @@ class OrderService
             }
         }
 
-        $menuItems = MenuItem::query()->whereIn('id', collect($data['items'])->pluck('menu_item_id')->filter())->get()->keyBy('id');
+        $menuItemIds = collect($data['items'])->pluck('menu_item_id')->filter()->unique();
+        $menuItems = MenuItem::query()
+            ->whereIn('id', $menuItemIds)
+            ->with([
+                'modifierGroups' => fn ($g) => $g->orderBy('sort_order')->with(['modifiers' => fn ($m) => $m->where('active', true)->orderBy('sort_order')]),
+                'linkedAddOns' => fn ($a) => $a->active()->orderBy('sort_order'),
+                'categoryAddOns' => fn ($a) => $a->active()->orderBy('sort_order'),
+            ])
+            ->get()
+            ->keyBy('id');
         $addOns = AddOn::query()->whereIn('id', collect($data['items'])->pluck('add_on_id')->filter())->get()->keyBy('id');
         $products = Ingredient::query()->whereIn('id', collect($data['items'])->pluck('product_id')->filter())->get()->keyBy('id');
         foreach ($data['items'] as $line) {
@@ -100,6 +109,9 @@ class OrderService
                 }
                 if ($product->stock_qty <= 0) {
                     throw ValidationException::withMessages(['items' => "\"{$product->name}\" is out of stock."]);
+                }
+                if (empty($product->selling_price)) {
+                    throw ValidationException::withMessages(['items' => "\"{$product->name}\" has no selling price set. Set a selling price on the product before ordering."]);
                 }
 
                 continue;
@@ -197,7 +209,16 @@ class OrderService
             throw ValidationException::withMessages(['status' => "Order is {$order->status->code}."]);
         }
 
-        $menuItems = MenuItem::query()->whereIn('id', collect($items)->pluck('menu_item_id')->filter())->get()->keyBy('id');
+        $menuItemIds = collect($items)->pluck('menu_item_id')->filter()->unique();
+        $menuItems = MenuItem::query()
+            ->whereIn('id', $menuItemIds)
+            ->with([
+                'modifierGroups' => fn ($g) => $g->orderBy('sort_order')->with(['modifiers' => fn ($m) => $m->where('active', true)->orderBy('sort_order')]),
+                'linkedAddOns' => fn ($a) => $a->active()->orderBy('sort_order'),
+                'categoryAddOns' => fn ($a) => $a->active()->orderBy('sort_order'),
+            ])
+            ->get()
+            ->keyBy('id');
         $addOns = AddOn::query()->whereIn('id', collect($items)->pluck('add_on_id')->filter())->get()->keyBy('id');
         $products = Ingredient::query()->whereIn('id', collect($items)->pluck('product_id')->filter())->get()->keyBy('id');
         foreach ($items as $line) {
@@ -765,7 +786,7 @@ class OrderService
      */
     private function resolveModifiers(MenuItem $menuItem, array $modifierIds): Collection
     {
-        $groups = $menuItem->modifierGroups()->with('modifiers')->get();
+        $groups = $menuItem->modifierGroups;
         if ($groups->isEmpty()) {
             return collect();
         }

@@ -105,38 +105,89 @@ export const put = <T = unknown>(path: string, body: unknown) => api<T>(path, { 
 export const post = <T = unknown>(path: string, body?: unknown) => api<T>(path, { method: "POST", body: body ?? {} });
 
 /**
- * Open a server-generated PDF (receipt/invoice) in a new tab for printing.
+ * Standard print — fetch a server-generated PDF and trigger the browser's
+ * print dialog. The PDF is opened in a new tab (captured synchronously to
+ * avoid popup blocking) and automatically prints. If the popup is blocked,
+ * a hidden iframe in the current page is used instead.
  *
- * The tab is opened SYNCHRONOUSLY, before the `await fetch(...)` below, so it
- * still counts as a direct response to the triggering click for the browser's
- * popup blocker — opening it only after the network round-trip resolves (the
- * previous implementation) falls outside that window and gets silently
- * blocked on Chrome/Edge/Firefox with no visible error.
- *
- * If the caller already needs to `await` something else (e.g. creating the
- * order) before it knows which PDF to show, it should open the tab itself
- * at the top of its own click handler — synchronously, before its first
- * `await` — and pass it in as `tab`, otherwise the same popup-blocking
- * problem just moves one level up (Firefox in particular blocks `window.open`
- * the moment it's called after ANY prior `await`, not just this one).
+ * The tab is opened SYNCHRONOUSLY, before the `await fetch(...)`, so it
+ * counts as a direct response to the click for the popup blocker. If the
+ * caller already opened a tab itself (POS walk-in slip — needs to open
+ * before its own `await`), it passes that tab in.
  */
 export async function openPdf(path: string, tab: Window | null = window.open("", "_blank")) {
+  let blobUrl: string | null = null;
   try {
     const res = await fetch(`${API_ORIGIN}/api${path}`, { credentials: "include", headers: { Accept: "application/pdf" } });
     if (!res.ok) throw new ApiFail(res.status, "Could not generate PDF");
     const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
+    blobUrl = URL.createObjectURL(blob);
+
     if (tab && !tab.closed) {
-      tab.location.href = url;
-    } else {
-      // Popup blocked even with the synchronous open (e.g. a browser setting that blocks all popups) — fall back to a direct download.
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = (path.split("/").pop() || "document") + ".pdf";
-      a.click();
+      // Navigate the (already gesture-approved) tab to the PDF blob and
+      // auto-print once the PDF has loaded in the viewer.
+      tab.location.href = blobUrl;
+      tab.focus();
+      // Give the PDF viewer a moment to render, then trigger the standard
+      // browser print dialog. Wrapped in try/catch — some viewers block scripting.
+      setTimeout(() => {
+        try {
+          tab.focus();
+          tab.print();
+        } catch {}
+      }, 600);
+      // Fallback if viewer doesn't fire print: try iframe inside the new tab.
+      setTimeout(() => {
+        try {
+          if (tab.closed) return;
+          // If user hasn't printed yet, ensure the PDF is at least visible (blob url).
+          // Revoke after a minute — after the print dialog has had time to spool.
+          URL.revokeObjectURL(blobUrl!);
+        } catch {}
+      }, 60000);
+      // Revoke is delayed — immediately revoking breaks Chrome's PDF viewer.
+      setTimeout(() => {
+        try { URL.revokeObjectURL(blobUrl!); } catch {}
+      }, 60000);
+      return;
     }
+
+    // Popup blocked — fall back to hidden iframe print in the current window.
+    const iframe = document.createElement("iframe");
+    iframe.style.position = "fixed";
+    iframe.style.right = "0";
+    iframe.style.bottom = "0";
+    iframe.style.width = "0";
+    iframe.style.height = "0";
+    iframe.style.border = "0";
+    iframe.src = blobUrl;
+
+    iframe.onload = () => {
+      setTimeout(() => {
+        try {
+          iframe.contentWindow?.focus();
+          iframe.contentWindow?.print();
+        } catch {
+          window.open(blobUrl!, "_blank");
+        }
+        setTimeout(() => { try { URL.revokeObjectURL(blobUrl!); } catch {} }, 60000);
+        setTimeout(() => iframe.remove(), 120000);
+      }, 400);
+    };
+    iframe.onerror = () => {
+      window.open(blobUrl!, "_blank");
+      setTimeout(() => { try { URL.revokeObjectURL(blobUrl!); } catch {} }, 60000);
+      iframe.remove();
+    };
+    document.body.appendChild(iframe);
+    setTimeout(() => {
+      if (document.body.contains(iframe)) {
+        try { iframe.contentWindow?.print(); } catch {}
+      }
+    }, 1500);
   } catch (e) {
-    tab?.close();
+    if (blobUrl) try { URL.revokeObjectURL(blobUrl); } catch {}
+    if (tab && !tab.closed) try { tab.close(); } catch {}
     throw e;
   }
 }

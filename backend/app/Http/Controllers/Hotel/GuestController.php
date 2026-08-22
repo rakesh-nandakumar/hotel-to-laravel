@@ -46,6 +46,29 @@ class GuestController extends Controller
         ]);
     }
 
+    /** Lightweight guest search for POS — returns only essential fields. */
+    public function search(Request $request): JsonResponse
+    {
+        $q = $request->string('q')->toString();
+        $limit = min(50, max(1, $request->integer('limit', 20)));
+
+        $query = Guest::query()
+            ->select('id', 'name', 'phone', 'email', 'loyalty_points', 'lifetime_spend')
+            ->orderBy('name');
+
+        if ($q !== '') {
+            $query->where(function ($qb) use ($q) {
+                $qb->where('name', 'like', "%{$q}%")
+                    ->orWhere('phone', 'like', "%{$q}%")
+                    ->orWhere('email', 'like', "%{$q}%");
+            });
+        }
+
+        $guests = $query->limit($limit)->get();
+
+        return response()->json(['guests' => $guests]);
+    }
+
     public function show(Guest $guest): JsonResponse
     {
         $guest->load([

@@ -1,10 +1,12 @@
 <?php
 
 use App\Models\Lookup;
+use App\Models\User;
 use App\Support\Lookups\LookupType;
 use App\Support\Lookups\ReservationStatus;
 use App\Support\Lookups\RoomStatus;
 use Database\Seeders\LookupSeeder;
+use Illuminate\Database\QueryException;
 
 it('seeds every declared lookup type with at least one active code', function () {
     $this->seed(LookupSeeder::class);
@@ -29,7 +31,7 @@ it('enforces a unique (type, code) pair', function () {
     Lookup::create(['type' => LookupType::ROOM_STATUS, 'code' => RoomStatus::AVAILABLE, 'name' => 'Available']);
 
     Lookup::create(['type' => LookupType::ROOM_STATUS, 'code' => RoomStatus::AVAILABLE, 'name' => 'Duplicate']);
-})->throws(\Illuminate\Database\QueryException::class);
+})->throws(QueryException::class);
 
 it('resolves and caches a lookup id by (type, code), throwing on an unknown code', function () {
     $this->seed(LookupSeeder::class);
@@ -43,7 +45,7 @@ it('resolves and caches a lookup id by (type, code), throwing on an unknown code
 });
 
 it('stamps created_by/updated_by like every other model', function () {
-    $user = App\Models\User::factory()->create();
+    $user = User::factory()->create();
     $this->actingAs($user);
 
     $lookup = Lookup::create(['type' => 'test_type', 'code' => 'x', 'name' => 'X']);

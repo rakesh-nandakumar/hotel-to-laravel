@@ -102,3 +102,17 @@ it('rejects an out-of-stock product line before it ever reaches inventory deduct
         'type' => 'walkin', 'items' => [['product_id' => $empty->id, 'qty' => 1]],
     ])->assertUnprocessable()->assertJsonValidationErrors('items');
 });
+
+it('rejects a product with no selling price set', function () {
+    $staff = staffWithRole('Manager');
+    $manager = $this->actingAs($staff);
+    $noPrice = Ingredient::create([
+        'name' => '7UP buddy 250ml', 'unit' => 'pcs', 'stock_qty' => 50, 'low_stock_threshold' => 10,
+        'inventory_kind_id' => Lookup::id(LookupType::INVENTORY_KIND, InventoryKind::PRODUCT),
+        'selling_price' => null, 'active' => true,
+    ]);
+
+    $manager->postJson('/api/orders', [
+        'type' => 'walkin', 'items' => [['product_id' => $noPrice->id, 'qty' => 1]],
+    ])->assertUnprocessable()->assertJsonValidationErrors('items');
+});

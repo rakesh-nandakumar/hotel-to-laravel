@@ -417,6 +417,9 @@ Route::middleware(['auth', 'check_active'])->group(function () {
         Route::get('/', [GuestController::class, 'index'])
             ->middleware('can_do:hotel_guests.access')
             ->name('index');
+        Route::get('search', [GuestController::class, 'search'])
+            ->middleware('can_do:hotel_guests.access')
+            ->name('search');
         Route::post('/', [GuestController::class, 'store'])
             ->middleware('can_do:hotel_guests.create')
             ->name('store');
@@ -562,6 +565,9 @@ Route::middleware(['auth', 'check_active'])->group(function () {
         Route::put('items/{menuItem}/sold-out', [MenuItemController::class, 'toggleSoldOut'])
             ->middleware('can_do:hotel_menu_items.sold_out')
             ->name('items.sold-out');
+        Route::get('search', [MenuItemController::class, 'search'])
+            ->middleware('can_do:hotel_menu_items.access')
+            ->name('search');
 
         // ── Item modifiers (Size/Spice/Extras…) ──
         Route::post('items/{menuItem}/modifier-groups', [MenuItemModifierController::class, 'storeGroup'])
@@ -642,6 +648,12 @@ Route::middleware(['auth', 'check_active'])->group(function () {
         Route::post('{ingredient}/adjust', [IngredientController::class, 'adjustStock'])
             ->middleware('can_do:hotel_products.adjust_stock')
             ->name('adjust');
+        Route::get('search', [IngredientController::class, 'searchProducts'])
+            ->middleware('can_do:hotel_products.access')
+            ->name('search');
+        Route::post('scan', [IngredientController::class, 'scanBarcode'])
+            ->middleware('can_do:hotel_products.access')
+            ->name('scan');
     });
 
     // ── Goods Received Notes (purchases) ───────────────────────────────────────

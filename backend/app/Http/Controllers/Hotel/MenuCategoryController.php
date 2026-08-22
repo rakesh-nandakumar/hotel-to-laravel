@@ -10,15 +10,25 @@ use App\Models\Lookup;
 use App\Services\AuditLog;
 use App\Support\Lookups\LookupType;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Validation\ValidationException;
 
 class MenuCategoryController extends Controller
 {
+    private const CACHE_KEY = 'pos.menu_categories';
+    private const CACHE_TTL = 3600; // 1 hour
+
     public function index(): JsonResponse
     {
-        return response()->json([
-            'menu_categories' => MenuCategory::query()->withCount('items')->with('kitchenStation')->orderBy('sort_order')->get(),
-        ]);
+        $categories = Cache::remember(self::CACHE_KEY, self::CACHE_TTL, function () {
+            return MenuCategory::query()
+                ->withCount('items')
+                ->with('kitchenStation')
+                ->orderBy('sort_order')
+                ->get();
+        });
+
+        return response()->json(['menu_categories' => $categories]);
     }
 
     public function store(StoreMenuCategoryRequest $request): JsonResponse
@@ -27,6 +37,7 @@ class MenuCategoryController extends Controller
         $category = MenuCategory::create($data);
 
         AuditLog::record('menu_category.created', $category, ['name' => $category->name]);
+        Cache::forget(self::CACHE_KEY);
 
         return response()->json(['message' => "Category \"{$category->name}\" created.", 'menu_category' => $category->load('kitchenStation')], 201);
     }
@@ -37,6 +48,7 @@ class MenuCategoryController extends Controller
         $menuCategory->update($data);
 
         AuditLog::record('menu_category.updated', $menuCategory, ['name' => $menuCategory->name]);
+        Cache::forget(self::CACHE_KEY);
 
         return response()->json(['message' => 'Category updated.', 'menu_category' => $menuCategory->load('kitchenStation')]);
     }
@@ -71,6 +83,7 @@ class MenuCategoryController extends Controller
         $menuCategory->delete();
 
         AuditLog::record('menu_category.deleted', $menuCategory, ['name' => $name]);
+        Cache::forget(self::CACHE_KEY);
 
         return response()->json(['message' => "\"{$name}\" removed."]);
     }

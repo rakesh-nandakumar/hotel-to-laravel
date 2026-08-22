@@ -12,32 +12,55 @@ class MenuSeeder extends Seeder
     public function run(): void
     {
         DB::transaction(function (): void {
-            MenuItem::withTrashed()->forceDelete();
-
-            $this->seedNodes(MenuDefinition::tree(), parentId: null);
+            $this->syncMenuItems(MenuDefinition::tree());
         });
     }
 
     /**
+     * Syncs menu items with definition - creates new, updates existing, removes stale.
+     *
      * @param  array<int, array<string, mixed>>  $nodes
      */
-    private function seedNodes(array $nodes, ?int $parentId): void
+    private function syncMenuItems(array $nodes, ?int $parentId = null): void
     {
-        foreach ($nodes as $order => $node) {
-            $item = MenuItem::create([
+        $definedKeys = [];
+        $order = 0;
+
+        foreach ($nodes as $node) {
+            $moduleKey = $node['module_key'] ?? null;
+            $key = $moduleKey ?: $node['name'];
+
+            $definedKeys[] = $key;
+
+            $item = MenuItem::firstOrNew([
                 'parent_id' => $parentId,
+                'module_key' => $moduleKey,
                 'name' => $node['name'],
-                'icon' => $node['icon'] ?? null,
-                'route_name' => $node['route_name'] ?? null,
-                'module_key' => $node['module_key'] ?? null,
-                'actions' => $node['actions'] ?? [],
-                'order' => $order,
-                'is_active' => true,
             ]);
 
+            $item->fill([
+                'icon' => $node['icon'] ?? null,
+                'route_name' => $node['route_name'] ?? null,
+                'actions' => $node['actions'] ?? [],
+                'order' => $order++,
+                'is_active' => true,
+            ])->save();
+
             if (! empty($node['children'])) {
-                $this->seedNodes($node['children'], $item->id);
+                $this->syncMenuItems($node['children'], $item->id);
             }
         }
+
+        // Remove items at this level that are no longer in definition
+        MenuItem::where('parent_id', $parentId)
+            ->where(function ($query) use ($definedKeys) {
+                $query->whereNotIn('module_key', $definedKeys)
+                    ->orWhere(function ($q) use ($definedKeys) {
+                        $q->whereNull('module_key')
+                            ->whereNotIn('name', $definedKeys);
+                    });
+            })
+            ->withTrashed()
+            ->forceDelete();
     }
 }

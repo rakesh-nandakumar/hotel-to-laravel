@@ -14,6 +14,7 @@ use App\Services\Hotel\InventoryService;
 use App\Support\RealtimeEvent;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -68,14 +69,17 @@ class MenuItemController extends Controller
         }
 
         if ($request->has('page')) {
-            return response()->json([
-                'menu_items' => $query->paginate($request->integer('page_size', 25))->withQueryString(),
-                'stats' => [
-                    'on_menu' => MenuItem::query()->where('active', true)->count(),
-                    'sold_out' => MenuItem::query()->where('active', true)->where('sold_out', true)->count(),
-                    'archived' => MenuItem::query()->where('active', false)->count(),
-                ],
-            ]);
+            $cacheKey = 'menu_items.index.'.md5($request->fullUrl());
+            return response()->json(Cache::remember($cacheKey, 300, function () use ($query, $request) {
+                return [
+                    'menu_items' => $query->paginate($request->integer('page_size', 25))->withQueryString(),
+                    'stats' => [
+                        'on_menu' => MenuItem::query()->where('active', true)->count(),
+                        'sold_out' => MenuItem::query()->where('active', true)->where('sold_out', true)->count(),
+                        'archived' => MenuItem::query()->where('active', false)->count(),
+                    ],
+                ];
+            }));
         }
 
         return response()->json(['menu_items' => $query->get()]);
@@ -105,6 +109,7 @@ class MenuItemController extends Controller
         });
 
         AuditLog::record('menu_item.created', $item, ['item_no' => $itemNo, 'name' => $item->name]);
+        Cache::tags(['menu_items'])->flush();
 
         return response()->json([
             'message' => "\"{$item->name}\" created.",
@@ -126,6 +131,7 @@ class MenuItemController extends Controller
         });
 
         AuditLog::record('menu_item.updated', $menuItem, ['name' => $menuItem->name]);
+        Cache::tags(['menu_items'])->flush();
 
         return response()->json([
             'message' => 'Item updated.',
@@ -155,6 +161,7 @@ class MenuItemController extends Controller
 
             AuditLog::record('menu_item.archived', $menuItem, ['name' => $name, 'past_orders' => $pastOrders]);
             broadcast(new RealtimeUpdate(RealtimeEvent::MENU, ['removed' => [$name]]));
+            Cache::tags(['menu_items'])->flush();
 
             return response()->json([
                 'archived' => true,
@@ -166,6 +173,7 @@ class MenuItemController extends Controller
 
         AuditLog::record('menu_item.deleted', $menuItem, ['name' => $name]);
         broadcast(new RealtimeUpdate(RealtimeEvent::MENU, ['removed' => [$name]]));
+        Cache::tags(['menu_items'])->flush();
 
         return response()->json(['archived' => false, 'message' => "\"{$name}\" removed."]);
     }
@@ -174,6 +182,71 @@ class MenuItemController extends Controller
      * Sold-out toggle. Re-enabling requires enough raw material for at least
      * one portion — otherwise rejected listing what's missing.
      */
+    /** Lightweight menu item search for POS — returns only active, non-sold-out items. */
+    public function search(Request $request): JsonResponse
+    {
+        $q = $request->string('q')->toString();
+        $limit = min(50, max(1, $request->integer('limit', 20)));
+        $categoryId = $request->integer('category_id');
+
+        $query = MenuItem::query()
+            ->with([
+                'modifierGroups' => fn ($g) => $g->orderBy('sort_order')->with(['modifiers' => fn ($m) => $m->where('active', true)->orderBy('sort_order')]),
+                'linkedAddOns' => fn ($a) => $a->active()->orderBy('sort_order'),
+                'categoryAddOns' => fn ($a) => $a->active()->orderBy('sort_order'),
+            ])
+            ->where('active', true)
+            ->where('sold_out', false)
+            ->select('id', 'name', 'price', 'item_no', 'description', 'image', 'menu_category_id', 'stock_ingredient_id')
+            ->orderBy('item_no')
+            ->orderBy('name');
+
+        if ($categoryId) {
+            $query->where('menu_category_id', $categoryId);
+        }
+
+        if ($q !== '') {
+            $query->where(function ($qb) use ($q) {
+                $qb->where('name', 'like', "%{$q}%")
+                    ->orWhere('item_no', 'like', "%{$q}%")
+                    ->orWhere('description', 'like', "%{$q}%");
+            });
+        }
+
+        $items = $query->limit($limit)->get()->map(function (MenuItem $item) {
+            $addOns = $item->linkedAddOns->concat($item->categoryAddOns)->unique('id')->values();
+
+            return [
+                'id' => $item->id,
+                'name' => $item->name,
+                'price' => $item->price,
+                'item_no' => $item->item_no,
+                'description' => $item->description,
+                'image' => $item->image,
+                'menu_category_id' => $item->menu_category_id,
+                'stock_ingredient_id' => $item->stock_ingredient_id,
+                'modifier_groups' => $item->modifierGroups->map(fn ($g) => [
+                    'id' => $g->id,
+                    'name' => $g->name,
+                    'is_required' => $g->is_required,
+                    'max_select' => $g->max_select,
+                    'modifiers' => $g->modifiers->map(fn ($m) => [
+                        'id' => $m->id,
+                        'name' => $m->name,
+                        'price_delta' => $m->price_delta,
+                    ])->values(),
+                ])->values(),
+                'addons' => $addOns->map(fn ($a) => [
+                    'id' => $a->id,
+                    'name' => $a->name,
+                    'price' => $a->price,
+                ])->values(),
+            ];
+        });
+
+        return response()->json(['items' => $items]);
+    }
+
     public function toggleSoldOut(ToggleMenuItemSoldOutRequest $request, MenuItem $menuItem): JsonResponse
     {
         $soldOut = $request->boolean('sold_out');
@@ -194,6 +267,7 @@ class MenuItemController extends Controller
             'sold_out' => $soldOut ? [$menuItem->name] : [],
             'available' => $soldOut ? [] : [$menuItem->name],
         ]));
+        Cache::tags(['menu_items'])->flush();
 
         return response()->json(['message' => 'Item availability updated.', 'menu_item' => $menuItem]);
     }

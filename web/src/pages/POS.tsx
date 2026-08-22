@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Minus, Plus, Printer, Send, PauseCircle, PlayCircle, BedDouble, User, RefreshCw,
   Search, StickyNote, Trash2, UtensilsCrossed, Timer, ShoppingBag, Bike, Split, Combine,
-  ChefHat, HandPlatter,
+  ChefHat, HandPlatter, ScanBarcode, X,
 } from "lucide-react";
 import { api, openPdf, post, put } from "../lib/api";
 import { posRequest } from "../lib/offline";
@@ -21,7 +21,7 @@ type MenuItem = {
   modifier_groups?: ModifierGroup[]; addons?: AddOn[];
 };
 /** Directly-sellable, non-recipe stock item (bottled drink, packaged snack) — never routes to the kitchen. */
-type Product = { id: number; name: string; selling_price: number; stock_qty: number; image?: string | null };
+type Product = { id: number; name: string; selling_price: number; stock_qty: number; image?: string | null; unit?: string | null };
 type MenuCat = { id: number; name: string; is_minibar: boolean; items: MenuItem[]; products: Product[] };
 type BoardRoom = { id: number; number: string; status: { code: string }; occupant: { code: string; guest: { name: string } } | null };
 type DiningTable = { id: number; table_no: string; capacity: number; status: { code: string }; area: { name: string } | null };
@@ -38,6 +38,8 @@ type Order = {
   payments: { id: number; method: { code: string }; amount: number; kind: { code: string } }[];
   staff: { name: string } | null;
 };
+
+type Guest = { id: number; name: string; phone?: string | null; email?: string | null; loyalty_points: number; lifetime_spend: number };
 
 type CartLine = {
   key: string;
@@ -72,16 +74,27 @@ const DELIVERY_STEPS = ["pending", "out_for_delivery", "delivered", "failed"] as
 
 const minsAgo = (iso: string) => Math.max(0, Math.round((Date.now() - +new Date(iso)) / 60000));
 
+/** Debounce hook for search inputs */
+function useDebounce<T>(value: T, delay: number): T {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const timer = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(timer);
+  }, [value, delay]);
+  return debounced;
+}
+
 export default function POS() {
   const { can } = useAuth();
   const canCreate = can("hotel_orders.create");
   const [view, setView] = useState<"new" | "open">(canCreate ? "new" : "open");
-  const { data: menuData, reload: reloadMenu } = useFetch<{ categories: MenuCat[] }>("/menu/full");
+  // Load only categories (lightweight) - items/products loaded on demand via search
+  const { data: categoriesData, reload: reloadCategories } = useFetch<{ categories: { id: number; name: string; is_minibar: boolean }[] }>("/menu/categories");
   const { data: roomsData } = useFetch<{ rooms: BoardRoom[] }>("/rooms");
   const { data: tablesData, reload: reloadTables } = useFetch<{ dining_tables: DiningTable[] }>("/dining-tables");
   const { data: activeData, reload: reloadActive } = useFetch<{ orders: Order[] }>("/orders?scope=active");
   const { data: todaysData, reload: reloadToday } = useFetch<{ orders: Order[] }>("/orders?scope=today");
-  const menu = menuData?.categories;
+  const categories = categoriesData?.categories ?? [];
   const active = activeData?.orders;
   const todays = todaysData?.orders;
   const { num } = useSettings();
@@ -94,24 +107,22 @@ export default function POS() {
       reloadActive();
       reloadToday();
     };
-    s.on("menu", reloadMenu);
+    s.on("menu", reloadCategories);
     s.on("kot", orders);
     s.on("orders", orders);
     return () => {
-      s.off("menu", reloadMenu);
+      s.off("menu", reloadCategories);
       s.off("kot", orders);
       s.off("orders", orders);
     };
-  }, [reloadMenu, reloadActive, reloadToday]);
+  }, [reloadCategories, reloadActive, reloadToday]);
 
   const freeTables = (tablesData?.dining_tables ?? []).filter((t) => t.status.code === "free");
 
   // cache for offline reloads
   useEffect(() => {
-    if (menu) localStorage.setItem("mv.cache.menu", JSON.stringify(menu));
     if (roomsData?.rooms) localStorage.setItem("mv.cache.board", JSON.stringify(roomsData.rooms));
-  }, [menu, roomsData]);
-  const menuData_: MenuCat[] = menu ?? JSON.parse(localStorage.getItem("mv.cache.menu") ?? "[]");
+  }, [roomsData]);
   const boardData: BoardRoom[] = roomsData?.rooms ?? JSON.parse(localStorage.getItem("mv.cache.board") ?? "[]");
   const occupiedRooms = boardData.filter((r) => r.status.code === "occupied" && r.occupant);
 
@@ -139,7 +150,7 @@ export default function POS() {
       </div>
       {view === "new" ? (
         <NewOrder
-          menu={menuData_}
+          categories={categories}
           rooms={occupiedRooms}
           tables={freeTables}
           usdRate={usdRate}
@@ -165,12 +176,13 @@ export default function POS() {
 }
 
 // ── New order ─────────────────────────────────────────────────────────────────
-function NewOrder({ menu, rooms, tables, usdRate, scPct, vatPct, onDone }: {
-  menu: MenuCat[]; rooms: BoardRoom[]; tables: DiningTable[]; usdRate: number; scPct: number; vatPct: number; onDone: () => void;
+function NewOrder({ categories, rooms, tables, usdRate, scPct, vatPct, onDone }: {
+  categories: { id: number; name: string; is_minibar: boolean }[];
+  rooms: BoardRoom[]; tables: DiningTable[]; usdRate: number; scPct: number; vatPct: number; onDone: () => void;
 }) {
   const toast = useToast();
   const [catId, setCatId] = useState<string>("ALL");
-  const [q, setQ] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
   const [cart, setCart] = useState<CartLine[]>([]);
   const [type, setType] = useState<"walkin" | "room_guest" | "delivery">("walkin");
   const [diningMode, setDiningMode] = useState<"dine_in" | "takeaway">("dine_in");
@@ -180,31 +192,160 @@ function NewOrder({ menu, rooms, tables, usdRate, scPct, vatPct, onDone }: {
   const [deliveryPhone, setDeliveryPhone] = useState("");
   const [customerName, setCustomerName] = useState("");
   const [notes, setNotes] = useState("");
-  const [noteFor, setNoteFor] = useState<string | null>(null); // cart line note editor (by CartLine.key)
+  const [noteFor, setNoteFor] = useState<string | null>(null);
   const [pickerItem, setPickerItem] = useState<MenuItem | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [queuedMsg, setQueuedMsg] = useState("");
   const [quickNo, setQuickNo] = useState("");
+  const [guestSearch, setGuestSearch] = useState("");
+  const [guestResults, setGuestResults] = useState<Guest[]>([]);
+  const [showGuestDropdown, setShowGuestDropdown] = useState(false);
 
-  const allItems = useMemo(() => menu.flatMap((c) => c.items), [menu]);
-  const allProducts = useMemo(() => menu.flatMap((c) => c.products), [menu]);
-  const gridEntries = useMemo(() => {
-    const items = catId === "ALL" ? allItems : (menu.find((c) => String(c.id) === catId)?.items ?? []);
-    const products = catId === "ALL" ? allProducts : (menu.find((c) => String(c.id) === catId)?.products ?? []);
-    let list: GridEntry[] = [
-      ...items.map((i): GridEntry => ({ key: `item:${i.id}`, kind: "item", id: i.id, name: i.name, price: i.price, itemNo: i.item_no ?? null, image: i.image, soldOut: i.sold_out, item: i })),
-      ...products.map((p): GridEntry => ({ key: `product:${p.id}`, kind: "product", id: p.id, name: p.name, price: p.selling_price, itemNo: null, image: p.image, soldOut: p.stock_qty <= 0, product: p })),
-    ];
-    if (q.trim()) {
-      const needle = q.toLowerCase();
-      list = list.filter((i) => i.name.toLowerCase().includes(needle) || String(i.itemNo ?? "").includes(needle));
+  // Search state for items/products
+  const [gridEntries, setGridEntries] = useState<GridEntry[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+
+  // Debounced search
+  const debouncedSearchQuery = useDebounce(searchQuery, 300);
+  const debouncedGuestSearch = useDebounce(guestSearch, 300);
+
+  // Precomputed cart quantity map for O(1) lookups
+  const cartQtyMap = useMemo(() => {
+    const map = new Map<string, number>();
+    cart.forEach((line) => {
+      const existing = map.get(line.key) || 0;
+      map.set(line.key, existing + line.qty);
+    });
+    return map;
+  }, [cart]);
+
+  // Helper to get cart qty for a grid entry (O(1) instead of O(N))
+  const getCartQty = useCallback((entry: GridEntry) => {
+    if (entry.kind === "product") {
+      return cartQtyMap.get(`product:${entry.id}`) || 0;
     }
-    return list;
-  }, [menu, allItems, allProducts, catId, q]);
+    return cartQtyMap.get(`item:${entry.id}`) || 0;
+  }, [cartQtyMap]);
+
+  // Fetch items/products for selected category or search
+  const fetchGridEntries = useCallback(async () => {
+    setSearchLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (catId !== "ALL") params.set("category_id", catId);
+      if (debouncedSearchQuery.trim()) params.set("q", debouncedSearchQuery.trim());
+      params.set("limit", "100");
+
+      const [itemsRes, productsRes] = await Promise.all([
+        api<{ items: MenuItem[] }>(`/menu/search?${params}`),
+        api<{ products: Product[] }>(`/products/search?${params}`),
+      ]);
+
+      const items = itemsRes.items ?? [];
+      const products = productsRes.products ?? [];
+
+      const entries: GridEntry[] = [
+        ...items.map((i): GridEntry => ({
+          key: `item:${i.id}`, kind: "item", id: i.id, name: i.name, price: i.price,
+          itemNo: i.item_no ?? null, image: i.image, soldOut: i.sold_out, item: i
+        })),
+        ...products.map((p): GridEntry => ({
+          key: `product:${p.id}`, kind: "product", id: p.id, name: p.name, price: p.selling_price,
+          itemNo: null, image: p.image, soldOut: p.stock_qty <= 0, product: p
+        })),
+      ];
+      setGridEntries(entries);
+    } catch (e) {
+      console.error("Failed to fetch grid entries:", e);
+      setGridEntries([]);
+    } finally {
+      setSearchLoading(false);
+    }
+  }, [catId, debouncedSearchQuery]);
+
+  // Fetch grid entries when category or search changes
+  useEffect(() => {
+    fetchGridEntries();
+  }, [fetchGridEntries]);
+
+  // Guest search for delivery orders
+  useEffect(() => {
+    if (!debouncedGuestSearch.trim()) {
+      setGuestResults([]);
+      return;
+    }
+    api<{ guests: Guest[] }>(`/guests/search?q=${encodeURIComponent(debouncedGuestSearch.trim())}&limit=10`)
+      .then((res) => setGuestResults(res.guests ?? []))
+      .catch(() => setGuestResults([]));
+  }, [debouncedGuestSearch]);
+
+  // Select guest from search results
+  const selectGuest = (guest: Guest) => {
+    setCustomerName(guest.name);
+    setDeliveryPhone(guest.phone ?? "");
+    setGuestSearch("");
+    setGuestResults([]);
+    setShowGuestDropdown(false);
+  };
+
+  // Barcode scanning support
+  const handleBarcodeScan = useCallback((barcode: string) => {
+    // Try to find product by barcode (item_no or product id)
+    const numericCode = parseInt(barcode, 10);
+    if (!isNaN(numericCode)) {
+      // Search for item by item_no
+      api<{ items: MenuItem[] }>(`/menu/search?q=${numericCode}&limit=1`)
+        .then((res) => {
+          const item = res.items?.[0];
+          if (item && !item.sold_out) {
+            tryAdd(item);
+            return;
+          }
+          // Try product search
+          return api<{ products: Product[] }>(`/products/search?q=${numericCode}&limit=1`);
+        })
+        .then((res) => {
+          if (res?.products?.[0]) {
+            const product = res.products[0];
+            if (product.stock_qty > 0) addProduct(product);
+          }
+        })
+        .catch(() => {});
+    }
+  }, []);
+
+  // Listen for barcode scanner input (typically acts as keyboard wedge)
+  useEffect(() => {
+    let buffer = "";
+    let lastKeyTime = 0;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore if user is typing in an input
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) {
+        return;
+      }
+
+      const now = Date.now();
+      if (now - lastKeyTime > 100) {
+        buffer = "";
+      }
+      lastKeyTime = now;
+
+      if (e.key === "Enter" && buffer.length >= 8) {
+        handleBarcodeScan(buffer);
+        buffer = "";
+        e.preventDefault();
+      } else if (e.key.length === 1) {
+        buffer += e.key;
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [handleBarcodeScan]);
 
   const subtotal = cart.reduce((s, l) => s + l.price * l.qty, 0);
-  // Takeaway and delivery are exempt from service charge — no table service (VAT still applies)
   const takeaway = (type === "walkin" && diningMode === "takeaway") || type === "delivery";
   const sc = takeaway ? 0 : Math.round((subtotal * scPct) / 100);
   const vat = Math.round(((subtotal + sc) * vatPct) / 100);
@@ -223,7 +364,6 @@ function NewOrder({ menu, rooms, tables, usdRate, scPct, vatPct, onDone }: {
       if (existing) return c.map((l) => (l.key === key ? { ...l, qty: l.qty + 1 } : l));
       return [...c, { key, kind: "item", menuItemId: item.id, name: modLabel ? `${item.name} (${modLabel})` : item.name, price, qty: 1, modifierIds, sendToKot: true }];
     });
-    // Add-ons are their own cart lines with their own routing + stock.
     for (const addOn of (item.addons ?? []).filter((a) => addOnIds.includes(a.id))) {
       setCart((c) => {
         const aKey = `addon:${addOn.id}`;
@@ -248,11 +388,24 @@ function NewOrder({ menu, rooms, tables, usdRate, scPct, vatPct, onDone }: {
   const quickAdd = () => {
     const no = parseInt(quickNo);
     if (!no) return;
-    const item = allItems.find((i) => i.item_no === no);
-    if (!item) return setError(`No menu item #${no}`);
-    if (item.sold_out) return setError(`#${no} ${item.name} is sold out`);
-    setError("");
-    tryAdd(item);
+    // Try local grid entries first
+    let item = gridEntries.filter((e): e is { key: string; kind: "item"; id: number; name: string; price: number; itemNo: number | null; image?: string | null; soldOut: boolean; item: MenuItem } => e.kind === "item").find((e) => e.itemNo === no)?.item;
+    if (!item) {
+      // Fallback to API search
+      api<{ items: MenuItem[] }>(`/menu/search?q=${no}&limit=1`)
+        .then((res) => {
+          item = res.items?.[0];
+          if (item && !item.sold_out) tryAdd(item);
+          else if (!item) setError(`No menu item #${no}`);
+          else setError(`#${no} ${item.name} is sold out`);
+        })
+        .catch(() => setError(`Failed to lookup #${no}`));
+    } else if (item.sold_out) {
+      setError(`#${no} ${item.name} is sold out`);
+    } else {
+      setError("");
+      tryAdd(item);
+    }
     setQuickNo("");
   };
 
@@ -318,7 +471,12 @@ function NewOrder({ menu, rooms, tables, usdRate, scPct, vatPct, onDone }: {
         <div className="flex flex-wrap items-center gap-1.5">
           <div className="relative">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input className="input !w-52 !py-1.5 !pl-8" placeholder="Search / #no…" value={q} onChange={(e) => setQ(e.target.value)} />
+            <input 
+              className="input !w-52 !py-1.5 !pl-8" 
+              placeholder="Search / #no…" 
+              value={searchQuery} 
+              onChange={(e) => setSearchQuery(e.target.value)} 
+            />
           </div>
           <button
             onClick={() => setCatId("ALL")}
@@ -326,7 +484,7 @@ function NewOrder({ menu, rooms, tables, usdRate, scPct, vatPct, onDone }: {
           >
             All
           </button>
-          {menu.map((c) => (
+          {categories.map((c) => (
             <button
               key={c.id}
               onClick={() => setCatId(String(c.id))}
@@ -339,33 +497,37 @@ function NewOrder({ menu, rooms, tables, usdRate, scPct, vatPct, onDone }: {
 
         {/* Item grid */}
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
-          {gridEntries.map((entry) => {
-            const inCart = cart
-              .filter((l) => (entry.kind === "product" ? l.productId === entry.id : l.menuItemId === entry.id))
-              .reduce((s, l) => s + l.qty, 0);
-            return (
-              <button
-                key={entry.key}
-                disabled={entry.soldOut}
-                onClick={() => (entry.kind === "product" ? addProduct(entry.product) : tryAdd(entry.item))}
-                className={clsx(
-                  "card relative p-3 text-left transition",
-                  entry.soldOut ? "opacity-40" : "hover:-translate-y-0.5 hover:shadow-md active:scale-[.98]",
-                  inCart && "ring-2 ring-brand-500"
-                )}
-              >
-                {entry.image && <img src={entry.image} alt="" className="mb-2 aspect-square w-full rounded-lg object-cover" />}
-                <div className="flex items-start justify-between gap-1">
-                  {entry.itemNo != null && <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] font-black text-slate-500">#{entry.itemNo}</span>}
-                  {inCart > 0 && <span className="rounded-full bg-brand-600 px-1.5 py-0.5 text-[10px] font-black text-white">{inCart}</span>}
-                </div>
-                <div className="mt-1 text-sm font-bold leading-tight">{entry.name}</div>
-                <div className="mt-1 text-sm font-semibold text-brand-600">{lkr(entry.price)}</div>
-                {entry.soldOut && <Badge color="red">{entry.kind === "product" ? "OUT OF STOCK" : "SOLD OUT"}</Badge>}
-              </button>
-            );
-          })}
-          {gridEntries.length === 0 && <Empty text="No items match" />}
+          {searchLoading ? (
+            <div className="col-span-full flex justify-center py-8 text-slate-400">Loading…</div>
+          ) : (
+            <>
+              {gridEntries.map((entry) => {
+                const inCart = getCartQty(entry);
+                return (
+                  <button
+                    key={entry.key}
+                    disabled={entry.soldOut}
+                    onClick={() => (entry.kind === "product" ? addProduct(entry.product) : tryAdd(entry.item))}
+                    className={clsx(
+                      "card relative p-3 text-left transition",
+                      entry.soldOut ? "opacity-40" : "hover:-translate-y-0.5 hover:shadow-md active:scale-[.98]",
+                      inCart && "ring-2 ring-brand-500"
+                    )}
+                  >
+                    {entry.image && <img src={entry.image} alt="" className="mb-2 aspect-square w-full rounded-lg object-cover" />}
+                    <div className="flex items-start justify-between gap-1">
+                      {entry.itemNo != null && <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] font-black text-slate-500">#{entry.itemNo}</span>}
+                      {inCart > 0 && <span className="rounded-full bg-brand-600 px-1.5 py-0.5 text-[10px] font-black text-white">{inCart}</span>}
+                    </div>
+                    <div className="mt-1 text-sm font-bold leading-tight">{entry.name}</div>
+                    <div className="mt-1 text-sm font-semibold text-brand-600">{lkr(entry.price)}</div>
+                    {entry.soldOut && <Badge color="red">{entry.kind === "product" ? "OUT OF STOCK" : "SOLD OUT"}</Badge>}
+                  </button>
+                );
+              })}
+              {gridEntries.length === 0 && !searchLoading && <Empty text="No items match" />}
+            </>
+          )}
         </div>
       </div>
 
@@ -403,7 +565,31 @@ function NewOrder({ menu, rooms, tables, usdRate, scPct, vatPct, onDone }: {
         )}
         {type === "delivery" && (
           <div className="mb-3 space-y-2">
-            <input className="input" placeholder="Customer name" value={customerName} onChange={(e) => setCustomerName(e.target.value)} />
+            <div className="relative">
+              <User size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input 
+                className="input !pl-8" 
+                placeholder="Customer name (search guests…)" 
+                value={guestSearch} 
+                onChange={(e) => { setGuestSearch(e.target.value); setShowGuestDropdown(true); }}
+                onFocus={() => setShowGuestDropdown(true)}
+                onBlur={() => setTimeout(() => setShowGuestDropdown(false), 200)}
+              />
+              {showGuestDropdown && guestResults.length > 0 && (
+                <div className="absolute z-10 w-full mt-1 rounded-lg bg-white shadow-lg border border-slate-200 max-h-60 overflow-auto">
+                  {guestResults.map((g) => (
+                    <button
+                      key={g.id}
+                      className="w-full px-3 py-2 text-left text-sm hover:bg-slate-50"
+                      onClick={() => selectGuest(g)}
+                    >
+                      <div className="font-medium">{g.name}</div>
+                      <div className="text-xs text-slate-500">{g.phone ?? g.email ?? "No contact"}</div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
             <input className="input" placeholder="Delivery address *" value={deliveryAddress} onChange={(e) => setDeliveryAddress(e.target.value)} />
             <input className="input" placeholder="Delivery phone *" value={deliveryPhone} onChange={(e) => setDeliveryPhone(e.target.value)} />
           </div>

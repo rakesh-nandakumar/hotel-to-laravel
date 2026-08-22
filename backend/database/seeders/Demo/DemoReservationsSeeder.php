@@ -5,6 +5,7 @@ namespace Database\Seeders\Demo;
 use App\Models\Hotel\CorporateAccount;
 use App\Models\Hotel\Guest;
 use App\Models\Hotel\HousekeepingTask;
+use App\Models\Hotel\LaundryItem;
 use App\Models\Hotel\MenuItem;
 use App\Models\Hotel\Package;
 use App\Models\Hotel\Reservation;
@@ -15,6 +16,7 @@ use App\Services\Hotel\BillingService;
 use App\Services\Hotel\HousekeepingService;
 use App\Services\Hotel\LaundryService;
 use App\Services\Hotel\OrderService;
+use App\Services\Hotel\ReservationAvailabilityService;
 use App\Services\Hotel\ReservationService;
 use App\Support\Lookups\LookupType;
 use App\Support\Lookups\OrderType;
@@ -23,6 +25,7 @@ use App\Support\Lookups\PaymentMethod;
 use App\Support\Lookups\ReservationStatus;
 use Carbon\Carbon;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Collection;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -87,7 +90,7 @@ class DemoReservationsSeeder extends Seeder
         $this->packageIds = Package::query()->where('code', '!=', 'RO')->pluck('id')->all();
         $this->staffIds = User::query()->where('status', User::STATUS_ACTIVE)->pluck('id')->all();
         $this->menuItemIds = MenuItem::query()->pluck('id')->all();
-        $this->laundryItemIds = \App\Models\Hotel\LaundryItem::query()->pluck('id')->all();
+        $this->laundryItemIds = LaundryItem::query()->pluck('id')->all();
 
         $this->today = Carbon::today();
         $this->windowStart = $this->today->copy()->subDays(45);
@@ -352,7 +355,7 @@ class DemoReservationsSeeder extends Seeder
     }
 
     /**
-     * @param  \Illuminate\Support\Collection<int, Room>  $rooms
+     * @param  Collection<int, Room>  $rooms
      */
     private function seedGroupBookings($rooms): void
     {
@@ -361,7 +364,7 @@ class DemoReservationsSeeder extends Seeder
             [$this->today->copy()->addDays(11), $this->today->copy()->addDays(13), 'Colombo Tech Summit Delegation'],
         ];
 
-        $availability = app(\App\Services\Hotel\ReservationAvailabilityService::class);
+        $availability = app(ReservationAvailabilityService::class);
 
         foreach ($candidates as [$checkIn, $checkOut, $name]) {
             $freeRoomIds = $availability->availableRooms($checkIn, $checkOut)->pluck('id')->all();

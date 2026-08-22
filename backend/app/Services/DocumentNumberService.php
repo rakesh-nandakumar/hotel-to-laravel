@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -14,7 +15,7 @@ use Illuminate\Support\Facades\DB;
 class DocumentNumberService
 {
     /**
-     * @param  class-string<\Illuminate\Database\Eloquent\Model>  $modelClass
+     * @param  class-string<Model>  $modelClass
      */
     public function next(string $modelClass, string $column, string $prefix, int $pad = 4): string
     {
