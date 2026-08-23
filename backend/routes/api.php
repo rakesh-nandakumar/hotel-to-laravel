@@ -329,19 +329,19 @@ Route::middleware(['auth', 'check_active'])->group(function () {
     // ── Rooms ─────────────────────────────────────────────────────────────────
     Route::prefix('rooms')->name('hotel.')->group(function () {
         Route::get('types', [RoomTypeController::class, 'index'])
-            ->middleware('can_do:hotel_room_types.access')
+            ->middleware('can_do:hotel_rooms.access')
             ->name('room-types.index');
         Route::post('types', [RoomTypeController::class, 'store'])
-            ->middleware('can_do:hotel_room_types.create')
+            ->middleware('can_do:hotel_rooms.create')
             ->name('room-types.store');
         Route::put('types/{roomType}', [RoomTypeController::class, 'update'])
-            ->middleware('can_do:hotel_room_types.edit')
+            ->middleware('can_do:hotel_rooms.edit')
             ->name('room-types.update');
         Route::post('types/{roomType}/seasonal', [RoomTypeController::class, 'storeSeasonalRate'])
-            ->middleware('can_do:hotel_room_types.edit')
+            ->middleware('can_do:hotel_rooms.edit')
             ->name('room-types.seasonal.store');
         Route::delete('seasonal/{seasonalRate}', [RoomTypeController::class, 'destroySeasonalRate'])
-            ->middleware('can_do:hotel_room_types.edit')
+            ->middleware('can_do:hotel_rooms.edit')
             ->name('room-types.seasonal.destroy');
 
         Route::get('packages', [PackageController::class, 'index'])
@@ -363,6 +363,9 @@ Route::middleware(['auth', 'check_active'])->group(function () {
         Route::put('{room}/status', [RoomController::class, 'updateStatus'])
             ->middleware('can_do:hotel_rooms.edit_status')
             ->name('rooms.update-status');
+        Route::post('{room}/seasonal', [RoomController::class, 'storeSeasonalRate'])
+            ->middleware('can_do:hotel_rooms.edit')
+            ->name('rooms.seasonal.store');
     });
 
     // ── Restaurant floor plan (dining areas + tables) ───────────────────────

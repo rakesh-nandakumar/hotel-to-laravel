@@ -35,7 +35,7 @@ class ModuleCatalog
                 'name' => 'Hotel Operations',
                 'description' => 'Rooms, reservations, guests, housekeeping, maintenance, laundry, venues and front-desk reporting.',
                 'module_keys' => [
-                    'hotel_rooms', 'hotel_room_types', 'hotel_packages',
+                    'hotel_rooms', 'hotel_packages',
                     'hotel_guests', 'hotel_corporate',
                     'hotel_reservations', 'hotel_folios',
                     'hotel_housekeeping', 'hotel_maintenance', 'hotel_laundry',

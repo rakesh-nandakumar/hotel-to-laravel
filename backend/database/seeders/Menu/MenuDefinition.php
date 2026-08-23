@@ -57,12 +57,6 @@ class MenuDefinition
                         'actions' => ['access', 'create', 'edit', 'edit_status'],
                     ],
                     [
-                        'name' => 'Room Types',
-                        'route_name' => 'hotel.room-types.index',
-                        'module_key' => 'hotel_room_types',
-                        'actions' => ['access', 'create', 'edit'],
-                    ],
-                    [
                         'name' => 'Packages',
                         'route_name' => 'hotel.packages.index',
                         'module_key' => 'hotel_packages',

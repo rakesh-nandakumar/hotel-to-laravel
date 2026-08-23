@@ -53,13 +53,18 @@ class ReservationController extends Controller
         $rooms = $this->availability->availableRooms($checkIn, $checkOut)->map(function (Room $room) use ($nightList) {
             $perNight = collect($nightList)->map(fn (string $date) => [
                 'date' => $date,
-                'rate' => $this->pricing->nightlyRate($room->roomType, Carbon::parse($date)),
+                'rate' => $this->pricing->nightlyRate($room, Carbon::parse($date)),
             ]);
 
             return [
                 'id' => $room->id,
                 'number' => $room->number,
-                'room_type' => ['id' => $room->room_type_id, 'name' => $room->roomType->name, 'max_occupancy' => $room->roomType->max_occupancy],
+                'name' => $room->name,
+                'max_occupancy' => $room->max_occupancy,
+                'bed_config' => $room->bed_config,
+                // Keep legacy room_type shape for backward compat with older SPA builds,
+                // but new SPA should use the top-level fields above.
+                'room_type' => ['id' => $room->id, 'name' => $room->name ?? 'Standard', 'max_occupancy' => $room->max_occupancy],
                 'nights' => $perNight,
                 'stay_total' => $perNight->sum('rate'),
             ];
@@ -160,7 +165,7 @@ class ReservationController extends Controller
     {
         $reservation->load([
             'guest', 'package', 'groupBooking', 'corporateAccount', 'status', 'channel',
-            'rooms.room.roomType', 'rooms.room.status', 'rooms.billToGuest:id,name',
+            'rooms.room', 'rooms.room.status', 'rooms.billToGuest:id,name',
             'roomItemChecks' => fn ($q) => $q->latest(),
             'roomItemChecks.kind',
         ]);

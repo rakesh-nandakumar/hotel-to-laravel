@@ -29,10 +29,10 @@ class QrOrderingPointController extends Controller
     {
         $points = QrOrderingPoint::query()->get()->keyBy(fn (QrOrderingPoint $p) => $p->room_id ? "room:{$p->room_id}" : "table:{$p->dining_table_id}");
 
-        $rooms = Room::query()->with('roomType:id,name')->orderBy('number')->get()->map(fn (Room $room) => [
+        $rooms = Room::query()->orderBy('number')->get()->map(fn (Room $room) => [
             'id' => $room->id,
             'number' => $room->number,
-            'room_type' => $room->roomType?->name,
+            'room_type' => $room->name,
             'qr' => $this->present($points->get("room:{$room->id}")),
         ]);
 

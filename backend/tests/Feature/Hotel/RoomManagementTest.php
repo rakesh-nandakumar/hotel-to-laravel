@@ -3,7 +3,6 @@
 use App\Models\Branch;
 use App\Models\Hotel\Package;
 use App\Models\Hotel\Room;
-use App\Models\Hotel\RoomType;
 use App\Models\Lookup;
 use App\Support\Lookups\LookupType;
 use App\Support\Lookups\RoomStatus;
@@ -20,52 +19,52 @@ beforeEach(function () {
     $this->seed(BranchSeeder::class);
 });
 
-it('lets any authenticated staff view rooms, room types, and packages', function () {
+it('lets any authenticated staff view rooms and packages', function () {
     $this->seed(HotelRoomsSeeder::class);
     $housekeeper = staffWithRole('Housekeeper');
 
     $this->actingAs($housekeeper)->getJson('/api/rooms')->assertOk()->assertJsonCount(13, 'rooms');
-    $this->actingAs($housekeeper)->getJson('/api/rooms/types')->assertOk()->assertJsonCount(5, 'room_types');
     $this->actingAs($housekeeper)->getJson('/api/rooms/packages')->assertOk()->assertJsonCount(4, 'packages');
 });
 
-it('blocks a housekeeper from creating a room type', function () {
+it('blocks a housekeeper from creating a room', function () {
     $housekeeper = staffWithRole('Housekeeper');
 
-    $this->actingAs($housekeeper)->postJson('/api/rooms/types', [
-        'name' => 'New Type', 'max_occupancy' => 2, 'weekday_rate' => 10000, 'weekend_rate' => 12000,
+    $this->actingAs($housekeeper)->postJson('/api/rooms', [
+        'number' => '199', 'max_occupancy' => 2, 'weekday_rate' => 10000, 'weekend_rate' => 12000,
     ])->assertForbidden();
 });
 
-it('lets a manager create a room type and a room under it', function () {
+it('lets a manager create a room directly with embedded details (no separate type)', function () {
     $branch = Branch::query()->active()->firstOrFail();
     $manager = staffWithRole('Manager');
 
-    $typeResponse = $this->actingAs($manager)->postJson('/api/rooms/types', [
-        'name' => 'Deluxe Suite',
-        'max_occupancy' => 3,
-        'weekday_rate' => 20000,
-        'weekend_rate' => 25000,
-    ])->assertCreated();
-
-    $roomTypeId = $typeResponse->json('room_type.id');
-
     $roomResponse = $this->actingAs($manager)->postJson('/api/rooms', [
         'number' => '999',
-        'room_type_id' => $roomTypeId,
+        'name' => 'Deluxe Suite',
+        'max_occupancy' => 3,
+        'bed_config' => 'King + Sofa',
+        'weekday_rate' => 20000,
+        'weekend_rate' => 25000,
+        'amenities' => ['AC', 'WiFi'],
+        'item_checklist' => ['Towels', 'TV remote'],
+        'cleaning_checklist' => ['Mop floor', 'Make bed'],
     ])->assertCreated();
 
     expect($roomResponse->json('room.branch_id'))->toBe($branch->id)
-        ->and($roomResponse->json('room.status.code'))->toBe(RoomStatus::AVAILABLE);
+        ->and($roomResponse->json('room.status.code'))->toBe(RoomStatus::AVAILABLE)
+        ->and($roomResponse->json('room.max_occupancy'))->toBe(3)
+        ->and($roomResponse->json('room.name'))->toBe('Deluxe Suite');
 });
 
-it('rejects a duplicate room type name', function () {
+it('rejects a duplicate room number', function () {
     $manager = staffWithRole('Manager');
-    RoomType::create(['name' => 'Existing Type', 'weekday_rate' => 1, 'weekend_rate' => 1]);
+    $this->seed(HotelRoomsSeeder::class);
+    $existing = Room::query()->firstOrFail();
 
-    $this->actingAs($manager)->postJson('/api/rooms/types', [
-        'name' => 'Existing Type', 'max_occupancy' => 2, 'weekday_rate' => 10000, 'weekend_rate' => 12000,
-    ])->assertUnprocessable()->assertJsonValidationErrors('name');
+    $this->actingAs($manager)->postJson('/api/rooms', [
+        'number' => $existing->number, 'max_occupancy' => 2, 'weekday_rate' => 10000, 'weekend_rate' => 12000,
+    ])->assertUnprocessable()->assertJsonValidationErrors('number');
 });
 
 it('lets a housekeeper update room status but not create rooms', function () {
@@ -73,7 +72,7 @@ it('lets a housekeeper update room status but not create rooms', function () {
     $housekeeper = staffWithRole('Housekeeper');
     $room = Room::query()->statusCode(RoomStatus::AVAILABLE)->firstOrFail();
 
-    $this->actingAs($housekeeper)->postJson('/api/rooms', ['number' => '200', 'room_type_id' => $room->room_type_id])
+    $this->actingAs($housekeeper)->postJson('/api/rooms', ['number' => '200', 'max_occupancy' => 2, 'weekday_rate' => 10000, 'weekend_rate' => 12000])
         ->assertForbidden();
 
     $this->actingAs($housekeeper)->putJson("/api/rooms/{$room->id}/status", ['status' => RoomStatus::MAINTENANCE])
@@ -117,11 +116,20 @@ it('allows other status transitions freely, e.g. maintenance back to dirty', fun
         ->assertJsonPath('room.status.code', RoomStatus::DIRTY);
 });
 
-it('adds and removes a seasonal rate for a room type', function () {
+it('adds and removes a seasonal rate for a room (per-room)', function () {
     $manager = staffWithRole('Manager');
-    $roomType = RoomType::create(['name' => 'Seasonal Test', 'weekday_rate' => 10000, 'weekend_rate' => 12000]);
 
-    $response = $this->actingAs($manager)->postJson("/api/rooms/types/{$roomType->id}/seasonal", [
+    $roomResponse = $this->actingAs($manager)->postJson('/api/rooms', [
+        'number' => '500',
+        'name' => 'Seasonal Test Room',
+        'max_occupancy' => 2,
+        'weekday_rate' => 10000,
+        'weekend_rate' => 12000,
+    ])->assertCreated();
+
+    $roomId = $roomResponse->json('room.id');
+
+    $response = $this->actingAs($manager)->postJson("/api/rooms/{$roomId}/seasonal", [
         'name' => 'Peak', 'start_date' => '2026-12-01', 'end_date' => '2026-12-31', 'rate' => 15000,
     ])->assertCreated();
 
@@ -129,7 +137,11 @@ it('adds and removes a seasonal rate for a room type', function () {
 
     $this->actingAs($manager)->deleteJson("/api/rooms/seasonal/{$seasonalRateId}")->assertOk();
 
-    expect($roomType->seasonalRates()->count())->toBe(0);
+    // Verify via fresh API fetch that the room has no seasonal rates left
+    $roomsResp = $this->actingAs($manager)->getJson('/api/rooms')->assertOk();
+    $roomData = collect($roomsResp->json('rooms'))->firstWhere('id', $roomId);
+    $rates = $roomData['seasonal_rates'] ?? $roomData['seasonalRates'] ?? [];
+    expect($rates)->toBeEmpty();
 });
 
 it('lets a manager update a package but blocks other roles', function () {

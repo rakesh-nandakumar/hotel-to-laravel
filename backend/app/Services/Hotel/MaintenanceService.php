@@ -61,13 +61,12 @@ class MaintenanceService
             // sale — the housekeeping checklist gate still applies).
             if ($status === MaintenanceStatus::RESOLVED && $returnRoomToService
                 && $issue->room_id && $issue->room->status->code === RoomStatus::MAINTENANCE) {
-                $issue->room->loadMissing('roomType');
                 $issue->room->update(['room_status_id' => Lookup::id(LookupType::ROOM_STATUS, RoomStatus::DIRTY)]);
 
                 HousekeepingTask::create([
                     'room_id' => $issue->room_id,
                     'task_status_id' => Lookup::id(LookupType::TASK_STATUS, TaskStatus::PENDING),
-                    'checklist' => collect($issue->room->roomType->cleaning_checklist)
+                    'checklist' => collect($issue->room->cleaning_checklist ?? [])
                         ->map(fn ($item) => ['item' => $item, 'done' => false])->values()->all(),
                     'notes' => "Post-maintenance clean: {$issue->description}",
                 ]);

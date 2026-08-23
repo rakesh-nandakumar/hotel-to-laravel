@@ -9,7 +9,7 @@ class StoreRoomTypeRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return $this->user()?->hasPermissionTo('hotel_room_types.create') ?? false;
+        return $this->user()?->hasPermissionTo('hotel_rooms.create') ?? false;
     }
 
     /**

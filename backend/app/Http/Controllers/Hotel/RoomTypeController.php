@@ -59,7 +59,7 @@ class RoomTypeController extends Controller
 
     public function destroySeasonalRate(Request $request, SeasonalRate $seasonalRate): JsonResponse
     {
-        if (! $request->user()?->hasPermissionTo('hotel_room_types.edit')) {
+        if (! $request->user()?->hasPermissionTo('hotel_rooms.edit')) {
             abort(403);
         }
 

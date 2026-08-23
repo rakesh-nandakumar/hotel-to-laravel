@@ -12,6 +12,8 @@ use App\Models\Hotel\MenuItem;
 use App\Services\AuditLog;
 use App\Services\Hotel\InventoryService;
 use App\Support\RealtimeEvent;
+use Illuminate\Cache\DatabaseStore;
+use Illuminate\Cache\TaggableStore;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -70,7 +72,7 @@ class MenuItemController extends Controller
 
         if ($request->has('page')) {
             $cacheKey = 'menu_items.index.'.md5($request->fullUrl());
-            return response()->json(Cache::remember($cacheKey, 300, function () use ($query, $request) {
+            $payload = $this->rememberMenuItems($cacheKey, 300, function () use ($query, $request) {
                 return [
                     'menu_items' => $query->paginate($request->integer('page_size', 25))->withQueryString(),
                     'stats' => [
@@ -79,7 +81,9 @@ class MenuItemController extends Controller
                         'archived' => MenuItem::query()->where('active', false)->count(),
                     ],
                 ];
-            }));
+            });
+
+            return response()->json($payload);
         }
 
         return response()->json(['menu_items' => $query->get()]);
@@ -109,7 +113,7 @@ class MenuItemController extends Controller
         });
 
         AuditLog::record('menu_item.created', $item, ['item_no' => $itemNo, 'name' => $item->name]);
-        Cache::tags(['menu_items'])->flush();
+        $this->flushMenuItemsCache();
 
         return response()->json([
             'message' => "\"{$item->name}\" created.",
@@ -131,7 +135,7 @@ class MenuItemController extends Controller
         });
 
         AuditLog::record('menu_item.updated', $menuItem, ['name' => $menuItem->name]);
-        Cache::tags(['menu_items'])->flush();
+        $this->flushMenuItemsCache();
 
         return response()->json([
             'message' => 'Item updated.',
@@ -161,7 +165,7 @@ class MenuItemController extends Controller
 
             AuditLog::record('menu_item.archived', $menuItem, ['name' => $name, 'past_orders' => $pastOrders]);
             broadcast(new RealtimeUpdate(RealtimeEvent::MENU, ['removed' => [$name]]));
-            Cache::tags(['menu_items'])->flush();
+            $this->flushMenuItemsCache();
 
             return response()->json([
                 'archived' => true,
@@ -173,7 +177,7 @@ class MenuItemController extends Controller
 
         AuditLog::record('menu_item.deleted', $menuItem, ['name' => $name]);
         broadcast(new RealtimeUpdate(RealtimeEvent::MENU, ['removed' => [$name]]));
-        Cache::tags(['menu_items'])->flush();
+        $this->flushMenuItemsCache();
 
         return response()->json(['archived' => false, 'message' => "\"{$name}\" removed."]);
     }
@@ -267,8 +271,62 @@ class MenuItemController extends Controller
             'sold_out' => $soldOut ? [$menuItem->name] : [],
             'available' => $soldOut ? [] : [$menuItem->name],
         ]));
-        Cache::tags(['menu_items'])->flush();
+        $this->flushMenuItemsCache();
 
         return response()->json(['message' => 'Item availability updated.', 'menu_item' => $menuItem]);
+    }
+
+    /**
+     * Tag-aware remember: uses tags when the store supports them, plain remember otherwise.
+     */
+    private function rememberMenuItems(string $key, int $ttl, \Closure $callback): mixed
+    {
+        $store = Cache::getStore();
+
+        if ($store instanceof TaggableStore) {
+            return Cache::tags(['menu_items'])->remember($key, $ttl, $callback);
+        }
+
+        return Cache::remember($key, $ttl, $callback);
+    }
+
+    /**
+     * Flush menu-items index cache without requiring a taggable store.
+     *
+     * Database/file/array stores throw BadMethodCallException for tags().
+     * We delete the known index keys directly for database, and fall back
+     * to a full flush only for non-database stores where targeted deletion
+     * is impossible (file hashes, array is request-scoped).
+     */
+    private function flushMenuItemsCache(): void
+    {
+        $store = Cache::getStore();
+
+        if ($store instanceof TaggableStore) {
+            Cache::tags(['menu_items'])->flush();
+
+            return;
+        }
+
+        // Database store: keys are stored in `cache` table with optional prefix.
+        // LIKE with % covers both prefixed and non-prefixed keys.
+        try {
+            DB::table('cache')->where('key', 'like', '%menu_items.index.%')->delete();
+        } catch (\Throwable $e) {
+            // Table missing (e.g. testing with sqlite :memory: without cache table)
+            // or wrong connection — ignore and try generic flush below if needed.
+        }
+
+        // For non-database stores (file, array, null) we cannot reliably
+        // enumerate hashed file names. Array is request-scoped so flushing
+        // is cheap; file flush wipes all but is acceptable since production
+        // uses database and tagging would have handled it. Only flush when
+        // not using database to avoid wiping unrelated caches (settings, etc.).
+        if (! $store instanceof DatabaseStore) {
+            try {
+                Cache::flush();
+            } catch (\Throwable $e) {
+            }
+        }
     }
 }

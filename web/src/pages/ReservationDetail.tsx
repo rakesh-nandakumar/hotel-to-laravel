@@ -23,9 +23,7 @@ type Detail = {
   corporate_account: { id: number; company_name: string } | null;
   rooms: {
     id: number; nightly_rate: number;
-    // `rooms.room.status` isn't eager-loaded by ReservationController::show() on
-    // the backend today, so this is normally absent — guarded below.
-    room: { id: number; number: string; status?: Lookup; room_type: { name: string; item_checklist: string[] } };
+    room: { id: number; number: string; name: string | null; item_checklist: string[] | null; status?: Lookup; room_type?: { name: string; item_checklist: string[] } | null };
     bill_to_guest: { id: number; name: string } | null;
   }[];
   // RoomItemCheck::kind() isn't eager-loaded by ReservationController::show()
@@ -138,7 +136,7 @@ export default function ReservationDetail() {
           <div className="space-y-2 text-sm">
             {r.rooms.map((rr) => (
               <div key={rr.id} className="flex items-center justify-between">
-                <span><b>Room {rr.room.number}</b> <span className="text-xs text-slate-400">{rr.room.room_type.name}</span></span>
+                <span><b>Room {rr.room.number}</b> <span className="text-xs text-slate-400">{rr.room.name ?? rr.room.room_type?.name ?? "Standard"}</span></span>
                 <span className="flex items-center gap-2">
                   <span className="text-xs">{lkr(rr.nightly_rate)}/n</span>
                   {rr.room.status && <Badge color={statusColor(rr.room.status.code.toUpperCase())}>{rr.room.status.code.toUpperCase()}</Badge>}
@@ -454,7 +452,7 @@ function CheckInModal({ r, onClose, onDone }: { r: Detail; onClose: () => void; 
   const surcharge = num("billing.early_checkin_surcharge", 0);
   const [applyEarly, setApplyEarly] = useState(early && surcharge > 0);
   const [checks, setChecks] = useState<Record<number, { item: string; ok: boolean; note?: string }[]>>(
-    Object.fromEntries(r.rooms.map((rr) => [rr.room.id, (rr.room.room_type.item_checklist ?? []).map((item) => ({ item, ok: true }))]))
+    Object.fromEntries(r.rooms.map((rr) => [rr.room.id, ((rr.room.item_checklist ?? rr.room.room_type?.item_checklist) ?? []).map((item: string) => ({ item, ok: true }))]))
   );
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);

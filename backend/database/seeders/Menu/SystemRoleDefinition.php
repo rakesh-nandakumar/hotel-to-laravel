@@ -28,7 +28,6 @@ class SystemRoleDefinition
                     'user_management_roles' => ['access', 'view'],
                     'audit_logs' => ['access', 'view'],
                     'hotel_rooms' => ['access', 'create', 'edit', 'edit_status'],
-                    'hotel_room_types' => ['access', 'create', 'edit'],
                     'hotel_packages' => ['access', 'edit'],
                     'hotel_guests' => ['access', 'view', 'create', 'edit', 'loyalty_adjust'],
                     'hotel_corporate' => ['access', 'create', 'edit'],
@@ -101,7 +100,6 @@ class SystemRoleDefinition
                 'permissions' => [
                     'dashboard' => ['access'],
                     'hotel_rooms' => ['access', 'create', 'edit', 'edit_status'],
-                    'hotel_room_types' => ['access', 'create', 'edit'],
                     'hotel_packages' => ['access', 'edit'],
                     'hotel_guests' => ['access', 'view', 'create', 'edit', 'loyalty_adjust'],
                     'hotel_corporate' => ['access', 'create', 'edit'],
@@ -155,7 +153,6 @@ class SystemRoleDefinition
                 'permissions' => [
                     'dashboard' => ['access'],
                     'hotel_rooms' => ['access', 'edit_status'],
-                    'hotel_room_types' => ['access'],
                     'hotel_packages' => ['access'],
                     'hotel_menu_categories' => ['access'],
                     'hotel_menu_items' => ['access'],
@@ -174,7 +171,6 @@ class SystemRoleDefinition
                 'permissions' => [
                     'dashboard' => ['access'],
                     'hotel_rooms' => ['access'],
-                    'hotel_room_types' => ['access'],
                     'hotel_packages' => ['access'],
                     'hotel_menu_categories' => ['access'],
                     'hotel_menu_items' => ['access', 'sold_out'],
@@ -193,7 +189,6 @@ class SystemRoleDefinition
                 'permissions' => [
                     'dashboard' => ['access'],
                     'hotel_rooms' => ['access'],
-                    'hotel_room_types' => ['access'],
                     'hotel_packages' => ['access'],
                     'hotel_menu_categories' => ['access'],
                     'hotel_menu_items' => ['access'],

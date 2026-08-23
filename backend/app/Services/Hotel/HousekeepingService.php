@@ -24,14 +24,14 @@ class HousekeepingService
     /** Manager creates an ad-hoc cleaning task (checkout tasks are auto-created — see Module 4). */
     public function createTask(Room $room, ?int $assignedToId, ?string $notes): HousekeepingTask
     {
-        $room->loadMissing('roomType', 'status');
+        $room->loadMissing('status');
 
         $task = DB::transaction(function () use ($room, $assignedToId, $notes) {
             $task = HousekeepingTask::create([
                 'room_id' => $room->id,
                 'assigned_to_id' => $assignedToId,
                 'task_status_id' => Lookup::id(LookupType::TASK_STATUS, TaskStatus::PENDING),
-                'checklist' => collect($room->roomType->cleaning_checklist)
+                'checklist' => collect($room->cleaning_checklist ?? [])
                     ->map(fn ($item) => ['item' => $item, 'done' => false])->values()->all(),
                 'notes' => $notes,
             ]);

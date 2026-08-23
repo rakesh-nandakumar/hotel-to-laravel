@@ -19,12 +19,21 @@ class StoreRoomRequest extends FormRequest
     {
         return [
             'number' => ['required', 'string', 'max:20', Rule::unique('rooms', 'number')],
-            'room_type_id' => ['required', 'integer', 'exists:room_types,id'],
+            'name' => ['nullable', 'string', 'max:120'],
+            'room_type_id' => ['nullable', 'integer', 'exists:room_types,id'],
             'branch_id' => ['nullable', 'integer', 'exists:warehouses,id'],
             'floor' => ['nullable', 'string', 'max:50'],
             'view' => ['nullable', 'string', 'max:50'],
-            'amenities' => ['array'],
+            'amenities' => ['nullable', 'array'],
             'amenities.*' => ['string', 'max:120'],
+            'max_occupancy' => ['nullable', 'integer', 'min:1', 'required_without:room_type_id'],
+            'bed_config' => ['nullable', 'string', 'max:255'],
+            'weekday_rate' => ['nullable', 'integer', 'min:0', 'required_without:room_type_id'],
+            'weekend_rate' => ['nullable', 'integer', 'min:0', 'required_without:room_type_id'],
+            'item_checklist' => ['nullable', 'array'],
+            'item_checklist.*' => ['string', 'max:255'],
+            'cleaning_checklist' => ['nullable', 'array'],
+            'cleaning_checklist.*' => ['string', 'max:255'],
             'notes' => ['nullable', 'string', 'max:1000'],
         ];
     }

@@ -44,7 +44,9 @@ type ResRow = {
 };
 type AvailRoom = {
   id: number; number: string;
-  room_type: { id: number; name: string; max_occupancy: number };
+  name: string | null; max_occupancy: number; bed_config: string | null;
+  // legacy shape kept for backward compat
+  room_type?: { id: number; name: string; max_occupancy: number };
   stay_total: number;
   nights: { date: string; rate: number }[];
 };
@@ -336,7 +338,7 @@ export function NewBooking({
                 className={`rounded-lg border p-2 text-left text-xs transition ${selRooms.includes(r.id) ? "border-brand-500 bg-brand-50" : "border-slate-200 bg-white hover:border-slate-300"}`}
               >
                 <div className="text-sm font-extrabold">Room {r.number}</div>
-                <div className="truncate text-slate-500">{r.room_type.name} · sleeps {r.room_type.max_occupancy}</div>
+                <div className="truncate text-slate-500">{(r.name ?? r.room_type?.name ?? "Standard")} · sleeps {r.max_occupancy ?? r.room_type?.max_occupancy ?? "—"}</div>
                 <div className="font-semibold text-brand-600">{lkr(r.stay_total)} / stay</div>
               </button>
             ))}

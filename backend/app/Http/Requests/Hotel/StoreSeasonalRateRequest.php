@@ -8,7 +8,7 @@ class StoreSeasonalRateRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return $this->user()?->hasPermissionTo('hotel_room_types.edit') ?? false;
+        return $this->user()?->hasPermissionTo('hotel_rooms.edit') ?? false;
     }
 
     /**

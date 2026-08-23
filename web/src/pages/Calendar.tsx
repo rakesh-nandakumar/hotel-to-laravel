@@ -8,7 +8,7 @@ import { NewBooking } from "./Reservations";
 import { useAuth } from "../lib/auth";
 import clsx from "clsx";
 
-type Room = { id: number; number: string; room_type: { name: string } };
+type Room = { id: number; number: string; name: string | null; room_type?: { name: string } | null };
 type CalRes = {
   id: number; code: string; status: string; check_in: string; check_out: string;
   guest: string; group: string | null; room_ids: number[];
@@ -234,7 +234,7 @@ function TapeChart({ daysShown, start, rooms }: { daysShown: number; start: dayj
                 <tr key={room.id} className="border-b border-slate-100">
                   <td className="sticky left-0 z-10 border-r border-slate-200 bg-white px-2 py-1">
                     <div className="text-sm font-extrabold">{room.number}</div>
-                    <div className="max-w-[70px] truncate text-[9px] text-slate-400">{room.room_type.name}</div>
+                    <div className="max-w-[70px] truncate text-[9px] text-slate-400">{room.name ?? room.room_type?.name ?? "Standard"}</div>
                   </td>
                   {cells.map((res, i) => {
                     const d = days[i];

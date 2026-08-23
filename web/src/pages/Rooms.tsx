@@ -9,28 +9,28 @@ import { useAuth } from "../lib/auth";
 import clsx from "clsx";
 
 type BoardRoom = {
-  id: number; number: string; room_type_id: number; floor: string; view: string; amenities: string[]; notes?: string | null;
+  id: number; number: string; name: string | null; room_type_id: number | null; floor: string; view: string; amenities: string[]; notes?: string | null;
+  max_occupancy: number; bed_config: string | null; weekday_rate: number; weekend_rate: number;
+  item_checklist: string[]; cleaning_checklist: string[];
+  seasonal_rates: { id: number; name: string; start_date: string; end_date: string; rate: number }[];
+  // legacy relation kept for backward compat with rooms that still carry room_type_id
+  room_type?: { id: number; name: string } | null;
   status: { code: string };
-  room_type: { id: number; name: string };
   branch?: { id: number; name: string } | null;
   occupant: { id: number; code: string; check_out: string; guest: { name: string } } | null;
   pending_housekeeping: boolean;
   open_issues: { id: number; description: string; status: string }[];
+  // some backends serialize seasonalRates camelCase
+  seasonalRates?: { id: number; name: string; start_date: string; end_date: string; rate: number }[];
 };
-type RoomType = {
-  id: number; name: string; max_occupancy: number; bed_config: string; weekday_rate: number; weekend_rate: number;
-  amenities: string[]; item_checklist: string[]; cleaning_checklist: string[];
-  seasonal_rates: { id: number; name: string; start_date: string; end_date: string; rate: number }[];
-  rooms: { id: number; number: string }[];
-};
+
 type Pkg = { id: number; code: string; name: string; description: string; price_per_person_per_night: number; meal_inclusions: string[]; active: boolean };
 
 export default function Rooms() {
   const { can } = useAuth();
-  const [tab, setTab] = useState<"board" | "types" | "packages">("board");
+  const [tab, setTab] = useState<"board" | "packages">("board");
   const tabs = [
     { id: "board" as const, label: "Live board" },
-    ...(can("hotel_room_types.access") ? [{ id: "types" as const, label: "Room types & rates" }] : []),
     ...(can("hotel_packages.access") ? [{ id: "packages" as const, label: "Packages" }] : []),
   ];
   return (
@@ -40,7 +40,6 @@ export default function Rooms() {
         <Tabs tabs={tabs} active={tab} onChange={setTab} />
       </div>
       {tab === "board" && <Board />}
-      {tab === "types" && can("hotel_room_types.access") && <Types />}
       {tab === "packages" && can("hotel_packages.access") && <Packages />}
     </div>
   );
@@ -60,13 +59,11 @@ function nextStatuses(current: string): string[] {
 function Board() {
   const { can } = useAuth();
   const { data: roomsData, reload } = useFetch<{ rooms: BoardRoom[] }>("/rooms");
-  const { data: typesData } = useFetch<{ room_types: RoomType[] }>("/rooms/types");
   const rooms = roomsData?.rooms;
-  const roomTypes = typesData?.room_types;
   const [error, setError] = useState("");
   const [q, setQ] = useState("");
   const [floor, setFloor] = useState("");
-  const [type, setType] = useState("");
+  const [cat, setCat] = useState("");
   const [status, setStatus_] = useState<string>("");
   const [edit, setEdit] = useState<BoardRoom | "new" | null>(null);
   const nav = useNavigate();
@@ -81,7 +78,7 @@ function Board() {
 
   const all = rooms ?? [];
   const floors = useMemo(() => [...new Set(all.map((r) => r.floor).filter(Boolean))].sort(), [all]);
-  const types = useMemo(() => [...new Set(all.map((r) => r.room_type.name))].sort(), [all]);
+  const categories = useMemo(() => [...new Set(all.map((r) => r.name ?? r.room_type?.name ?? "Standard"))].sort(), [all]);
   const counts = {
     total: all.length,
     available: all.filter((r) => r.status.code === "available").length,
@@ -90,8 +87,9 @@ function Board() {
     maintenance: all.filter((r) => r.status.code === "maintenance").length,
   };
   const shown = all.filter((r) => {
+    const rCat = r.name ?? r.room_type?.name ?? "Standard";
     if (floor && r.floor !== floor) return false;
-    if (type && r.room_type.name !== type) return false;
+    if (cat && rCat !== cat) return false;
     if (status && r.status.code !== status) return false;
     if (q.trim() && !r.number.toLowerCase().includes(q.trim().toLowerCase())) return false;
     return true;
@@ -140,17 +138,20 @@ function Board() {
           <option value="">All floors</option>
           {floors.map((f) => <option key={f} value={f}>{f}</option>)}
         </select>
-        <select className="input !w-44" value={type} onChange={(e) => setType(e.target.value)}>
-          <option value="">All room types</option>
-          {types.map((t) => <option key={t} value={t}>{t}</option>)}
+        <select className="input !w-44" value={cat} onChange={(e) => setCat(e.target.value)}>
+          <option value="">All categories</option>
+          {categories.map((t) => <option key={t} value={t}>{t}</option>)}
         </select>
-        {(q || floor || type || status) && (
-          <button className="btn-ghost text-xs" onClick={() => { setQ(""); setFloor(""); setType(""); setStatus_(""); }}>Clear filters</button>
+        {(q || floor || cat || status) && (
+          <button className="btn-ghost text-xs" onClick={() => { setQ(""); setFloor(""); setCat(""); setStatus_(""); }}>Clear filters</button>
         )}
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-        {shown.map((r) => (
+        {shown.map((r) => {
+          const catName = r.name ?? r.room_type?.name ?? "Standard";
+          const rates = r.seasonal_rates ?? r.seasonalRates ?? [];
+          return (
           <div key={r.id} className="card p-3">
             <div className="flex items-start justify-between">
               <div className="text-2xl font-black">{r.number}</div>
@@ -163,16 +164,32 @@ function Board() {
                 )}
               </div>
             </div>
-            <div className="mt-0.5 truncate text-xs text-slate-500">{r.room_type.name}{r.floor && ` · floor ${r.floor}`}</div>
-            {(r.view || r.amenities.length > 0 || r.notes) && (
+            <div className="mt-0.5 truncate text-xs text-slate-500">{catName}{r.floor && ` · floor ${r.floor}`}</div>
+            <div className="mt-1 flex flex-wrap gap-2 text-[11px] text-slate-500">
+              <span className="flex items-center gap-1"><Users size={11} /> sleeps {r.max_occupancy ?? "—"}</span>
+              {r.bed_config && <span className="flex items-center gap-1"><BedDouble size={11} /> {r.bed_config}</span>}
+            </div>
+            <div className="mt-1 flex flex-wrap gap-1 text-[11px]">
+              <Badge color="slate">{lkr(r.weekday_rate ?? 0)} wkday</Badge>
+              <Badge color="amber">{lkr(r.weekend_rate ?? 0)} wkend</Badge>
+            </div>
+            {(r.view || (r.amenities?.length ?? 0) > 0 || r.notes) && (
               <div className="mt-1 flex flex-wrap items-center gap-1 text-[10px] text-slate-400">
                 {r.view && <span className="flex items-center gap-0.5"><Eye size={10} /> {r.view}</span>}
-                {r.amenities.length > 0 && <span>· {r.amenities.length} amenit{r.amenities.length === 1 ? "y" : "ies"}</span>}
+                {(r.amenities?.length ?? 0) > 0 && <span>· {(r.amenities ?? []).length} amenit{(r.amenities ?? []).length === 1 ? "y" : "ies"}</span>}
                 {r.notes && (
                   <span className="flex items-center gap-0.5 text-amber-600" title={r.notes}>
                     <StickyNote size={10} /> note
                   </span>
                 )}
+              </div>
+            )}
+            {rates.length > 0 && (
+              <div className="mt-1 flex flex-wrap gap-1">
+                {rates.slice(0,2).map((s) => (
+                  <Badge key={s.id} color="purple">{s.name} @ {lkr(s.rate)}</Badge>
+                ))}
+                {rates.length > 2 && <span className="text-[10px] text-slate-400">+{rates.length-2} more</span>}
               </div>
             )}
             {r.open_issues.length > 0 && (
@@ -207,14 +224,13 @@ function Board() {
               </div>
             )}
           </div>
-        ))}
+        )})}
       </div>
       {all.length === 0 && <Empty text="Loading rooms…" />}
       {all.length > 0 && shown.length === 0 && <Empty text="No rooms match these filters" />}
       {edit && (
         <RoomEditor
           room={edit === "new" ? null : edit}
-          types={roomTypes ?? []}
           onClose={() => { setEdit(null); reload(); }}
         />
       )}
@@ -222,28 +238,43 @@ function Board() {
   );
 }
 
-function RoomEditor({ room, types, onClose }: { room: BoardRoom | null; types: RoomType[]; onClose: () => void }) {
+function RoomEditor({ room, onClose }: { room: BoardRoom | null; onClose: () => void }) {
   const [f, setF] = useState({
     number: room?.number ?? "",
-    roomTypeId: room ? String(room.room_type_id) : types[0] ? String(types[0].id) : "",
+    name: room?.name ?? room?.room_type?.name ?? "",
     floor: room?.floor ?? "",
     view: room?.view ?? "",
+    maxOccupancy: room ? String(room.max_occupancy ?? 2) : "2",
+    bedConfig: room?.bed_config ?? "",
+    weekdayRate: room ? centsToRupees(room.weekday_rate ?? 0) : "",
+    weekendRate: room ? centsToRupees(room.weekend_rate ?? 0) : "",
     amenities: (room?.amenities ?? []).join(", "),
+    itemChecklist: (room?.item_checklist ?? []).join("\n"),
+    cleaningChecklist: (room?.cleaning_checklist ?? []).join("\n"),
     notes: room?.notes ?? "",
   });
+  const [seasonal, setSeasonal] = useState({ name: "", startDate: "", endDate: "", rate: "" });
+  const initialRates = room?.seasonal_rates ?? room?.seasonalRates ?? [];
+  const [rates, setRates] = useState(initialRates);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
   const save = async () => {
     setBusy(true);
     setError("");
-    const body = {
+    const body: Record<string, unknown> = {
       number: f.number.trim(),
-      room_type_id: Number(f.roomTypeId),
-      floor: f.floor.trim(),
-      view: f.view.trim(),
+      name: f.name.trim() || null,
+      floor: f.floor.trim() || null,
+      view: f.view.trim() || null,
+      max_occupancy: parseInt(f.maxOccupancy) || 1,
+      bed_config: f.bedConfig.trim() || null,
+      weekday_rate: toCents(f.weekdayRate),
+      weekend_rate: toCents(f.weekendRate),
       amenities: f.amenities.split(",").map((s) => s.trim()).filter(Boolean),
-      notes: f.notes.trim(),
+      item_checklist: f.itemChecklist.split("\n").map((s) => s.trim()).filter(Boolean),
+      cleaning_checklist: f.cleaningChecklist.split("\n").map((s) => s.trim()).filter(Boolean),
+      notes: f.notes.trim() || null,
     };
     try {
       if (room) await put(`/rooms/${room.id}`, body);
@@ -257,169 +288,36 @@ function RoomEditor({ room, types, onClose }: { room: BoardRoom | null; types: R
   };
 
   return (
-    <Modal open onClose={onClose} title={room ? `Edit Room ${room.number}` : "New room"}>
+    <Modal open onClose={onClose} title={room ? `Edit Room ${room.number}` : "New room"} wide>
+      <p className="mb-3 text-xs text-slate-500">All former “room type” details now live here — per-room category, occupancy, bed config, rates and checklists. No separate types needed.</p>
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Room number *"><input className="input" value={f.number} onChange={(e) => setF({ ...f, number: e.target.value })} autoFocus /></Field>
-        <Field label="Room type *">
-          <select className="input" value={f.roomTypeId} onChange={(e) => setF({ ...f, roomTypeId: e.target.value })}>
-            {types.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-          </select>
-        </Field>
-        <Field label="Floor"><input className="input" value={f.floor} onChange={(e) => setF({ ...f, floor: e.target.value })} placeholder="e.g. 2nd" /></Field>
+        <Field label="Category / type label" hint="e.g. Deluxe, Family 4-Person"><input className="input" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="Standard" /></Field>
+        <Field label="Weekday rate (LKR/night) *"><input className="input" value={f.weekdayRate} onChange={(e) => setF({ ...f, weekdayRate: e.target.value })} placeholder="e.g. 12000" /></Field>
+        <Field label="Weekend/peak rate (LKR/night) *"><input className="input" value={f.weekendRate} onChange={(e) => setF({ ...f, weekendRate: e.target.value })} placeholder="e.g. 15000" /></Field>
+        <Field label="Max occupancy *"><input className="input" value={f.maxOccupancy} onChange={(e) => setF({ ...f, maxOccupancy: e.target.value })} /></Field>
+        <Field label="Bed configuration"><input className="input" value={f.bedConfig} onChange={(e) => setF({ ...f, bedConfig: e.target.value })} placeholder="e.g. 1 King + 1 Single, TBC" /></Field>
+        <Field label="Floor"><input className="input" value={f.floor} onChange={(e) => setF({ ...f, floor: e.target.value })} placeholder="e.g. Ground, 2nd" /></Field>
         <Field label="View"><input className="input" value={f.view} onChange={(e) => setF({ ...f, view: e.target.value })} placeholder="e.g. Garden, Mountain" /></Field>
       </div>
       <div className="mt-3">
-        <Field label="Amenities (comma-separated)"><input className="input" value={f.amenities} onChange={(e) => setF({ ...f, amenities: e.target.value })} placeholder="e.g. Balcony, Bathtub" /></Field>
+        <Field label="Amenities (comma-separated)"><input className="input" value={f.amenities} onChange={(e) => setF({ ...f, amenities: e.target.value })} placeholder="e.g. AC, TV, WiFi, Balcony" /></Field>
+      </div>
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <Field label="Room item checklist (one per line)" hint="Verified at check-in/check-out">
+          <textarea className="input" rows={6} value={f.itemChecklist} onChange={(e) => setF({ ...f, itemChecklist: e.target.value })} placeholder={"Bed linen\nTowels\nTV & remote"} />
+        </Field>
+        <Field label="Cleaning checklist (one per line)" hint="Must be completed before room can be re-sold">
+          <textarea className="input" rows={6} value={f.cleaningChecklist} onChange={(e) => setF({ ...f, cleaningChecklist: e.target.value })} placeholder={"Make bed\nMop floor\nClean bathroom"} />
+        </Field>
       </div>
       <div className="mt-3">
         <Field label="Notes" hint="Internal — visible to staff on the room card"><textarea className="input" rows={2} value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} /></Field>
       </div>
-      <ErrorText error={error} />
-      <button className="btn-primary mt-4 w-full" disabled={busy || !f.number.trim() || !f.roomTypeId} onClick={save}>
-        {busy ? "Saving…" : room ? "Save room" : "Create room"}
-      </button>
-    </Modal>
-  );
-}
 
-function Types() {
-  const { can } = useAuth();
-  const { data: typesData, reload } = useFetch<{ room_types: RoomType[] }>("/rooms/types");
-  const [edit, setEdit] = useState<RoomType | "new" | null>(null);
-  const all = typesData?.room_types ?? [];
-  const totalRooms = all.reduce((s, t) => s + t.rooms.length, 0);
-  const avgWeekday = all.length ? Math.round(all.reduce((s, t) => s + t.weekday_rate, 0) / all.length) : 0;
-
-  return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs text-slate-500">⚠ Rates, occupancy, bed config and amenities are placeholders pending owner confirmation — edit them here (no developer needed).</p>
-        {can("hotel_room_types.create") && <button className="btn-primary shrink-0" onClick={() => setEdit("new")}><Plus size={16} /> New room type</button>}
-      </div>
-      <div className="grid grid-cols-3 gap-3">
-        <div className="card p-4">
-          <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">Room types</div>
-          <div className="mt-1 text-2xl font-extrabold">{all.length}</div>
-        </div>
-        <div className="card p-4">
-          <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">Total rooms</div>
-          <div className="mt-1 text-2xl font-extrabold">{totalRooms}</div>
-        </div>
-        <div className="card p-4">
-          <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">Avg weekday rate</div>
-          <div className="mt-1 text-2xl font-extrabold text-brand-700">{lkr(avgWeekday)}</div>
-        </div>
-      </div>
-      <div className="grid gap-3 md:grid-cols-2">
-        {all.map((t) => (
-          <Card
-            key={t.id}
-            title={
-              <span className="flex items-center gap-2">
-                {t.name} <Badge>{t.rooms.length} room{t.rooms.length === 1 ? "" : "s"}</Badge>
-              </span>
-            }
-            actions={can("hotel_room_types.edit") ? <button className="btn-secondary !py-1" onClick={() => setEdit(t)}>Edit</button> : undefined}
-          >
-            <div className="grid grid-cols-2 gap-2 text-sm">
-              <div className="rounded-lg bg-slate-50 px-3 py-2">
-                <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Weekday</div>
-                <div className="text-base font-extrabold">{lkr(t.weekday_rate)}</div>
-              </div>
-              <div className="rounded-lg bg-amber-50 px-3 py-2">
-                <div className="text-[10px] font-semibold uppercase tracking-wide text-amber-600">Weekend/peak</div>
-                <div className="text-base font-extrabold text-amber-700">{lkr(t.weekend_rate)}</div>
-              </div>
-            </div>
-            <div className="mt-2 flex flex-wrap gap-3 text-xs text-slate-500">
-              <span className="flex items-center gap-1"><Users size={13} /> sleeps {t.max_occupancy}</span>
-              <span className="flex items-center gap-1"><BedDouble size={13} /> {t.bed_config}</span>
-            </div>
-            {t.rooms.length > 0 && <div className="mt-1 text-xs text-slate-400">Rooms: {t.rooms.map((r) => r.number).join(", ")}</div>}
-            {t.amenities.length > 0 && (
-              <div className="mt-2 flex flex-wrap gap-1">
-                {t.amenities.map((a) => <Badge key={a} color="blue">{a}</Badge>)}
-              </div>
-            )}
-            <div className="mt-2 flex flex-wrap gap-1.5 text-[11px] text-slate-400">
-              <span>{t.item_checklist.length} item check{t.item_checklist.length === 1 ? "" : "s"}</span>
-              <span>·</span>
-              <span>{t.cleaning_checklist.length} cleaning step{t.cleaning_checklist.length === 1 ? "" : "s"}</span>
-            </div>
-            {t.seasonal_rates.length > 0 && (
-              <div className="mt-2 flex flex-wrap gap-1">
-                {t.seasonal_rates.map((s) => (
-                  <Badge key={s.id} color="purple">{s.name} {fmtDate(s.start_date)}–{fmtDate(s.end_date)} @ {lkr(s.rate)}</Badge>
-                ))}
-              </div>
-            )}
-          </Card>
-        ))}
-      </div>
-      {all.length === 0 && <Empty text="No room types yet" />}
-      {edit && <TypeEditor type={edit === "new" ? null : edit} onClose={() => { setEdit(null); reload(); }} />}
-    </div>
-  );
-}
-
-function TypeEditor({ type, onClose }: { type: RoomType | null; onClose: () => void }) {
-  const [f, setF] = useState({
-    name: type?.name ?? "",
-    maxOccupancy: type ? String(type.max_occupancy) : "2",
-    bedConfig: type?.bed_config ?? "",
-    weekdayRate: type ? centsToRupees(type.weekday_rate) : "",
-    weekendRate: type ? centsToRupees(type.weekend_rate) : "",
-    amenities: (type?.amenities ?? []).join(", "),
-    itemChecklist: (type?.item_checklist ?? []).join("\n"),
-    cleaningChecklist: (type?.cleaning_checklist ?? []).join("\n"),
-  });
-  const [seasonal, setSeasonal] = useState({ name: "", startDate: "", endDate: "", rate: "" });
-  const [rates, setRates] = useState(type?.seasonal_rates ?? []); // local copy so add/remove reflect immediately
-  const [error, setError] = useState("");
-
-  const save = async () => {
-    setError("");
-    const body = {
-      max_occupancy: parseInt(f.maxOccupancy) || 1,
-      bed_config: f.bedConfig,
-      weekday_rate: toCents(f.weekdayRate),
-      weekend_rate: toCents(f.weekendRate),
-      amenities: f.amenities.split(",").map((s) => s.trim()).filter(Boolean),
-      item_checklist: f.itemChecklist.split("\n").map((s) => s.trim()).filter(Boolean),
-      cleaning_checklist: f.cleaningChecklist.split("\n").map((s) => s.trim()).filter(Boolean),
-    };
-    try {
-      if (type) await put(`/rooms/types/${type.id}`, body);
-      else await post("/rooms/types", { ...body, name: f.name.trim() });
-      onClose();
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  };
-
-  return (
-    <Modal open onClose={onClose} title={type ? `Edit ${type.name}` : "New room type"} wide>
-      <div className="grid gap-3 sm:grid-cols-2">
-        {!type && <Field label="Name *"><input className="input" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} autoFocus /></Field>}
-        <Field label="Weekday rate (LKR/night)"><input className="input" value={f.weekdayRate} onChange={(e) => setF({ ...f, weekdayRate: e.target.value })} /></Field>
-        <Field label="Weekend/peak rate (LKR/night)"><input className="input" value={f.weekendRate} onChange={(e) => setF({ ...f, weekendRate: e.target.value })} /></Field>
-        <Field label="Max occupancy"><input className="input" value={f.maxOccupancy} onChange={(e) => setF({ ...f, maxOccupancy: e.target.value })} /></Field>
-        <Field label="Bed configuration"><input className="input" value={f.bedConfig} onChange={(e) => setF({ ...f, bedConfig: e.target.value })} /></Field>
-      </div>
-      <div className="mt-3">
-        <Field label="Amenities (comma-separated)"><input className="input" value={f.amenities} onChange={(e) => setF({ ...f, amenities: e.target.value })} /></Field>
-      </div>
-      <div className="mt-3 grid gap-3 sm:grid-cols-2">
-        <Field label="Room item checklist (one per line)" hint="Verified at check-in/check-out">
-          <textarea className="input" rows={8} value={f.itemChecklist} onChange={(e) => setF({ ...f, itemChecklist: e.target.value })} />
-        </Field>
-        <Field label="Cleaning checklist (one per line)" hint="Must be completed before room can be re-sold">
-          <textarea className="input" rows={8} value={f.cleaningChecklist} onChange={(e) => setF({ ...f, cleaningChecklist: e.target.value })} />
-        </Field>
-      </div>
-      {type && (
-        <div className="mt-3 rounded-lg bg-slate-50 p-3">
-          <div className="label">Add seasonal/peak rate override</div>
+      {room && (
+        <div className="mt-4 rounded-lg bg-slate-50 p-3">
+          <div className="label">Seasonal / peak rate overrides — per-room</div>
           <div className="flex flex-wrap gap-2">
             <input className="input !w-36" placeholder="Name (e.g. Peak)" value={seasonal.name} onChange={(e) => setSeasonal({ ...seasonal, name: e.target.value })} />
             <input className="input !w-36" type="date" value={seasonal.startDate} onChange={(e) => setSeasonal({ ...seasonal, startDate: e.target.value })} />
@@ -429,7 +327,7 @@ function TypeEditor({ type, onClose }: { type: RoomType | null; onClose: () => v
               className="btn-secondary"
               disabled={!seasonal.name || !seasonal.startDate || !seasonal.endDate || !seasonal.rate}
               onClick={() =>
-                api<{ seasonal_rate: RoomType["seasonal_rates"][number] }>(`/rooms/types/${type.id}/seasonal`, {
+                api<{ seasonal_rate: { id: number; name: string; start_date: string; end_date: string; rate: number } }>(`/rooms/${room.id}/seasonal`, {
                   body: { name: seasonal.name, start_date: seasonal.startDate, end_date: seasonal.endDate, rate: toCents(seasonal.rate) },
                 })
                   .then((r) => {
@@ -447,17 +345,19 @@ function TypeEditor({ type, onClose }: { type: RoomType | null; onClose: () => v
               <span>{s.name}: {fmtDate(s.start_date)} – {fmtDate(s.end_date)} @ {lkr(s.rate)}</span>
               <button
                 className="font-bold text-red-500"
-                onClick={() => api(`/rooms/seasonal/${s.id}`, { method: "DELETE" }).then(() => setRates(rates.filter((x) => x.id !== s.id)))}
+                onClick={() => api(`/rooms/seasonal/${s.id}`, { method: "DELETE" }).then(() => setRates(rates.filter((x) => x.id !== s.id))).catch((e) => setError(e.message))}
               >
                 remove
               </button>
             </div>
           ))}
+          {rates.length === 0 && <div className="mt-1 text-xs text-slate-400">No overrides yet — room uses weekday/weekend rates outside these windows.</div>}
         </div>
       )}
+
       <ErrorText error={error} />
-      <button className="btn-primary mt-4 w-full" disabled={!type && !f.name.trim()} onClick={save}>
-        {type ? "Save room type" : "Create room type"}
+      <button className="btn-primary mt-4 w-full" disabled={busy || !f.number.trim() || !f.weekdayRate || !f.weekendRate} onClick={save}>
+        {busy ? "Saving…" : room ? "Save room" : "Create room"}
       </button>
     </Modal>
   );

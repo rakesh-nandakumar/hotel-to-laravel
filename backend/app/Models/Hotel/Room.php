@@ -18,11 +18,18 @@ class Room extends Model
 
     protected $fillable = [
         'number',
+        'name',
         'room_type_id',
         'branch_id',
         'floor',
         'view',
         'amenities',
+        'max_occupancy',
+        'bed_config',
+        'weekday_rate',
+        'weekend_rate',
+        'item_checklist',
+        'cleaning_checklist',
         'room_status_id',
         'notes',
         'created_by',
@@ -33,12 +40,26 @@ class Room extends Model
     {
         return [
             'amenities' => 'array',
+            'item_checklist' => 'array',
+            'cleaning_checklist' => 'array',
+            'max_occupancy' => 'integer',
+            'weekday_rate' => 'integer',
+            'weekend_rate' => 'integer',
         ];
     }
 
+    /**
+     * Legacy relation — kept for backwards compat where a room still carries a
+     * room_type_id. New rooms store all type info directly; this will be null.
+     */
     public function roomType(): BelongsTo
     {
         return $this->belongsTo(RoomType::class);
+    }
+
+    public function seasonalRates(): HasMany
+    {
+        return $this->hasMany(SeasonalRate::class);
     }
 
     public function branch(): BelongsTo

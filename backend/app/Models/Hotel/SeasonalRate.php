@@ -14,6 +14,7 @@ class SeasonalRate extends Model
     protected $fillable = ['tenant_id',
 
         'room_type_id',
+        'room_id',
         'name',
         'start_date',
         'end_date',
@@ -34,5 +35,10 @@ class SeasonalRate extends Model
     public function roomType(): BelongsTo
     {
         return $this->belongsTo(RoomType::class);
+    }
+
+    public function room(): BelongsTo
+    {
+        return $this->belongsTo(Room::class);
     }
 }

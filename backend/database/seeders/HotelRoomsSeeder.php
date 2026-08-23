@@ -106,17 +106,50 @@ class HotelRoomsSeeder extends Seeder
             );
 
             foreach ($definition['rooms'] as $number) {
-                Room::query()->firstOrCreate(
+                $room = Room::query()->firstOrCreate(
                     ['branch_id' => $branch->id, 'number' => $number],
                     [
                         'room_type_id' => $roomType->id,
                         'branch_id' => $branch->id,
+                        'name' => $definition['name'],
+                        'max_occupancy' => $definition['max_occupancy'],
+                        'bed_config' => 'TBC — pending from owner',
+                        'weekday_rate' => $definition['weekday'] * 100,
+                        'weekend_rate' => $definition['weekend'] * 100,
+                        'item_checklist' => self::ITEM_CHECKLIST,
+                        'cleaning_checklist' => self::CLEANING_CHECKLIST,
                         'floor' => str_starts_with($number, '11') ? 'Upper' : 'Ground',
                         'view' => 'Hill view',
                         'amenities' => self::DEFAULT_AMENITIES,
                         'room_status_id' => $availableStatusId,
                     ],
                 );
+
+                // Ensure per-room seasonal rate clone exists (new flat structure)
+                $room->loadMissing('seasonalRates');
+                if ($room->seasonalRates->isEmpty()) {
+                    $room->seasonalRates()->firstOrCreate(
+                        ['tenant_id' => $tenantId, 'name' => 'December Peak'],
+                        [
+                            'start_date' => '2026-12-15',
+                            'end_date' => '2027-01-05',
+                            'rate' => (int) round($definition['weekend'] * 100 * 1.2),
+                        ],
+                    );
+                }
+
+                // Backfill rooms that existed before flattening (room_type_id set but flat fields empty)
+                if (empty($room->name) || empty($room->weekday_rate)) {
+                    $room->update([
+                        'name' => $room->name ?: $definition['name'],
+                        'max_occupancy' => $room->max_occupancy ?: $definition['max_occupancy'],
+                        'bed_config' => $room->bed_config ?: 'TBC — pending from owner',
+                        'weekday_rate' => $room->weekday_rate ?: $definition['weekday'] * 100,
+                        'weekend_rate' => $room->weekend_rate ?: $definition['weekend'] * 100,
+                        'item_checklist' => $room->item_checklist ?? self::ITEM_CHECKLIST,
+                        'cleaning_checklist' => $room->cleaning_checklist ?? self::CLEANING_CHECKLIST,
+                    ]);
+                }
             }
         }
 

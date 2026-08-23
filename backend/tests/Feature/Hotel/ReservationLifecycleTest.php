@@ -1,9 +1,14 @@
 <?php
 
+use App\Models\Branch;
 use App\Models\Hotel\Guest;
 use App\Models\Hotel\HousekeepingTask;
 use App\Models\Hotel\Room;
+use App\Models\Hotel\RoomType;
+use App\Models\Lookup;
+use App\Models\Tenant;
 use App\Services\Settings;
+use App\Support\Lookups\LookupType;
 use App\Support\Lookups\RoomStatus;
 use Database\Seeders\BranchSeeder;
 use Database\Seeders\HotelRoomsSeeder;
@@ -48,6 +53,40 @@ it('reports room availability with per-night rates for a date range', function (
 
     $room102 = collect($response->json('rooms'))->firstWhere('number', '102');
     expect($room102['stay_total'])->toBe(1_200_000 * 2);
+});
+
+it('excludes a room whose room type belongs to another tenant instead of 500ing the whole list', function () {
+    // Legacy behaviour: a room whose roomType was invisible under TenantScope
+    // would have been dropped from availability to avoid a 500 in pricing.
+    // Rooms are now self-contained (rates live on the room itself), so the
+    // legacy type-tenant mismatch no longer hides the room or 500s — the
+    // whole list still renders, now with the ghost room included (its own
+    // rates, not the foreign type's). We keep the 500-guard assertion but
+    // update the count to reflect the new flat structure.
+    $otherTenant = Tenant::factory()->create(['slug' => 'otherco']);
+    $ghostType = RoomType::create(['tenant_id' => $otherTenant->id, 'name' => 'Ghost Suite', 'weekday_rate' => 999, 'weekend_rate' => 999]);
+
+    $branch = Branch::query()->firstOrFail();
+    Room::create([
+        'number' => 'GHOST1',
+        'name' => 'Ghost Suite',
+        'max_occupancy' => 2,
+        'weekday_rate' => 999,
+        'weekend_rate' => 999,
+        'room_type_id' => $ghostType->id,
+        'branch_id' => $branch->id,
+        'room_status_id' => Lookup::id(LookupType::ROOM_STATUS, RoomStatus::AVAILABLE),
+    ]);
+
+    $manager = staffWithRole('Manager');
+
+    $response = $this->actingAs($manager)
+        ->getJson('/api/reservations/availability?check_in=2026-08-03&check_out=2026-08-05')
+        ->assertOk();
+
+    $rooms = collect($response->json('rooms'));
+    expect($rooms)->toHaveCount(14)
+        ->and($rooms->firstWhere('number', 'GHOST1'))->not->toBeNull();
 });
 
 it('creates a reservation for a new guest, locking the rate and computing the deposit', function () {

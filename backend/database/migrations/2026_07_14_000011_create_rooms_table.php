@@ -11,7 +11,7 @@ return new class extends Migration
         Schema::create('rooms', function (Blueprint $table) {
             $table->id();
             $table->string('number')->unique();
-            $table->foreignId('room_type_id')->constrained('room_types')->restrictOnDelete();
+            $table->foreignId('room_type_id')->nullable()->constrained('room_types')->nullOnDelete();
             $table->foreignId('branch_id')->constrained('warehouses')->restrictOnDelete();
             $table->string('floor')->nullable();
             $table->string('view')->nullable();

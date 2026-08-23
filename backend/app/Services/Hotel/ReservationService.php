@@ -79,7 +79,7 @@ class ReservationService
                 $rate = $roomInput['nightly_rate'] ?? null;
 
                 if ($rate === null) {
-                    $rate = $this->pricing->nightlyRate($room->roomType, $firstNight);
+                    $rate = $this->pricing->nightlyRate($room, $firstNight);
                     if ($corp) {
                         $rate = (int) round($rate * (1 - $corp->discount_pct / 100));
                     }
@@ -154,7 +154,7 @@ class ReservationService
      */
     public function checkIn(Reservation $reservation, array $data, int $staffId): array
     {
-        $reservation->loadMissing(['guest', 'package', 'folio', 'status', 'rooms.room.roomType', 'rooms.room.status']);
+        $reservation->loadMissing(['guest', 'package', 'folio', 'status', 'rooms.room', 'rooms.room.status']);
 
         if (! in_array($reservation->status->code, [ReservationStatus::CONFIRMED, ReservationStatus::PENDING], true)) {
             throw ValidationException::withMessages([
@@ -292,7 +292,7 @@ class ReservationService
      */
     public function checkout(Reservation $reservation, array $data, int $staffId): array
     {
-        $reservation->loadMissing(['guest', 'folio', 'status', 'rooms.room.roomType']);
+        $reservation->loadMissing(['guest', 'folio', 'status', 'rooms.room']);
 
         if (! $reservation->folio) {
             throw ValidationException::withMessages(['reservation' => 'Reservation has no folio.']);
@@ -420,7 +420,7 @@ class ReservationService
                 HousekeepingTask::create([
                     'room_id' => $rr->room_id,
                     'task_status_id' => $pendingTaskId,
-                    'checklist' => collect($rr->room->roomType->cleaning_checklist)
+                    'checklist' => collect($rr->room->cleaning_checklist ?? [])
                         ->map(fn ($item) => ['item' => $item, 'done' => false])->values()->all(),
                     'reservation_id' => $reservation->id,
                 ]);

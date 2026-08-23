@@ -2,6 +2,7 @@
 
 namespace App\Services\Hotel;
 
+use App\Models\Hotel\Room;
 use App\Models\Hotel\RoomType;
 use App\Services\Settings;
 use Carbon\CarbonInterface;
@@ -33,13 +34,18 @@ class RoomPricingService
         return $dates;
     }
 
-    public function nightlyRate(RoomType $roomType, CarbonInterface $date): int
+    /**
+     * Accepts either a Room (new flat structure) or legacy RoomType.
+     * Room is preferred; RoomType is kept for backwards compat where a
+     * room still carries room_type_id and old code paths use it.
+     */
+    public function nightlyRate(Room|RoomType $roomOrType, CarbonInterface $date): int
     {
         $dateStr = $date->toDateString();
 
-        $seasonal = $roomType->relationLoaded('seasonalRates')
-            ? $roomType->seasonalRates
-            : $roomType->seasonalRates()->get();
+        $seasonal = $roomOrType->relationLoaded('seasonalRates')
+            ? $roomOrType->seasonalRates
+            : $roomOrType->seasonalRates()->get();
 
         $override = $seasonal->first(
             fn ($rate) => $dateStr >= $rate->start_date->toDateString() && $dateStr <= $rate->end_date->toDateString(),
@@ -50,10 +56,10 @@ class RoomPricingService
         }
 
         if ($this->isPublicHoliday($dateStr) || $this->isWeekendDay($date)) {
-            return $roomType->weekend_rate;
+            return $roomOrType->weekend_rate;
         }
 
-        return $roomType->weekday_rate;
+        return $roomOrType->weekday_rate;
     }
 
     private function isPublicHoliday(string $dateStr): bool

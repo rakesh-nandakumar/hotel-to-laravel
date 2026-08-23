@@ -10,7 +10,8 @@ return new class extends Migration
     {
         Schema::create('seasonal_rates', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('room_type_id')->constrained('room_types')->cascadeOnDelete();
+            $table->foreignId('room_type_id')->nullable()->constrained('room_types')->cascadeOnDelete();
+            $table->foreignId('room_id')->nullable()->constrained('rooms')->cascadeOnDelete();
             $table->string('name');
             $table->date('start_date');
             $table->date('end_date');
