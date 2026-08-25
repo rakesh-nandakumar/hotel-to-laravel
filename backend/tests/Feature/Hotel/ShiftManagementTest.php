@@ -3,7 +3,6 @@
 use App\Models\Hotel\MenuCategory;
 use App\Models\Hotel\MenuItem;
 use App\Models\Till;
-use Database\Seeders\BranchSeeder;
 use Database\Seeders\LookupSeeder;
 use Database\Seeders\MenuSeeder;
 use Database\Seeders\PermissionsAndRolesSeeder;
@@ -15,7 +14,6 @@ beforeEach(function () {
     $this->seed(PermissionsAndRolesSeeder::class);
     $this->seed(LookupSeeder::class);
     $this->seed(SettingsSeeder::class);
-    $this->seed(BranchSeeder::class);
     $this->seed(TillSeeder::class);
 });
 

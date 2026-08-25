@@ -1,6 +1,5 @@
 <?php
 
-use App\Models\Branch;
 use App\Models\CentralAdmin;
 use App\Models\Role;
 use App\Models\Tenant;
@@ -107,18 +106,13 @@ function staffWithRole(string $roleName): User
 /**
  * Opens a till session for the given staff member — every cash payment or
  * refund now requires one (see BillingService/ApartmentBillingService's
- * till guard). Auto-creates a Branch + Till if the test hasn't seeded one,
- * so callers that don't otherwise care about branches/tills can ignore this.
+ * till guard). Auto-creates a Till if the test hasn't seeded one, so callers
+ * that don't otherwise care about tills can ignore this.
  */
 function openTillFor(User $staff, int $openingBalance = 100_000_000): TillSession
 {
     return app(CurrentContext::class)->runForTenant(Tenant::demo()->id, function () use ($staff, $openingBalance): TillSession {
-        $tillId = Till::query()->value('id');
-        if (! $tillId) {
-            $branchId = Branch::query()->value('id')
-                ?? Branch::create(['tenant_id' => Tenant::demo()->id, 'name' => 'Main Branch', 'is_active' => true, 'country' => 'Sri Lanka'])->id;
-            $tillId = Till::create(['branch_id' => $branchId, 'name' => 'Main Till'])->id;
-        }
+        $tillId = Till::query()->value('id') ?? Till::create(['name' => 'Main Till'])->id;
 
         return app(TillService::class)->openTill($tillId, $staff->id, $openingBalance);
     });

@@ -2,12 +2,12 @@ import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { api, post, put } from "../../lib/api";
 import {
-  Card, Badge, Field, ErrorText, Tabs, statusColor, SimpleTable, Pagination, ConfirmDialog, Modal,
+  Card, Badge, Field, ErrorText, Tabs, statusColor, SimpleTable, Pagination, ConfirmDialog,
 } from "../../components/ui";
 import { ThemeCustomizer, ThemeColors } from "../../components/ThemeCustomizer";
 import { applyTheme } from "../../lib/theme";
 import { RolesTab } from "./TenantRoles";
-import { KeyRound, LogIn, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { KeyRound, LogIn, Plus, RefreshCw, Trash2 } from "lucide-react";
 
 type Tenant = {
   id: number;
@@ -15,7 +15,6 @@ type Tenant = {
   slug: string;
   status: "trial" | "active" | "suspended" | "cancelled";
   environment: "live" | "test";
-  branches_count: number;
   users_count: number;
   audit_logs_count: number;
 };
@@ -23,7 +22,7 @@ type OwnerAdmin = { id: number; name: string; email: string; status: string; cre
 type SettingRow = { key: string; type: string; category: string; label: string; hint: string | null; value: string; overridden: boolean };
 type ModuleRow = { key: string; name: string; description: string; enabled: boolean };
 
-type Tab = "overview" | "settings" | "modules" | "roles" | "branches" | "test-instance" | "audit";
+type Tab = "overview" | "settings" | "modules" | "roles" | "test-instance" | "audit";
 
 export default function CentralTenantDetail() {
   const { id } = useParams<{ id: string }>();
@@ -100,7 +99,6 @@ export default function CentralTenantDetail() {
           { id: "settings", label: "Settings" },
           { id: "modules", label: "Modules" },
           { id: "roles", label: "Roles" },
-          { id: "branches", label: "Branches" },
           { id: "test-instance", label: "Test instance" },
           { id: "audit", label: "Audit log" },
         ]}
@@ -112,7 +110,6 @@ export default function CentralTenantDetail() {
       {tab === "settings" && <SettingsTab tenantId={tenant.id} />}
       {tab === "modules" && <ModulesTab tenantId={tenant.id} />}
       {tab === "roles" && <RolesTab tenantId={tenant.id} tenantName={tenant.name} />}
-      {tab === "branches" && <BranchesTab tenantId={tenant.id} />}
       {tab === "test-instance" && <TestInstanceTab tenant={tenant} />}
       {tab === "audit" && <AuditLogTab tenantId={tenant.id} />}
     </div>
@@ -456,175 +453,6 @@ function ModulesTab({ tenantId }: { tenantId: number }) {
   );
 }
 
-type Branch = {
-  id: number;
-  name: string;
-  phone: string | null;
-  email: string | null;
-  address: string | null;
-  city: string | null;
-  country: string | null;
-  is_active: boolean;
-  tills_count: number;
-};
-
-function BranchesTab({ tenantId }: { tenantId: number }) {
-  const [branches, setBranches] = useState<Branch[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [editing, setEditing] = useState<Branch | null>(null);
-  const [creating, setCreating] = useState(false);
-  const [deleting, setDeleting] = useState<Branch | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-
-  const load = () => api<{ branches: Branch[] }>(`/central/tenants/${tenantId}/branches`).then((d) => setBranches(d.branches));
-
-  useEffect(() => {
-    load().finally(() => setLoading(false));
-  }, [tenantId]);
-
-  const doDelete = async () => {
-    if (!deleting) return;
-    setBusy(true);
-    setError("");
-    try {
-      await api(`/central/tenants/${tenantId}/branches/${deleting.id}`, { method: "DELETE" });
-      setDeleting(null);
-      load();
-    } catch (err) {
-      setError((err as Error).message);
-      setDeleting(null);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-black text-slate-700">Branches ({branches.length})</h2>
-        <button className="btn-primary" onClick={() => setCreating(true)}>
-          <Plus size={16} /> New branch
-        </button>
-      </div>
-      <ErrorText error={error} />
-
-      <Card>
-        {loading ? (
-          <p className="py-8 text-center text-sm text-slate-400">Loading…</p>
-        ) : (
-          <SimpleTable<Branch>
-            columns={[
-              { key: "name", label: "Name", render: (b) => <span className="font-semibold text-slate-800">{b.name}</span> },
-              { key: "city", label: "City", render: (b) => <span className="text-slate-500">{b.city ?? "—"}</span> },
-              { key: "is_active", label: "Status", render: (b) => <Badge color={b.is_active ? "emerald" : "slate"}>{b.is_active ? "Active" : "Inactive"}</Badge> },
-              { key: "tills_count", label: "Tills", align: "right" },
-              {
-                key: "actions",
-                label: "",
-                align: "right",
-                render: (b) => (
-                  <div className="flex justify-end gap-1">
-                    <button className="btn-ghost" title="Edit" onClick={() => setEditing(b)}><Pencil size={14} /></button>
-                    <button className="btn-ghost text-red-500" title="Delete" onClick={() => setDeleting(b)}><Trash2 size={14} /></button>
-                  </div>
-                ),
-              },
-            ]}
-            rows={branches}
-            rowKey={(b) => b.id}
-            empty="No branches yet"
-          />
-        )}
-      </Card>
-
-      {(creating || editing) && (
-        <BranchModal
-          tenantId={tenantId}
-          branch={editing}
-          onClose={() => { setCreating(false); setEditing(null); }}
-          onSaved={() => { setCreating(false); setEditing(null); load(); }}
-        />
-      )}
-
-      <ConfirmDialog
-        open={deleting !== null}
-        title="Delete branch"
-        message={<>Deleting <strong>{deleting?.name}</strong> is only possible while it has no tills or rooms.</>}
-        confirmLabel="Delete"
-        tone="danger"
-        busy={busy}
-        onConfirm={doDelete}
-        onClose={() => setDeleting(null)}
-      />
-    </div>
-  );
-}
-
-function BranchModal({ tenantId, branch, onClose, onSaved }: { tenantId: number; branch: Branch | null; onClose: () => void; onSaved: () => void }) {
-  const [name, setName] = useState(branch?.name ?? "");
-  const [phone, setPhone] = useState(branch?.phone ?? "");
-  const [email, setEmail] = useState(branch?.email ?? "");
-  const [address, setAddress] = useState(branch?.address ?? "");
-  const [city, setCity] = useState(branch?.city ?? "");
-  const [country, setCountry] = useState(branch?.country ?? "");
-  const [isActive, setIsActive] = useState(branch?.is_active ?? true);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setBusy(true);
-    setError("");
-    try {
-      const body = { name, phone: phone || null, email: email || null, address: address || null, city: city || null, country: country || null, is_active: isActive };
-      if (branch) await put(`/central/tenants/${tenantId}/branches/${branch.id}`, body);
-      else await post(`/central/tenants/${tenantId}/branches`, body);
-      onSaved();
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <Modal open onClose={onClose} title={branch ? `Edit ${branch.name}` : "New branch"}>
-      <form onSubmit={submit} className="space-y-3">
-        <ErrorText error={error} />
-        <Field label="Name" hint="Unique within the tenant.">
-          <input className="input" value={name} onChange={(e) => setName(e.target.value)} required autoFocus />
-        </Field>
-        <Field label="Phone">
-          <input className="input" value={phone} onChange={(e) => setPhone(e.target.value)} />
-        </Field>
-        <Field label="Email">
-          <input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
-        </Field>
-        <Field label="Address">
-          <input className="input" value={address} onChange={(e) => setAddress(e.target.value)} />
-        </Field>
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="City">
-            <input className="input" value={city} onChange={(e) => setCity(e.target.value)} />
-          </Field>
-          <Field label="Country">
-            <input className="input" value={country} onChange={(e) => setCountry(e.target.value)} />
-          </Field>
-        </div>
-        <label className="flex items-center gap-2 text-sm text-slate-600">
-          <input type="checkbox" className="h-4 w-4 rounded accent-brand-600" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} />
-          Branch active
-        </label>
-        <div className="flex justify-end gap-2 pt-2">
-          <button type="button" className="btn-secondary" onClick={onClose} disabled={busy}>Cancel</button>
-          <button className="btn-primary" disabled={busy}>{busy ? "Saving…" : "Save"}</button>
-        </div>
-      </form>
-    </Modal>
-  );
-}
-
 type TestInstance = {
   id: number;
   name: string;
@@ -792,7 +620,6 @@ const AUDIT_ACTIONS = [
   "impersonation.started",
   "tenant.created", "tenant.updated", "tenant.suspended", "tenant.resumed", "tenant.admin_password_reset",
   "tenant_setting.changed", "tenant_module.toggled",
-  "branch.created", "branch.updated", "branch.deleted",
   "admin.created", "admin.updated", "admin.deleted",
   "test_instance.created", "test_instance.synced", "test_instance.destroyed",
   "role.created", "role.updated", "role.deleted", "role.duplicated", "role.toggled_active",

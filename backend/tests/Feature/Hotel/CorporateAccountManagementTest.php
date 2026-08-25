@@ -3,7 +3,6 @@
 use App\Models\Hotel\CorporateAccount;
 use App\Models\Hotel\Guest;
 use App\Models\Hotel\Room;
-use Database\Seeders\BranchSeeder;
 use Database\Seeders\HotelRoomsSeeder;
 use Database\Seeders\LookupSeeder;
 use Database\Seeders\MenuSeeder;
@@ -69,7 +68,6 @@ it('requires a company name to create a corporate account', function () {
 });
 
 it('computes outstanding from corporate-credit charges minus settlements, and supports statement + settle', function () {
-    $this->seed(BranchSeeder::class);
     $this->seed(SettingsSeeder::class);
     $this->seed(HotelRoomsSeeder::class);
 

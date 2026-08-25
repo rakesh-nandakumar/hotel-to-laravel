@@ -4,7 +4,6 @@ use App\Models\Hotel\Room;
 use App\Models\Lookup;
 use App\Support\Lookups\LookupType;
 use App\Support\Lookups\RoomStatus;
-use Database\Seeders\BranchSeeder;
 use Database\Seeders\HotelRoomsSeeder;
 use Database\Seeders\LookupSeeder;
 use Database\Seeders\MenuSeeder;
@@ -14,7 +13,6 @@ beforeEach(function () {
     $this->seed(MenuSeeder::class);
     $this->seed(PermissionsAndRolesSeeder::class);
     $this->seed(LookupSeeder::class);
-    $this->seed(BranchSeeder::class);
     $this->seed(HotelRoomsSeeder::class);
 });
 

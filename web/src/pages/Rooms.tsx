@@ -16,7 +16,6 @@ type BoardRoom = {
   // legacy relation kept for backward compat with rooms that still carry room_type_id
   room_type?: { id: number; name: string } | null;
   status: { code: string };
-  branch?: { id: number; name: string } | null;
   occupant: { id: number; code: string; check_out: string; guest: { name: string } } | null;
   pending_housekeeping: boolean;
   open_issues: { id: number; description: string; status: string }[];

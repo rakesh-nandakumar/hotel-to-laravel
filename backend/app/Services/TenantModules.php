@@ -43,7 +43,7 @@ class TenantModules
      * Whether the CURRENT tenant context has the given fine-grained
      * module_key's licensed feature group enabled. Core module_keys (not
      * covered by any catalog module) always pass. Central admins and console
-     * execution bypass entirely, mirroring TenantScope/BranchScope.
+     * execution bypass entirely, mirroring TenantScope.
      */
     public static function isEnabled(string $fineModuleKey): bool
     {

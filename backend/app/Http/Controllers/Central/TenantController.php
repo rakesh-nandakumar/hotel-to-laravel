@@ -20,10 +20,9 @@ use Illuminate\Validation\Rule;
 
 /**
  * Tenant provisioning/management — the core of the "master control" panel.
- * Every tenant's own branches/users/settings/modules are reachable from here
- * for the platform operator, but this controller itself only manages the
- * Tenant row (see TenantSettingController, TenantModuleController and
- * CentralBranchController).
+ * Every tenant's own users/settings/modules are reachable from here for the
+ * platform operator, but this controller itself only manages the Tenant row
+ * (see TenantSettingController, TenantModuleController).
  */
 class TenantController extends Controller
 {
@@ -32,7 +31,7 @@ class TenantController extends Controller
     public function index(): JsonResponse
     {
         $tenants = Tenant::query()
-            ->withCount(['branches', 'users'])
+            ->withCount(['users'])
             ->orderBy('name')
             ->get();
 
@@ -41,7 +40,7 @@ class TenantController extends Controller
 
     public function show(Tenant $tenant): JsonResponse
     {
-        $tenant->loadCount(['branches', 'users', 'auditLogs']);
+        $tenant->loadCount(['users', 'auditLogs']);
 
         $owner = $this->ownerAdmin($tenant);
 

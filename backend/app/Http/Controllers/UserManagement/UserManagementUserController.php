@@ -6,7 +6,6 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\UserManagement\BulkActionRequest;
 use App\Http\Requests\UserManagement\StoreUserRequest;
 use App\Http\Requests\UserManagement\UpdateUserRequest;
-use App\Models\Branch;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\User;
@@ -95,7 +94,6 @@ class UserManagementUserController extends Controller
             ]);
 
             $overrides = $this->applyRolesAndOverrides($user, $roleIds, $permissions, $actor);
-            $user->warehouses()->sync($data['warehouse_ids'] ?? []);
 
             AuditLog::record('user.created', $user, [
                 'roles' => $this->roleNames($roleIds),
@@ -114,10 +112,7 @@ class UserManagementUserController extends Controller
     {
         $this->authorize('view', $user);
 
-        $user->load([
-            'roles:id,name',
-            'warehouses:id,name',
-        ]);
+        $user->load('roles:id,name');
 
         return response()->json([
             'user' => [
@@ -128,7 +123,6 @@ class UserManagementUserController extends Controller
                 'status' => $user->status,
                 'last_login_at' => $user->last_login_at,
                 'roles' => $user->roles->map(fn ($r) => ['id' => $r->id, 'name' => $r->name])->all(),
-                'warehouses' => $user->warehouses->map(fn ($w) => ['id' => $w->id, 'name' => $w->name])->all(),
             ],
             // Per-permission provenance for the audit view.
             'permission_sources' => $user->permissionSources(),
@@ -139,10 +133,7 @@ class UserManagementUserController extends Controller
     {
         $this->authorize('update', $user);
 
-        $user->load([
-            'roles:id,name',
-            'warehouses:id,name',
-        ]);
+        $user->load('roles:id,name');
 
         return response()->json(array_merge($this->formProps(), [
             'user' => [
@@ -156,7 +147,6 @@ class UserManagementUserController extends Controller
                 'two_factor_required' => (bool) $user->two_factor_required,
                 // The matrix edits the *effective* set; the backend re-derives overrides.
                 'permissions' => $user->computeEffectivePermissionNames()->all(),
-                'warehouse_ids' => $user->warehouses->pluck('id')->all(),
                 'two_factor_confirmed' => $user->two_factor_confirmed_at !== null,
             ],
         ]));
@@ -198,7 +188,6 @@ class UserManagementUserController extends Controller
             $user->save();
 
             $overrides = $this->applyRolesAndOverrides($user, $roleIds, $permissions, $actor);
-            $user->warehouses()->sync($data['warehouse_ids'] ?? []);
 
             foreach ($original as $field => $oldValue) {
                 $newValue = $user->{$field};
@@ -486,8 +475,6 @@ class UserManagementUserController extends Controller
             $r->id => $r->permissions->pluck('name')->values()->all(),
         ]);
 
-        $warehouses = Branch::query()->select('id', 'name')->orderBy('name')->get();
-
         return array_merge($matrix, [
             'roles' => $roles->map(fn (Role $r) => [
                 'id' => $r->id,
@@ -496,7 +483,6 @@ class UserManagementUserController extends Controller
                 'description' => $r->description,
             ])->values()->all(),
             'rolePermissions' => $rolePermissions,
-            'warehouses' => $warehouses,
             'grantable_permissions' => $isFullAdmin
                 ? null
                 : $actorPermissions->values()->all(),

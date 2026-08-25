@@ -79,13 +79,6 @@ function seedLiveTenant(Tenant $tenant): array
         'role_id' => $role,
     ]);
 
-    $branch = DB::table('warehouses')->insertGetId([
-        'tenant_id' => $tenant->id,
-        'name' => 'Downtown',
-        'manager_user_id' => $owner,
-    ]);
-    DB::table('user_warehouse_access')->insert(['user_id' => $staff, 'warehouse_id' => $branch]);
-
     $roomType = DB::table('room_types')->insertGetId([
         'tenant_id' => $tenant->id,
         'name' => 'Deluxe',
@@ -96,7 +89,6 @@ function seedLiveTenant(Tenant $tenant): array
         'tenant_id' => $tenant->id,
         'number' => '101',
         'room_type_id' => $roomType,
-        'branch_id' => $branch,
         'room_status_id' => $roomStatus,
     ]);
     DB::table('seasonal_rates')->insert([
@@ -171,7 +163,7 @@ function seedLiveTenant(Tenant $tenant): array
         'name' => 'Extra Hot',
     ]);
 
-    $till = DB::table('tills')->insertGetId(['tenant_id' => $tenant->id, 'branch_id' => $branch, 'name' => 'Main Till']);
+    $till = DB::table('tills')->insertGetId(['tenant_id' => $tenant->id, 'name' => 'Main Till']);
     $session = DB::table('till_sessions')->insertGetId([
         'tenant_id' => $tenant->id,
         'till_id' => $till,
@@ -253,7 +245,6 @@ function seedLiveTenant(Tenant $tenant): array
         'hourly_rate' => 500,
         'half_day_rate' => 2000,
         'full_day_rate' => 3500,
-        'branch_id' => $branch,
     ]);
     $venueBooking = DB::table('venue_bookings')->insertGetId([
         'tenant_id' => $tenant->id,
@@ -332,7 +323,7 @@ function seedLiveTenant(Tenant $tenant): array
     ]);
     DB::table('tenant_modules')->insert(['tenant_id' => $tenant->id, 'module_key' => 'hotel']);
 
-    $property = DB::table('apartment_properties')->insertGetId(['tenant_id' => $tenant->id, 'name' => 'Residences', 'branch_id' => $branch]);
+    $property = DB::table('apartment_properties')->insertGetId(['tenant_id' => $tenant->id, 'name' => 'Residences']);
     $unitType = DB::table('apartment_unit_types')->insertGetId(['tenant_id' => $tenant->id, 'name' => 'Studio']);
     $unit = DB::table('apartment_units')->insertGetId([
         'tenant_id' => $tenant->id,
@@ -369,7 +360,7 @@ function seedLiveTenant(Tenant $tenant): array
     ]);
 
     return compact(
-        'owner', 'role', 'staff', 'branch', 'roomType', 'room', 'guest', 'reservation',
+        'owner', 'role', 'staff', 'roomType', 'room', 'guest', 'reservation',
         'area', 'table', 'category', 'menuItem', 'ingredient', 'addOn', 'modGroup',
         'modifier', 'till', 'session', 'order', 'orderItem', 'groupBooking', 'corporate',
         'package', 'folio', 'venue', 'venueBooking', 'run', 'property', 'unitType',
@@ -382,7 +373,6 @@ function assertTenantIsolation(array $live, Tenant $test, int $liveTenantId): vo
     $testOwner = DB::table('users')->where('tenant_id', $test->id)->where('name', 'Live Owner')->first();
     $testStaff = DB::table('users')->where('tenant_id', $test->id)->where('name', 'Live Staff')->first();
     $testRole = DB::table('roles')->where('tenant_id', $test->id)->first();
-    $testBranch = DB::table('warehouses')->where('tenant_id', $test->id)->first();
     $testRoom = DB::table('rooms')->where('tenant_id', $test->id)->first();
     $testReservation = DB::table('reservations')->where('tenant_id', $test->id)->first();
     $testOrder = DB::table('orders')->where('tenant_id', $test->id)->first();
@@ -393,13 +383,11 @@ function assertTenantIsolation(array $live, Tenant $test, int $liveTenantId): vo
     // Every row moved to the test tenant.
     expect($testOwner->id)->not->toBe($live['owner']);
     expect($testRole->id)->not->toBe($live['role']);
-    expect($testBranch->id)->not->toBe($live['branch']);
     expect($testRoom->id)->not->toBe($live['room']);
 
     // FK remapping across the users↔roles cycle and every domain edge.
     expect($testOwner->role_id)->toBe($testRole->id);
     expect((int) DB::table('roles')->where('id', $testRole->id)->value('created_by'))->toBe($testOwner->id);
-    expect($testRoom->branch_id)->toBe($testBranch->id);
     expect($testRoom->room_type_id)->not->toBe($live['roomType']);
     expect($testReservation->guest_id)->toBe($testGuest->id);
     expect($testOrder->staff_id)->toBe($testStaff->id);
@@ -416,8 +404,6 @@ function assertTenantIsolation(array $live, Tenant $test, int $liveTenantId): vo
     expect($testUserRoles->role_id)->toBe($testRole->id);
     $testRolePermission = DB::table('role_permissions')->where('role_id', $testRole->id)->first();
     expect($testRolePermission->permission_id)->toBe($live['permissionId']);
-    $testAccess = DB::table('user_warehouse_access')->where('user_id', $testStaff->id)->first();
-    expect($testAccess->warehouse_id)->toBe($testBranch->id);
 
     // Settings and module flags copied.
     expect(DB::table('settings')->where('tenant_id', $test->id)->where('key', 'hotel.name')->value('value'))->toBe('Live Hotel');
@@ -442,7 +428,7 @@ it('creates a test instance with fully remapped business data', function () {
     assertTenantIsolation($ids, $test, $live->id);
 
     foreach ([
-        'users', 'roles', 'warehouses', 'rooms', 'guests', 'reservations', 'orders',
+        'users', 'roles', 'rooms', 'guests', 'reservations', 'orders',
         'order_items', 'tills', 'till_sessions', 'till_movements', 'folios', 'folio_lines',
         'payments', 'venues', 'venue_bookings', 'night_audits', 'payroll_runs',
         'payroll_lines', 'settings', 'tenant_modules', 'apartment_properties',
@@ -503,7 +489,6 @@ it('syncs a test instance from live, atomically replacing its data', function ()
         'tenant_id' => $live->id,
         'number' => '202',
         'room_type_id' => $liveRoomType,
-        'branch_id' => DB::table('warehouses')->where('tenant_id', $live->id)->value('id'),
         'room_status_id' => DB::table('lookups')->where('type', 'room_status')->value('id'),
     ]);
     DB::table('orders')->where('tenant_id', $live->id)->update(['total' => 9999]);

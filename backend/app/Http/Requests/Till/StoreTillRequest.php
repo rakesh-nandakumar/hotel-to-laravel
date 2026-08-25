@@ -17,7 +17,6 @@ class StoreTillRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'branch_id' => ['required', 'integer', 'exists:warehouses,id'],
             'name' => ['required', 'string', 'max:100'],
         ];
     }

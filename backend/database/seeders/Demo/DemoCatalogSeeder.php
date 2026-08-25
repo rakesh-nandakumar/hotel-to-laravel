@@ -2,7 +2,6 @@
 
 namespace Database\Seeders\Demo;
 
-use App\Models\Branch;
 use App\Models\Hotel\Ingredient;
 use App\Models\Hotel\IngredientBatch;
 use App\Models\Hotel\LaundryItem;
@@ -327,8 +326,6 @@ class DemoCatalogSeeder extends Seeder
 
     private function seedVenues(): void
     {
-        $branch = Branch::query()->active()->firstOrFail();
-
         foreach (self::VENUES as $def) {
             Venue::query()->firstOrCreate(
                 ['name' => $def['name']],
@@ -339,7 +336,6 @@ class DemoCatalogSeeder extends Seeder
                     'half_day_rate' => $def['half_day'] * 100,
                     'full_day_rate' => $def['full_day'] * 100,
                     'active' => true,
-                    'branch_id' => $branch->id,
                 ],
             );
         }

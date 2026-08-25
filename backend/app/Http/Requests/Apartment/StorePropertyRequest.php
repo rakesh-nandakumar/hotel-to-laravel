@@ -22,7 +22,6 @@ class StorePropertyRequest extends FormRequest
             'address' => ['nullable', 'string', 'max:255'],
             'phone' => ['nullable', 'string', 'max:30'],
             'email' => ['nullable', 'string', 'email', 'max:255'],
-            'branch_id' => ['nullable', 'integer', 'exists:warehouses,id'],
             'notes' => ['nullable', 'string', 'max:1000'],
         ];
     }

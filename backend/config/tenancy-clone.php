@@ -33,15 +33,12 @@
 return [
 
     'tables' => [
-        // --- Users / roles / branches (cycle: roles.created_by <-> users.role_id) ---
+        // --- Users / roles (cycle: roles.created_by <-> users.role_id) ---
         'roles' => [
             'fks' => ['created_by' => 'users', 'updated_by' => 'users'],
         ],
         'users' => [
             'fks' => ['role_id' => 'roles'],
-        ],
-        'warehouses' => [
-            'fks' => ['manager_user_id' => 'users', 'created_by' => 'users', 'updated_by' => 'users', 'deleted_by' => 'users'],
         ],
         'settings' => ['fks' => ['updated_by' => 'users']],
         'tenant_modules' => ['fks' => []],
@@ -55,7 +52,7 @@ return [
         // --- Rooms / hotel catalog ---
         'room_types' => ['fks' => ['created_by' => 'users', 'updated_by' => 'users']],
         'rooms' => [
-            'fks' => ['room_type_id' => 'room_types', 'branch_id' => 'warehouses', 'created_by' => 'users', 'updated_by' => 'users'],
+            'fks' => ['room_type_id' => 'room_types', 'created_by' => 'users', 'updated_by' => 'users'],
         ],
         'seasonal_rates' => ['fks' => ['room_type_id' => 'room_types', 'created_by' => 'users', 'updated_by' => 'users']],
 
@@ -94,7 +91,7 @@ return [
             'fks' => ['order_id' => 'orders', 'menu_item_id' => 'pos_menu_items', 'add_on_id' => 'add_ons'],
         ],
         'order_item_modifiers' => ['fks' => ['order_item_id' => 'order_items', 'menu_item_modifier_id' => 'menu_item_modifiers']],
-        'tills' => ['fks' => ['branch_id' => 'warehouses', 'created_by' => 'users', 'updated_by' => 'users']],
+        'tills' => ['fks' => ['created_by' => 'users', 'updated_by' => 'users']],
         'till_sessions' => ['fks' => ['till_id' => 'tills', 'opened_by' => 'users', 'closed_by' => 'users']],
         'till_movements' => ['fks' => ['till_session_id' => 'till_sessions', 'performed_by' => 'users', 'approved_by' => 'users']],
         'reservations' => [
@@ -121,7 +118,7 @@ return [
         ],
 
         // --- Venues / events ---
-        'venues' => ['fks' => ['branch_id' => 'warehouses', 'created_by' => 'users', 'updated_by' => 'users']],
+        'venues' => ['fks' => ['created_by' => 'users', 'updated_by' => 'users']],
         'venue_bookings' => ['fks' => ['venue_id' => 'venues', 'guest_id' => 'guests', 'created_by' => 'users', 'updated_by' => 'users']],
 
         // --- Housekeeping / maintenance / QR ---
@@ -143,7 +140,7 @@ return [
         'packages' => ['fks' => ['created_by' => 'users', 'updated_by' => 'users']],
 
         // --- Apartment module ---
-        'apartment_properties' => ['fks' => ['branch_id' => 'warehouses', 'created_by' => 'users', 'updated_by' => 'users']],
+        'apartment_properties' => ['fks' => ['created_by' => 'users', 'updated_by' => 'users']],
         'apartment_unit_types' => ['fks' => ['created_by' => 'users', 'updated_by' => 'users']],
         'apartment_units' => [
             'fks' => ['property_id' => 'apartment_properties', 'unit_type_id' => 'apartment_unit_types', 'created_by' => 'users', 'updated_by' => 'users'],
@@ -173,7 +170,6 @@ return [
     'pivots' => [
         'user_roles' => ['fks' => ['user_id' => 'users', 'role_id' => 'roles']],
         'role_permissions' => ['fks' => ['role_id' => 'roles'], 'skip_remap' => ['permission_id']],
-        'user_warehouse_access' => ['fks' => ['user_id' => 'users', 'warehouse_id' => 'warehouses']],
         'user_permission_overrides' => ['fks' => ['user_id' => 'users', 'granted_by' => 'users'], 'skip_remap' => ['permission_id']],
     ],
 

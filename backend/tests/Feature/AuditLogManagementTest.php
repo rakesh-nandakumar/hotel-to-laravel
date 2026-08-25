@@ -3,7 +3,6 @@
 use App\Models\AuditLog;
 use App\Models\Hotel\Room;
 use App\Services\AuditLog as AuditLogService;
-use Database\Seeders\BranchSeeder;
 use Database\Seeders\HotelRoomsSeeder;
 use Database\Seeders\LookupSeeder;
 use Database\Seeders\MenuSeeder;
@@ -13,7 +12,6 @@ beforeEach(function () {
     $this->seed(MenuSeeder::class);
     $this->seed(PermissionsAndRolesSeeder::class);
     $this->seed(LookupSeeder::class);
-    $this->seed(BranchSeeder::class);
     $this->seed(HotelRoomsSeeder::class);
 });
 

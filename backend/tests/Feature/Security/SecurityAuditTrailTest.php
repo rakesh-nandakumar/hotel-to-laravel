@@ -51,7 +51,6 @@ it('records user creation and permission changes', function () {
         'status' => User::STATUS_ACTIVE,
         'role_ids' => [],
         'permissions' => ['audit_logs.access'],
-        'warehouse_ids' => [],
     ]);
 
     $log = AuditLog::where('action', 'user.created')->where('actor_id', $admin->id)->first();

@@ -1,6 +1,5 @@
 <?php
 
-use App\Models\Branch;
 use App\Models\Hotel\CorporateAccount;
 use App\Models\Hotel\Guest;
 use App\Models\Hotel\Reservation;
@@ -9,7 +8,6 @@ use App\Models\Hotel\Venue;
 use App\Models\Lookup;
 use App\Support\Lookups\LookupType;
 use App\Support\Lookups\ReservationStatus;
-use Database\Seeders\BranchSeeder;
 use Database\Seeders\HotelRoomsSeeder;
 use Database\Seeders\LookupSeeder;
 use Database\Seeders\MenuSeeder;
@@ -20,7 +18,6 @@ beforeEach(function () {
     $this->seed(MenuSeeder::class);
     $this->seed(PermissionsAndRolesSeeder::class);
     $this->seed(LookupSeeder::class);
-    $this->seed(BranchSeeder::class);
     $this->seed(SettingsSeeder::class);
     $this->seed(HotelRoomsSeeder::class);
 });
@@ -228,7 +225,6 @@ it('reports venue bookings and revenue over a date range', function () {
     $venue = Venue::create([
         'name' => 'Grand Ballroom', 'max_capacity' => 200, 'facilities' => ['Stage'],
         'hourly_rate' => 500000, 'half_day_rate' => 2000000, 'full_day_rate' => 3500000,
-        'branch_id' => Branch::query()->active()->firstOrFail()->id,
     ]);
     $eventDate = today()->addDays(10)->toDateString();
 

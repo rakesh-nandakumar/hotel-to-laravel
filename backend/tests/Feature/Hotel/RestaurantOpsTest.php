@@ -9,7 +9,6 @@ use App\Models\Lookup;
 use App\Services\Settings;
 use App\Support\Lookups\LookupType;
 use App\Support\Lookups\TableStatus;
-use Database\Seeders\BranchSeeder;
 use Database\Seeders\LookupSeeder;
 use Database\Seeders\MenuSeeder;
 use Database\Seeders\PermissionsAndRolesSeeder;
@@ -20,7 +19,6 @@ beforeEach(function () {
     $this->seed(PermissionsAndRolesSeeder::class);
     $this->seed(LookupSeeder::class);
     $this->seed(SettingsSeeder::class);
-    $this->seed(BranchSeeder::class);
 });
 
 function restaurantMenuItem(string $name = 'Fried Rice', int $price = 100000): MenuItem

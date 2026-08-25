@@ -24,10 +24,8 @@ use App\Http\Controllers\Auth\OtpChallengeController;
 use App\Http\Controllers\Auth\PasswordResetLinkController;
 use App\Http\Controllers\Auth\PinLoginController;
 use App\Http\Controllers\Auth\VerifyEmailController;
-use App\Http\Controllers\BranchContextController;
 use App\Http\Controllers\Central\AuthenticatedSessionController as CentralAuthenticatedSessionController;
 use App\Http\Controllers\Central\CentralAdminController;
-use App\Http\Controllers\Central\CentralBranchController;
 use App\Http\Controllers\Central\CentralDashboardController;
 use App\Http\Controllers\Central\ImpersonationController as CentralImpersonationController;
 use App\Http\Controllers\Central\MeController as CentralMeController;
@@ -158,11 +156,6 @@ Route::prefix('central')->name('central.')->middleware('central_only')->group(fu
         Route::get('tenants/{tenant}/credentials', [TenantController::class, 'credentials'])->name('tenants.credentials');
         Route::get('tenants/{tenant}/audit-logs', [TenantController::class, 'auditLogs'])->name('tenants.audit-logs');
 
-        Route::get('tenants/{tenant}/branches', [CentralBranchController::class, 'index'])->name('tenants.branches.index');
-        Route::post('tenants/{tenant}/branches', [CentralBranchController::class, 'store'])->name('tenants.branches.store');
-        Route::put('tenants/{tenant}/branches/{branch}', [CentralBranchController::class, 'update'])->name('tenants.branches.update');
-        Route::delete('tenants/{tenant}/branches/{branch}', [CentralBranchController::class, 'destroy'])->name('tenants.branches.destroy');
-
         Route::get('admins', [CentralAdminController::class, 'index'])->name('admins.index');
         Route::post('admins', [CentralAdminController::class, 'store'])->name('admins.store');
         Route::put('admins/{admin}', [CentralAdminController::class, 'update'])->name('admins.update');
@@ -221,9 +214,6 @@ Route::middleware(['auth', 'check_active'])->group(function () {
     Route::get('dashboard', [DashboardController::class, 'index'])
         ->middleware('can_do:dashboard.access')
         ->name('dashboard');
-
-    // ── Branch context (top-bar selector) ─────────────────────────────────────
-    Route::post('branch/select', [BranchContextController::class, 'select'])->name('branch.select');
 
     // ── Settings / Profile ─────────────────────────────────────────────────────
     Route::get('settings/profile', [ProfileController::class, 'edit'])->name('profile.edit');

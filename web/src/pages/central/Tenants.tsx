@@ -12,7 +12,6 @@ type Tenant = {
   slug: string;
   status: "trial" | "active" | "suspended" | "cancelled";
   environment: "live" | "test";
-  branches_count: number;
   users_count: number;
 };
 
@@ -48,7 +47,6 @@ export default function CentralTenants() {
               { key: "slug", label: "Subdomain", render: (t) => <span className="text-slate-500">{tenantHost(t.slug)}</span> },
               { key: "status", label: "Status", render: (t) => <Badge color={statusColor(t.status)}>{t.status}</Badge> },
               { key: "environment", label: "Env", render: (t) => <Badge color={t.environment === "test" ? "purple" : "slate"}>{t.environment}</Badge> },
-              { key: "branches_count", label: "Branches", align: "right" },
               { key: "users_count", label: "Users", align: "right" },
             ]}
             rows={tenants}

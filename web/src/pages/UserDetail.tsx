@@ -17,7 +17,7 @@ type PermissionSources = {
 type ShowResponse = {
   user: {
     id: number; name: string; email: string; phone: string | null; status: string;
-    last_login_at: string | null; roles: Ref[]; warehouses: Ref[];
+    last_login_at: string | null; roles: Ref[];
   };
   permission_sources: PermissionSources;
 };
@@ -80,18 +80,10 @@ export default function UserDetail() {
             <div className="mt-0.5 text-xs text-slate-400">Last login: {fmtDateTime(user.last_login_at)}</div>
           </div>
         </div>
-        <div className="mt-4 grid gap-4 sm:grid-cols-2">
-          <div>
-            <div className="label">Roles</div>
-            <div className="flex flex-wrap gap-1">
-              {user.roles.length ? user.roles.map((r) => <Badge key={r.id} color="brand">{r.name}</Badge>) : <span className="text-sm text-slate-400">None</span>}
-            </div>
-          </div>
-          <div>
-            <div className="label">Branch access</div>
-            <div className="flex flex-wrap gap-1">
-              {user.warehouses.length ? user.warehouses.map((w) => <Badge key={w.id}>{w.name}</Badge>) : <span className="text-sm text-slate-400">All / unrestricted</span>}
-            </div>
+        <div className="mt-4">
+          <div className="label">Roles</div>
+          <div className="flex flex-wrap gap-1">
+            {user.roles.length ? user.roles.map((r) => <Badge key={r.id} color="brand">{r.name}</Badge>) : <span className="text-sm text-slate-400">None</span>}
           </div>
         </div>
       </Card>

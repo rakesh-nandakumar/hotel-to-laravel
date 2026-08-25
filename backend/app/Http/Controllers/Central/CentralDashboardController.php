@@ -3,7 +3,6 @@
 namespace App\Http\Controllers\Central;
 
 use App\Http\Controllers\Controller;
-use App\Models\Branch;
 use App\Models\CentralAdmin;
 use App\Models\Tenant;
 use App\Models\User;
@@ -32,7 +31,7 @@ class CentralDashboardController extends Controller
             ->pluck('total', 'environment');
 
         $recent = (clone $tenants)
-            ->withCount(['branches', 'users'])
+            ->withCount(['users'])
             ->latest()
             ->limit(6)
             ->get();
@@ -52,7 +51,6 @@ class CentralDashboardController extends Controller
                 ],
                 'admins' => CentralAdmin::query()->count(),
                 'users' => User::query()->withoutTenantScope()->count(),
-                'branches' => Branch::query()->withoutTenantScope()->count(),
             ],
             'recent_tenants' => $recent,
         ]);

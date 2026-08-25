@@ -5,7 +5,7 @@ import { Badge, Card, Empty, ErrorText, Field, Modal, Pagination, Stat } from ".
 import { useToast } from "../lib/toast";
 import { useAuth } from "../lib/auth";
 
-type TillOption = { id: number; name: string; branch: { id: number; name: string } };
+type TillOption = { id: number; name: string };
 type CurrentSession = {
   id: number; till: { id: number; name: string }; opened_at: string;
   opening_cash: number; expected_balance: number;
@@ -189,7 +189,7 @@ function OpenTill({ tills, onClose }: { tills: TillOption[]; onClose: () => void
       <Field label="Till">
         <select className="input" value={tillId} onChange={(e) => setTillId(Number(e.target.value))}>
           {tills.map((t) => (
-            <option key={t.id} value={t.id}>{t.name} — {t.branch.name}</option>
+            <option key={t.id} value={t.id}>{t.name}</option>
           ))}
         </select>
       </Field>

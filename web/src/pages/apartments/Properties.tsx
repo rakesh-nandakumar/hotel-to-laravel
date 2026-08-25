@@ -5,10 +5,9 @@ import { useFetch } from "../../lib/util";
 import { Badge, Empty, ErrorText, Field, Modal } from "../../components/ui";
 import { useAuth } from "../../lib/auth";
 
-type Branch = { id: number; name: string };
 type Property = {
   id: number; name: string; address: string | null; phone: string | null; email: string | null;
-  branch: Branch | null; notes: string | null; active: boolean; units_count: number;
+  notes: string | null; active: boolean; units_count: number;
 };
 
 export default function Properties() {
@@ -34,7 +33,6 @@ export default function Properties() {
               <th className="th">Name</th>
               <th className="th">Address</th>
               <th className="th">Contact</th>
-              <th className="th">Branch</th>
               <th className="th text-right">Units</th>
               <th className="th">Status</th>
             </tr>
@@ -49,7 +47,6 @@ export default function Properties() {
                 <td className="td font-semibold">{p.name}</td>
                 <td className="td text-xs">{p.address ?? "—"}</td>
                 <td className="td text-xs">{[p.phone, p.email].filter(Boolean).join(" · ") || "—"}</td>
-                <td className="td text-xs">{p.branch?.name ?? "—"}</td>
                 <td className="td text-right">{p.units_count}</td>
                 <td className="td"><Badge color={p.active ? "green" : "gray"}>{p.active ? "Active" : "Inactive"}</Badge></td>
               </tr>

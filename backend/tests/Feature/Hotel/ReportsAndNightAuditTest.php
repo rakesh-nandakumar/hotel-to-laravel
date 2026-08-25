@@ -4,7 +4,6 @@ use App\Models\Hotel\Guest;
 use App\Services\CurrentContext;
 use App\Services\Settings;
 use Carbon\Carbon;
-use Database\Seeders\BranchSeeder;
 use Database\Seeders\HotelRoomsSeeder;
 use Database\Seeders\LookupSeeder;
 use Database\Seeders\MenuSeeder;
@@ -15,7 +14,6 @@ beforeEach(function () {
     $this->seed(MenuSeeder::class);
     $this->seed(PermissionsAndRolesSeeder::class);
     $this->seed(LookupSeeder::class);
-    $this->seed(BranchSeeder::class);
     $this->seed(SettingsSeeder::class);
     $this->seed(HotelRoomsSeeder::class);
 });

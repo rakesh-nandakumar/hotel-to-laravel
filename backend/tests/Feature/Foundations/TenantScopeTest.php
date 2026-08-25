@@ -1,8 +1,8 @@
 <?php
 
-use App\Models\Branch;
 use App\Models\CentralAdmin;
 use App\Models\Tenant;
+use App\Models\Till;
 use App\Models\User;
 use App\Services\CurrentContext;
 
@@ -111,19 +111,19 @@ it('auto-stamps tenant_id on create from the resolved tenant context', function 
     CurrentContext::simulateWebRequest(function () use ($tenant) {
         app(CurrentContext::class)->setTenant($tenant->id);
 
-        $branch = Branch::create(['name' => 'Auto Branch', 'is_active' => true]);
+        $till = Till::create(['name' => 'Auto Till', 'is_active' => true]);
 
-        expect($branch->tenant_id)->toBe($tenant->id);
+        expect($till->tenant_id)->toBe($tenant->id);
     });
 });
 
-it('never falls through unscoped when a branch resolves no tenant', function () {
+it('never falls through unscoped when a tenant-owned row resolves no tenant', function () {
     Tenant::factory()->create();
-    Branch::create(['name' => 'Orphan Branch', 'is_active' => true]);
+    Till::create(['name' => 'Orphan Till', 'is_active' => true]);
 
     CurrentContext::simulateWebRequest(function () {
         app(CurrentContext::class)->setTenant(null);
 
-        expect(Branch::query()->count())->toBe(0);
+        expect(Till::query()->count())->toBe(0);
     });
 });

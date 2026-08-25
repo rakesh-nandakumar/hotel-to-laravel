@@ -1,8 +1,8 @@
 <?php
 
-use App\Models\Branch;
 use App\Models\CentralAdmin;
 use App\Models\Tenant;
+use App\Models\Till;
 use App\Models\User;
 use Illuminate\Support\Facades\Hash;
 
@@ -21,18 +21,13 @@ it('reports platform-wide counts broken down by status and environment', functio
     Tenant::factory()->create(['environment' => 'test', 'created_at' => now()->subDays(2)]);
 
     $tenant = Tenant::factory()->create(['created_at' => now()->subDays(2)]);
-    $branch = Branch::query()->withoutTenantScope()->create([
-        'tenant_id' => $tenant->id,
-        'name' => 'Downtown',
-        'created_at' => now()->subDays(2),
-    ]);
     User::query()->withoutTenantScope()->create([
         'tenant_id' => $tenant->id,
         'name' => 'Staff',
         'email' => 'staff@dashboard.test',
         'password' => Hash::make('secret'),
     ]);
-    $branch->tills()->create(['name' => 'Main Till']);
+    Till::query()->withoutTenantScope()->create(['tenant_id' => $tenant->id, 'name' => 'Main Till']);
 
     $this->getJson('http://admin.localhost/api/central/dashboard')
         ->assertOk()
@@ -44,8 +39,7 @@ it('reports platform-wide counts broken down by status and environment', functio
         ->assertJsonPath('counts.by_environment.live', 7)
         ->assertJsonPath('counts.by_environment.test', 1)
         ->assertJsonPath('counts.admins', 1)
-        ->assertJsonPath('counts.users', 1)
-        ->assertJsonPath('counts.branches', 1);
+        ->assertJsonPath('counts.users', 1);
 });
 
 it('lists the most recently created tenants on the dashboard', function () {

@@ -1,13 +1,11 @@
 <?php
 
-use App\Models\Branch;
 use App\Models\Hotel\Guest;
 use App\Models\Hotel\Notification;
 use App\Models\Hotel\Reservation;
 use App\Models\Hotel\Venue;
 use App\Models\Hotel\VenueBooking;
 use App\Models\User;
-use Database\Seeders\BranchSeeder;
 use Database\Seeders\HotelRoomsSeeder;
 use Database\Seeders\LookupSeeder;
 use Database\Seeders\MenuSeeder;
@@ -18,7 +16,6 @@ beforeEach(function () {
     $this->seed(MenuSeeder::class);
     $this->seed(PermissionsAndRolesSeeder::class);
     $this->seed(LookupSeeder::class);
-    $this->seed(BranchSeeder::class);
     $this->seed(SettingsSeeder::class);
     $this->seed(HotelRoomsSeeder::class);
 });
@@ -46,12 +43,10 @@ it('lists only active venues publicly', function () {
     Venue::create([
         'name' => 'Grand Ballroom', 'max_capacity' => 200, 'active' => true,
         'hourly_rate' => 500000, 'half_day_rate' => 2000000, 'full_day_rate' => 3500000,
-        'branch_id' => Branch::query()->active()->firstOrFail()->id,
     ]);
     Venue::create([
         'name' => 'Retired Hall', 'max_capacity' => 50, 'active' => false,
         'hourly_rate' => 100000, 'half_day_rate' => 400000, 'full_day_rate' => 700000,
-        'branch_id' => Branch::query()->active()->firstOrFail()->id,
     ]);
 
     $response = $this->getJson('/api/public/venues')->assertOk();
@@ -96,7 +91,6 @@ it('records a public venue inquiry as an INQUIRY booking and notifies the hotel'
     $venue = Venue::create([
         'name' => 'Garden Pavilion', 'max_capacity' => 100, 'active' => true,
         'hourly_rate' => 300000, 'half_day_rate' => 1200000, 'full_day_rate' => 2000000,
-        'branch_id' => Branch::query()->active()->firstOrFail()->id,
     ]);
 
     $response = $this->postJson('/api/public/venue-inquiry', [
@@ -118,7 +112,6 @@ it('rejects a public venue inquiry exceeding capacity', function () {
     $venue = Venue::create([
         'name' => 'Small Room', 'max_capacity' => 20, 'active' => true,
         'hourly_rate' => 100000, 'half_day_rate' => 400000, 'full_day_rate' => 700000,
-        'branch_id' => Branch::query()->active()->firstOrFail()->id,
     ]);
 
     $this->postJson('/api/public/venue-inquiry', [

@@ -67,11 +67,6 @@ class Tenant extends Model
         );
     }
 
-    public function branches(): HasMany
-    {
-        return $this->hasMany(Branch::class);
-    }
-
     public function users(): HasMany
     {
         return $this->hasMany(User::class);

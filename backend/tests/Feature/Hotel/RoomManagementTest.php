@@ -1,12 +1,11 @@
 <?php
 
-use App\Models\Branch;
 use App\Models\Hotel\Package;
 use App\Models\Hotel\Room;
 use App\Models\Lookup;
+use App\Models\Tenant;
 use App\Support\Lookups\LookupType;
 use App\Support\Lookups\RoomStatus;
-use Database\Seeders\BranchSeeder;
 use Database\Seeders\HotelRoomsSeeder;
 use Database\Seeders\LookupSeeder;
 use Database\Seeders\MenuSeeder;
@@ -16,7 +15,6 @@ beforeEach(function () {
     $this->seed(MenuSeeder::class);
     $this->seed(PermissionsAndRolesSeeder::class);
     $this->seed(LookupSeeder::class);
-    $this->seed(BranchSeeder::class);
 });
 
 it('lets any authenticated staff view rooms and packages', function () {
@@ -36,7 +34,6 @@ it('blocks a housekeeper from creating a room', function () {
 });
 
 it('lets a manager create a room directly with embedded details (no separate type)', function () {
-    $branch = Branch::query()->active()->firstOrFail();
     $manager = staffWithRole('Manager');
 
     $roomResponse = $this->actingAs($manager)->postJson('/api/rooms', [
@@ -51,7 +48,7 @@ it('lets a manager create a room directly with embedded details (no separate typ
         'cleaning_checklist' => ['Mop floor', 'Make bed'],
     ])->assertCreated();
 
-    expect($roomResponse->json('room.branch_id'))->toBe($branch->id)
+    expect($roomResponse->json('room.tenant_id'))->toBe(Tenant::demo()->id)
         ->and($roomResponse->json('room.status.code'))->toBe(RoomStatus::AVAILABLE)
         ->and($roomResponse->json('room.max_occupancy'))->toBe(3)
         ->and($roomResponse->json('room.name'))->toBe('Deluxe Suite');

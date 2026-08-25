@@ -2,7 +2,6 @@
 
 namespace Database\Seeders;
 
-use App\Models\Branch;
 use App\Models\Hotel\Package;
 use App\Models\Hotel\Room;
 use App\Models\Hotel\RoomType;
@@ -69,9 +68,9 @@ class HotelRoomsSeeder extends Seeder
     {
         $tenantId = Tenant::demo()->id;
 
-        // Branches, room types, seasonal rates and packages are all
-        // tenant-scoped, and a seeder runs in console with no ambient tenant —
-        // bind it explicitly (see TenantScope).
+        // Room types, seasonal rates and packages are all tenant-scoped, and a
+        // seeder runs in console with no ambient tenant — bind it explicitly
+        // (see TenantScope).
         app(CurrentContext::class)->runForTenant($tenantId, function () use ($tenantId): void {
             $this->seedRoomsAndPackages($tenantId);
         });
@@ -79,7 +78,6 @@ class HotelRoomsSeeder extends Seeder
 
     private function seedRoomsAndPackages(int $tenantId): void
     {
-        $branch = Branch::query()->active()->firstOrFail();
         $availableStatusId = Lookup::id(LookupType::ROOM_STATUS, RoomStatus::AVAILABLE);
 
         foreach (self::ROOM_TYPES as $definition) {
@@ -107,10 +105,9 @@ class HotelRoomsSeeder extends Seeder
 
             foreach ($definition['rooms'] as $number) {
                 $room = Room::query()->firstOrCreate(
-                    ['branch_id' => $branch->id, 'number' => $number],
+                    ['tenant_id' => $tenantId, 'number' => $number],
                     [
                         'room_type_id' => $roomType->id,
-                        'branch_id' => $branch->id,
                         'name' => $definition['name'],
                         'max_occupancy' => $definition['max_occupancy'],
                         'bed_config' => 'TBC — pending from owner',

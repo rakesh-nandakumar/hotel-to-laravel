@@ -77,7 +77,6 @@ it('flags users created through user management', function () {
         'status' => User::STATUS_ACTIVE,
         'role_ids' => [],
         'permissions' => [],
-        'warehouse_ids' => [],
     ])->assertCreated();
 
     $created = User::where('email', 'provisioned@example.com')->firstOrFail();
@@ -96,7 +95,6 @@ it('lets an admin require two-factor authentication for a user', function () {
         'two_factor_required' => true,
         'role_ids' => [],
         'permissions' => [],
-        'warehouse_ids' => [],
     ])->assertCreated();
 
     $created = User::where('email', 'enforced@example.com')->firstOrFail();
@@ -110,7 +108,6 @@ it('lets an admin require two-factor authentication for a user', function () {
         'two_factor_required' => false,
         'role_ids' => [],
         'permissions' => [],
-        'warehouse_ids' => [],
     ])->assertOk();
 
     expect($created->fresh()->two_factor_required)->toBeFalse();

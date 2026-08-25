@@ -57,7 +57,6 @@ function newUserPayload(array $overrides = []): array
         'status' => User::STATUS_ACTIVE,
         'role_ids' => [],
         'permissions' => [],
-        'warehouse_ids' => [],
     ], $overrides);
 }
 

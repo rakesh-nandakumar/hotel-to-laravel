@@ -692,7 +692,7 @@ class TestInstanceService
      */
     private function summary(Tenant $test, array $config, array $dropped): array
     {
-        $headline = ['users' => 'users', 'branches' => 'warehouses', 'guests' => 'guests', 'rooms' => 'rooms', 'reservations' => 'reservations', 'orders' => 'orders'];
+        $headline = ['users' => 'users', 'guests' => 'guests', 'rooms' => 'rooms', 'reservations' => 'reservations', 'orders' => 'orders'];
         $out = [];
         $total = 0;
         $droppedRows = 0;

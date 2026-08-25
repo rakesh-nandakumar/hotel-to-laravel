@@ -2,7 +2,6 @@
 
 namespace Database\Seeders\Demo;
 
-use App\Models\Branch;
 use App\Models\Hotel\Ingredient;
 use App\Models\Hotel\MenuItem;
 use App\Models\Hotel\Order;
@@ -57,9 +56,7 @@ class DemoShiftsOrdersSeeder extends Seeder
         $this->till = app(TillService::class);
         $this->orders = app(OrderService::class);
         $this->inventory = app(InventoryService::class);
-        $this->tillId = Till::query()->value('id') ?? Till::create([
-            'branch_id' => Branch::query()->value('id'), 'name' => 'Main Till',
-        ])->id;
+        $this->tillId = Till::query()->value('id') ?? Till::create(['name' => 'Main Till'])->id;
         $this->menuItemIds = MenuItem::query()->pluck('id')->all();
         $this->productIds = Ingredient::query()->products()->where('active', true)->pluck('id')->all();
         $this->staffIds = User::query()->where('status', User::STATUS_ACTIVE)->pluck('id')->all();

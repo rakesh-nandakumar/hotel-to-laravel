@@ -2,19 +2,18 @@
 
 namespace App\Models\Hotel;
 
-use App\Models\Branch;
-use App\Models\Concerns\BelongsToBranch;
+use App\Models\Concerns\BelongsToTenant;
 use App\Traits\HasUserstamps;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Venue extends Model
 {
-    use BelongsToBranch, HasUserstamps, SoftDeletes;
+    use BelongsToTenant, HasUserstamps, SoftDeletes;
 
     protected $fillable = [
+        'tenant_id',
         'name',
         'max_capacity',
         'facilities',
@@ -22,7 +21,6 @@ class Venue extends Model
         'half_day_rate',
         'full_day_rate',
         'active',
-        'branch_id',
         'created_by',
         'updated_by',
     ];
@@ -37,11 +35,6 @@ class Venue extends Model
             'full_day_rate' => 'integer',
             'active' => 'boolean',
         ];
-    }
-
-    public function branch(): BelongsTo
-    {
-        return $this->belongsTo(Branch::class);
     }
 
     public function bookings(): HasMany

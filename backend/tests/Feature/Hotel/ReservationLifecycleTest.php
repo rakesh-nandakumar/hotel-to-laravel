@@ -1,6 +1,5 @@
 <?php
 
-use App\Models\Branch;
 use App\Models\Hotel\Guest;
 use App\Models\Hotel\HousekeepingTask;
 use App\Models\Hotel\Room;
@@ -10,7 +9,6 @@ use App\Models\Tenant;
 use App\Services\Settings;
 use App\Support\Lookups\LookupType;
 use App\Support\Lookups\RoomStatus;
-use Database\Seeders\BranchSeeder;
 use Database\Seeders\HotelRoomsSeeder;
 use Database\Seeders\LookupSeeder;
 use Database\Seeders\MenuSeeder;
@@ -21,7 +19,6 @@ beforeEach(function () {
     $this->seed(MenuSeeder::class);
     $this->seed(PermissionsAndRolesSeeder::class);
     $this->seed(LookupSeeder::class);
-    $this->seed(BranchSeeder::class);
     $this->seed(SettingsSeeder::class);
     $this->seed(HotelRoomsSeeder::class);
 });
@@ -66,7 +63,6 @@ it('excludes a room whose room type belongs to another tenant instead of 500ing 
     $otherTenant = Tenant::factory()->create(['slug' => 'otherco']);
     $ghostType = RoomType::create(['tenant_id' => $otherTenant->id, 'name' => 'Ghost Suite', 'weekday_rate' => 999, 'weekend_rate' => 999]);
 
-    $branch = Branch::query()->firstOrFail();
     Room::create([
         'number' => 'GHOST1',
         'name' => 'Ghost Suite',
@@ -74,7 +70,6 @@ it('excludes a room whose room type belongs to another tenant instead of 500ing 
         'weekday_rate' => 999,
         'weekend_rate' => 999,
         'room_type_id' => $ghostType->id,
-        'branch_id' => $branch->id,
         'room_status_id' => Lookup::id(LookupType::ROOM_STATUS, RoomStatus::AVAILABLE),
     ]);
 

@@ -1,12 +1,10 @@
 <?php
 
-use App\Models\Branch;
 use App\Models\Hotel\Ingredient;
 use App\Models\Hotel\IngredientBatch;
 use App\Models\Hotel\Notification;
 use App\Models\Hotel\Room;
 use App\Models\Hotel\Venue;
-use Database\Seeders\BranchSeeder;
 use Database\Seeders\HotelRoomsSeeder;
 use Database\Seeders\LookupSeeder;
 use Database\Seeders\MenuSeeder;
@@ -17,7 +15,6 @@ beforeEach(function () {
     $this->seed(MenuSeeder::class);
     $this->seed(PermissionsAndRolesSeeder::class);
     $this->seed(LookupSeeder::class);
-    $this->seed(BranchSeeder::class);
     $this->seed(SettingsSeeder::class);
     $this->seed(HotelRoomsSeeder::class);
 });
@@ -27,7 +24,6 @@ function testVenueForNotifications(string $name = 'Grand Ballroom'): Venue
     return Venue::create([
         'name' => $name, 'max_capacity' => 200, 'facilities' => ['Stage'],
         'hourly_rate' => 500000, 'half_day_rate' => 2000000, 'full_day_rate' => 3500000,
-        'branch_id' => Branch::query()->active()->firstOrFail()->id,
     ]);
 }
 

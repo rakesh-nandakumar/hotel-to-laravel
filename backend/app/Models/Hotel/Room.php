@@ -2,8 +2,7 @@
 
 namespace App\Models\Hotel;
 
-use App\Models\Branch;
-use App\Models\Concerns\BelongsToBranch;
+use App\Models\Concerns\BelongsToTenant;
 use App\Models\Lookup;
 use App\Traits\HasUserstamps;
 use Illuminate\Database\Eloquent\Builder;
@@ -14,13 +13,13 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Room extends Model
 {
-    use BelongsToBranch, HasUserstamps, SoftDeletes;
+    use BelongsToTenant, HasUserstamps, SoftDeletes;
 
     protected $fillable = [
+        'tenant_id',
         'number',
         'name',
         'room_type_id',
-        'branch_id',
         'floor',
         'view',
         'amenities',
@@ -60,11 +59,6 @@ class Room extends Model
     public function seasonalRates(): HasMany
     {
         return $this->hasMany(SeasonalRate::class);
-    }
-
-    public function branch(): BelongsTo
-    {
-        return $this->belongsTo(Branch::class);
     }
 
     public function status(): BelongsTo

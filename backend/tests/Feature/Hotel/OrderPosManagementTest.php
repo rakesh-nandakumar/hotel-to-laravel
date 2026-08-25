@@ -6,7 +6,6 @@ use App\Models\Hotel\MenuCategory;
 use App\Models\Hotel\MenuItem;
 use App\Models\Hotel\Room;
 use App\Services\Settings;
-use Database\Seeders\BranchSeeder;
 use Database\Seeders\HotelRoomsSeeder;
 use Database\Seeders\LookupSeeder;
 use Database\Seeders\MenuSeeder;
@@ -18,7 +17,6 @@ beforeEach(function () {
     $this->seed(PermissionsAndRolesSeeder::class);
     $this->seed(LookupSeeder::class);
     $this->seed(SettingsSeeder::class);
-    $this->seed(BranchSeeder::class);
 });
 
 function posMenuItem(int $stock = 5000): MenuItem

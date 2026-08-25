@@ -23,8 +23,6 @@ export type MenuNode = {
   children: MenuNode[];
 };
 
-export type Branch = { id: number; name: string };
-
 export type Me = {
   user: User;
   is_full_admin: boolean;
@@ -33,7 +31,6 @@ export type Me = {
   enabled_modules: string[];
   home: string;
   menu: MenuNode[];
-  branch: { branches: Branch[]; selected_id: number | null; show_selector: boolean };
 };
 
 type Challenge = "two-factor" | "otp";

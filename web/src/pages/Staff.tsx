@@ -314,12 +314,11 @@ type UserFormData = {
   groups: MatrixGroup[];
   roles: RoleOption[];
   rolePermissions: Record<number, string[]>;
-  warehouses: Ref[];
   grantable_permissions: string[] | null;
   is_full_admin: boolean;
   user?: {
     id: number; name: string; email: string; phone: string | null; status: string;
-    role_ids: number[]; two_factor_required: boolean; permissions: string[]; warehouse_ids: number[];
+    role_ids: number[]; two_factor_required: boolean; permissions: string[];
   };
 };
 
@@ -346,7 +345,6 @@ function UserEditorForm({ data, userId, onClose }: { data: UserFormData; userId:
   const [password, setPassword] = useState("");
   const [confirmPw, setConfirmPw] = useState("");
   const [roleIds, setRoleIds] = useState<number[]>(u?.role_ids ?? []);
-  const [warehouseIds, setWarehouseIds] = useState<number[]>(u?.warehouse_ids ?? []);
   const [twoFactorRequired, setTwoFactorRequired] = useState(u?.two_factor_required ?? false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -378,7 +376,6 @@ function UserEditorForm({ data, userId, onClose }: { data: UserFormData; userId:
   const selectedFullAdmin = roleIds.some((id) => data.roles.find((r) => r.id === id)?.is_full_admin);
 
   const toggleRole = (id: number) => setRoleIds((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
-  const toggleWarehouse = (id: number) => setWarehouseIds((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
 
   const save = async () => {
     setBusy(true); setError("");
@@ -389,7 +386,6 @@ function UserEditorForm({ data, userId, onClose }: { data: UserFormData; userId:
       status: statusValue,
       role_ids: roleIds,
       permissions: effective,
-      warehouse_ids: warehouseIds,
       two_factor_required: twoFactorRequired,
     };
     if (password) { body.password = password; body.password_confirmation = confirmPw; }
@@ -445,24 +441,6 @@ function UserEditorForm({ data, userId, onClose }: { data: UserFormData; userId:
           {data.roles.length === 0 && <span className="text-xs text-slate-400">No assignable roles.</span>}
         </div>
       </div>
-
-      {data.warehouses.length > 0 && (
-        <div>
-          <div className="label">Branch access <span className="font-normal normal-case text-slate-400">(none = all branches)</span></div>
-          <div className="flex flex-wrap gap-1.5">
-            {data.warehouses.map((w) => (
-              <button
-                key={w.id}
-                type="button"
-                onClick={() => toggleWarehouse(w.id)}
-                className={`rounded-full border px-3 py-1 text-xs font-semibold transition ${warehouseIds.includes(w.id) ? "border-brand-500 bg-brand-50 text-brand-700" : "border-slate-200 bg-white text-slate-500 hover:border-slate-300"}`}
-              >
-                {w.name}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
 
       <label className="flex items-center gap-2 text-sm text-slate-600">
         <input type="checkbox" className="h-4 w-4 rounded border-slate-300" checked={twoFactorRequired} onChange={(e) => setTwoFactorRequired(e.target.checked)} />

@@ -44,8 +44,6 @@ class UpdateUserRequest extends FormRequest
             'role_ids.*' => ['integer', 'exists:roles,id'],
             'permissions' => ['array'],
             'permissions.*' => ['string', 'exists:permissions,name'],
-            'warehouse_ids' => ['array'],
-            'warehouse_ids.*' => ['integer', 'exists:warehouses,id'],
         ];
     }
 }

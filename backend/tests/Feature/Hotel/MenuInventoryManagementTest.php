@@ -6,7 +6,6 @@ use App\Models\Hotel\MenuItem;
 use App\Models\Lookup;
 use App\Support\Lookups\InventoryKind;
 use App\Support\Lookups\LookupType;
-use Database\Seeders\BranchSeeder;
 use Database\Seeders\LookupSeeder;
 use Database\Seeders\MenuSeeder;
 use Database\Seeders\PermissionsAndRolesSeeder;
@@ -17,7 +16,6 @@ beforeEach(function () {
     $this->seed(PermissionsAndRolesSeeder::class);
     $this->seed(LookupSeeder::class);
     $this->seed(SettingsSeeder::class);
-    $this->seed(BranchSeeder::class);
 });
 
 it('lets any authenticated staff view the menu grid, categories, and items', function () {

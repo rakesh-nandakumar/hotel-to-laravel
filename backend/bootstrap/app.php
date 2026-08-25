@@ -6,7 +6,6 @@ use App\Http\Middleware\EnsureCentralContext;
 use App\Http\Middleware\IdentifyTenant;
 use App\Http\Middleware\RequirePasswordChange;
 use App\Http\Middleware\ResetDefaultGuardAfterCentralAuth;
-use App\Http\Middleware\ResolveBranchContext;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -63,7 +62,6 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $middleware->api(append: [
             RequirePasswordChange::class,
-            ResolveBranchContext::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {

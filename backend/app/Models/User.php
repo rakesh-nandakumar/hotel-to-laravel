@@ -156,11 +156,6 @@ class User extends Authenticatable
         return $this->belongsToMany(Role::class, 'user_roles')->withTimestamps();
     }
 
-    public function warehouses(): BelongsToMany
-    {
-        return $this->belongsToMany(Branch::class, 'user_warehouse_access', 'user_id', 'warehouse_id');
-    }
-
     public function createdBy(): BelongsTo
     {
         return $this->belongsTo(self::class, 'created_by');

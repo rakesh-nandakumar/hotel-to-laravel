@@ -11,7 +11,6 @@ type Dashboard = {
     by_environment: { live: number; test: number };
     admins: number;
     users: number;
-    branches: number;
   };
   recent_tenants: {
     id: number;
@@ -19,7 +18,6 @@ type Dashboard = {
     slug: string;
     status: string;
     environment: string;
-    branches_count: number;
     users_count: number;
   }[];
 };
@@ -41,7 +39,6 @@ export default function CentralDashboard() {
         <Stat label="Tenants" value={data.counts.total} />
         <Stat label="Live / Test" value={`${data.counts.by_environment.live} / ${data.counts.by_environment.test}`} />
         <Stat label="Platform users" value={data.counts.users} />
-        <Stat label="Branches" value={data.counts.branches} />
       </div>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -66,7 +63,6 @@ export default function CentralDashboard() {
             { key: "slug", label: "Subdomain", render: (t) => <span className="text-slate-500">{tenantHost(t.slug)}</span> },
             { key: "status", label: "Status", render: (t) => <Badge color={statusColor(t.status)}>{t.status}</Badge> },
             { key: "environment", label: "Env", render: (t) => <Badge color={t.environment === "test" ? "purple" : "slate"}>{t.environment}</Badge> },
-            { key: "branches_count", label: "Branches", align: "right" },
             { key: "users_count", label: "Users", align: "right" },
           ]}
           rows={data.recent_tenants}

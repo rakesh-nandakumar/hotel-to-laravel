@@ -16,7 +16,6 @@ class PropertyController extends Controller
         return response()->json([
             'properties' => Property::query()
                 ->withCount('units')
-                ->with('branch:id,name')
                 ->orderBy('name')
                 ->get(),
         ]);

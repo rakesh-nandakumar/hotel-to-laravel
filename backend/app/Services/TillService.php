@@ -165,7 +165,7 @@ class TillService
             return null;
         }
 
-        $session->loadMissing('till:id,name,branch_id', 'status');
+        $session->loadMissing('till:id,name', 'status');
 
         return array_merge($session->toArray(), ['expected_balance' => $this->expectedBalance($session)]);
     }

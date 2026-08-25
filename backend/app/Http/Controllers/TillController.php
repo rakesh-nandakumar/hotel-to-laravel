@@ -9,26 +9,18 @@ use App\Http\Requests\Till\StoreTillRequest;
 use App\Http\Requests\Till\UpdateTillRequest;
 use App\Models\Till;
 use App\Models\TillSession;
-use App\Services\CurrentContext;
 use App\Services\TillService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class TillController extends Controller
 {
-    public function __construct(private readonly TillService $till, private readonly CurrentContext $context) {}
+    public function __construct(private readonly TillService $till) {}
 
-    /** Tills the current user may open — active tills in their accessible branches. */
+    /** Tills the current user may open — every active till in the tenant. */
     public function index(): JsonResponse
     {
-        $query = Till::query()->active()->with('branch:id,name')->orderBy('name');
-
-        $branchIds = $this->context->accessibleBranchIds();
-        if ($branchIds !== null) {
-            $query->whereIn('branch_id', $branchIds);
-        }
-
-        return response()->json(['tills' => $query->get()]);
+        return response()->json(['tills' => Till::query()->active()->orderBy('name')->get()]);
     }
 
     public function store(StoreTillRequest $request): JsonResponse

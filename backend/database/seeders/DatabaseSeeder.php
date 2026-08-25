@@ -13,7 +13,6 @@ class DatabaseSeeder extends Seeder
             MenuSeeder::class,
             PermissionsAndRolesSeeder::class,
             TenantModuleSeeder::class,
-            BranchSeeder::class,
             AdminUsersSeeder::class,
             LookupSeeder::class,
             SettingsSeeder::class,

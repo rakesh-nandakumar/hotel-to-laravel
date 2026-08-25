@@ -5,7 +5,6 @@ use App\Models\Apartment\Customer as ApartmentCustomer;
 use App\Models\Apartment\Property as ApartmentProperty;
 use App\Models\Apartment\Unit as ApartmentUnit;
 use App\Models\AuditLog;
-use App\Models\Branch;
 use App\Models\CentralAdmin;
 use App\Models\DeviceToken;
 use App\Models\Hotel\AddOn;
@@ -37,7 +36,6 @@ use App\Models\Lookup;
 use App\Models\MenuItem as NavMenuItem;
 use App\Models\Permission;
 use App\Models\Role;
-use App\Models\Scopes\BranchScope;
 use App\Models\Scopes\TenantScope;
 use App\Models\Setting;
 use App\Models\Tenant;
@@ -66,13 +64,17 @@ use Illuminate\Support\Str;
  */
 
 /**
- * Structural guarantee: every domain model boots with the tenant scope (or the
- * branch scope, for the branch-scoped ones) — a model added later without the
- * trait fails this test instead of silently leaking data.
+ * Structural guarantee: every domain model boots with the tenant scope — a
+ * model added later without the trait fails this test instead of silently
+ * leaking data.
  */
-it('boots every domain model with its tenant or branch scope', function () {
+it('boots every domain model with its tenant scope', function () {
     $tenantScoped = [
         Guest::class,
+        Room::class,
+        Venue::class,
+        ApartmentProperty::class,
+        Till::class,
         RoomType::class,
         Package::class,
         Reservation::class,
@@ -104,18 +106,11 @@ it('boots every domain model with its tenant or branch scope', function () {
         TillMovement::class,
         User::class,
         Role::class,
-        Branch::class,
         Setting::class,
     ];
 
     foreach ($tenantScoped as $model) {
         expect((new $model)->getGlobalScopes())->toHaveKey(TenantScope::class)
-            ->and($model)->toBe($model);
-    }
-
-    $branchScoped = [Room::class, Venue::class, ApartmentProperty::class, Till::class];
-    foreach ($branchScoped as $model) {
-        expect((new $model)->getGlobalScopes())->toHaveKey(BranchScope::class)
             ->and($model)->toBe($model);
     }
 });
@@ -124,8 +119,7 @@ it('leaves the global catalogs and central tables unscoped', function () {
     $global = [Lookup::class, Permission::class, NavMenuItem::class, Tenant::class, CentralAdmin::class];
 
     foreach ($global as $model) {
-        expect((new $model)->getGlobalScopes())->not->toHaveKey(TenantScope::class)
-            ->not->toHaveKey(BranchScope::class);
+        expect((new $model)->getGlobalScopes())->not->toHaveKey(TenantScope::class);
     }
 
     // TenantModule is queried with an explicit tenant_id — no global scope.
@@ -135,9 +129,6 @@ it('leaves the global catalogs and central tables unscoped', function () {
 it('isolates every newly-scoped domain table to the resolved tenant', function () {
     $tenantA = Tenant::factory()->create(['slug' => 'alpha']);
     $tenantB = Tenant::factory()->create(['slug' => 'beta']);
-
-    $branchA = Branch::create(['tenant_id' => $tenantA->id, 'name' => 'Branch A', 'is_active' => true, 'country' => 'LK']);
-    $branchB = Branch::create(['tenant_id' => $tenantB->id, 'name' => 'Branch B', 'is_active' => true, 'country' => 'LK']);
 
     $userA = User::factory()->create(['tenant_id' => $tenantA->id]);
     $userB = User::factory()->create(['tenant_id' => $tenantB->id]);
@@ -168,8 +159,8 @@ it('isolates every newly-scoped domain table to the resolved tenant', function (
     DeviceToken::create(['tenant_id' => $tenantA->id, 'user_id' => $userA->id, 'token_hash' => Str::random(64), 'expires_at' => now()->addDay()]);
     DeviceToken::create(['tenant_id' => $tenantB->id, 'user_id' => $userB->id, 'token_hash' => Str::random(64), 'expires_at' => now()->addDay()]);
 
-    Till::create(['branch_id' => $branchA->id, 'name' => 'Till A']);
-    Till::create(['branch_id' => $branchB->id, 'name' => 'Till B']);
+    Till::create(['tenant_id' => $tenantA->id, 'name' => 'Till A']);
+    Till::create(['tenant_id' => $tenantB->id, 'name' => 'Till B']);
 
     CurrentContext::simulateWebRequest(function () use ($tenantA, $tenantB) {
         app(CurrentContext::class)->setTenant($tenantA->id);
@@ -179,6 +170,7 @@ it('isolates every newly-scoped domain table to the resolved tenant', function (
         expect(ApartmentCustomer::query()->pluck('name')->all())->toBe(['Cust A']);
         expect(DeviceToken::query()->pluck('token_hash')->count())->toBe(1);
         expect(AuditLog::query()->pluck('action')->all())->toBe(['a']);
+        expect(Till::query()->pluck('name')->all())->toBe(['Till A']);
 
         app(CurrentContext::class)->setTenant($tenantB->id);
 
@@ -186,28 +178,55 @@ it('isolates every newly-scoped domain table to the resolved tenant', function (
         expect(RoomType::query()->pluck('name')->all())->toBe(['Type B']);
         expect(ApartmentCustomer::query()->pluck('name')->all())->toBe(['Cust B']);
         expect(AuditLog::query()->pluck('action')->all())->toBe(['b']);
+        expect(Till::query()->pluck('name')->all())->toBe(['Till B']);
     });
 });
 
-it('isolates branch-scoped domain rows through their branch', function () {
+/**
+ * Regression coverage for the branch-dimension removal: Room, Venue,
+ * ApartmentProperty and Till used to be scoped only by BranchScope (with no
+ * BelongsToTenant of their own — tenant isolation came transitively through
+ * their branch). Now that branches are gone, they carry BelongsToTenant
+ * directly; this proves tenant B can never see tenant A's rows in any of them.
+ */
+it('isolates the former branch-scoped models directly by tenant', function () {
     $tenantA = Tenant::factory()->create(['slug' => 'alpha']);
     $tenantB = Tenant::factory()->create(['slug' => 'beta']);
 
-    $branchA = Branch::create(['tenant_id' => $tenantA->id, 'name' => 'Branch A', 'is_active' => true, 'country' => 'LK']);
-    $branchB = Branch::create(['tenant_id' => $tenantB->id, 'name' => 'Branch B', 'is_active' => true, 'country' => 'LK']);
+    $roomStatusId = Lookup::create(['type' => 'room_status', 'code' => 'available', 'name' => 'Available', 'is_active' => true])->id;
 
-    Till::create(['branch_id' => $branchA->id, 'name' => 'Till A']);
-    Till::create(['branch_id' => $branchB->id, 'name' => 'Till B']);
+    Room::create(['tenant_id' => $tenantA->id, 'number' => '101', 'room_status_id' => $roomStatusId]);
+    Room::create(['tenant_id' => $tenantB->id, 'number' => '101', 'room_status_id' => $roomStatusId]);
 
-    CurrentContext::simulateWebRequest(function () use ($tenantA, $branchA) {
+    Venue::create([
+        'tenant_id' => $tenantA->id, 'name' => 'Ballroom A', 'max_capacity' => 50,
+        'hourly_rate' => 100, 'half_day_rate' => 400, 'full_day_rate' => 700,
+    ]);
+    Venue::create([
+        'tenant_id' => $tenantB->id, 'name' => 'Ballroom B', 'max_capacity' => 50,
+        'hourly_rate' => 100, 'half_day_rate' => 400, 'full_day_rate' => 700,
+    ]);
+
+    ApartmentProperty::create(['tenant_id' => $tenantA->id, 'name' => 'Property A']);
+    ApartmentProperty::create(['tenant_id' => $tenantB->id, 'name' => 'Property B']);
+
+    Till::create(['tenant_id' => $tenantA->id, 'name' => 'Till A']);
+    Till::create(['tenant_id' => $tenantB->id, 'name' => 'Till B']);
+
+    CurrentContext::simulateWebRequest(function () use ($tenantA, $tenantB) {
         app(CurrentContext::class)->setTenant($tenantA->id);
-        app(CurrentContext::class)->setBranch($branchA->id);
 
+        expect(Room::query()->count())->toBe(1);
+        expect(Venue::query()->pluck('name')->all())->toBe(['Ballroom A']);
+        expect(ApartmentProperty::query()->pluck('name')->all())->toBe(['Property A']);
         expect(Till::query()->pluck('name')->all())->toBe(['Till A']);
 
-        app(CurrentContext::class)->setAllBranches();
+        app(CurrentContext::class)->setTenant($tenantB->id);
 
-        expect(Till::query()->pluck('name')->all())->toBe(['Till A', 'Till B']);
+        expect(Room::query()->count())->toBe(1);
+        expect(Venue::query()->pluck('name')->all())->toBe(['Ballroom B']);
+        expect(ApartmentProperty::query()->pluck('name')->all())->toBe(['Property B']);
+        expect(Till::query()->pluck('name')->all())->toBe(['Till B']);
     });
 });
 
@@ -273,9 +292,6 @@ it('a tenant user only sees their own users and guests through the API', functio
     Guest::create(['tenant_id' => $tenantA->id, 'name' => 'Guest of Acme']);
     Guest::create(['tenant_id' => $tenantB->id, 'name' => 'Guest of Globex']);
     Guest::create(['tenant_id' => $tenantB->id, 'name' => 'Guest of Globex 2']);
-
-    Branch::create(['tenant_id' => $tenantA->id, 'name' => 'Acme Branch', 'is_active' => true, 'country' => 'LK']);
-    Branch::create(['tenant_id' => $tenantB->id, 'name' => 'Globex Branch', 'is_active' => true, 'country' => 'LK']);
 
     TenantModule::create(['tenant_id' => $tenantA->id, 'module_key' => ModuleCatalog::HOTEL_OPERATIONS, 'is_enabled' => true]);
 

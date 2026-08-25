@@ -23,7 +23,6 @@ class UpdateRoomRequest extends FormRequest
             'number' => ['sometimes', 'string', 'max:20', Rule::unique('rooms', 'number')->ignore($room)],
             'name' => ['sometimes', 'nullable', 'string', 'max:120'],
             'room_type_id' => ['sometimes', 'nullable', 'integer', 'exists:room_types,id'],
-            'branch_id' => ['sometimes', 'integer', 'exists:warehouses,id'],
             'floor' => ['nullable', 'string', 'max:50'],
             'view' => ['nullable', 'string', 'max:50'],
             'amenities' => ['nullable', 'array'],

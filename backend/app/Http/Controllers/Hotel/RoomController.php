@@ -16,7 +16,6 @@ use App\Models\Hotel\RoomType;
 use App\Models\Hotel\SeasonalRate;
 use App\Models\Lookup;
 use App\Services\AuditLog;
-use App\Services\CurrentContext;
 use App\Support\Lookups\LookupType;
 use App\Support\Lookups\MaintenanceStatus;
 use App\Support\Lookups\ReservationStatus;
@@ -29,8 +28,6 @@ use Illuminate\Validation\ValidationException;
 
 class RoomController extends Controller
 {
-    public function __construct(private readonly CurrentContext $context) {}
-
     /**
      * The live room board — every room enriched with its current occupant
      * (if any), whether it has a housekeeping task pending, and any open
@@ -41,7 +38,7 @@ class RoomController extends Controller
     public function index(): JsonResponse
     {
         $rooms = Room::query()
-            ->with(['seasonalRates' => fn ($q) => $q->orderBy('start_date'), 'status', 'branch:id,name'])
+            ->with(['seasonalRates' => fn ($q) => $q->orderBy('start_date'), 'status'])
             ->orderBy('number')
             ->get();
 
@@ -87,7 +84,6 @@ class RoomController extends Controller
     public function store(StoreRoomRequest $request): JsonResponse
     {
         $data = $request->validated();
-        $data['branch_id'] ??= $this->context->branchId();
         $data['room_status_id'] = Lookup::id(LookupType::ROOM_STATUS, RoomStatus::AVAILABLE);
 
         // Back-compat: if a legacy room_type_id is supplied without explicit
