@@ -72,13 +72,13 @@ class ReportService
         $arrivals = Reservation::query()
             ->statusIn([ReservationStatus::CONFIRMED, ReservationStatus::PENDING])
             ->where('check_in', $start->toDateString())
-            ->with(['guest:id,name,loyalty_points,id_number', 'rooms.room:id,number', 'groupBooking:id,reference', 'corporateAccount:id,company_name'])
+            ->with(['guest:id,name,loyalty_points,id_number', 'rooms.room' => fn ($q) => $q->withTrashed()->select('id', 'number'), 'groupBooking:id,reference', 'corporateAccount:id,company_name'])
             ->get();
 
         $departures = Reservation::query()
             ->statusCode(ReservationStatus::CHECKED_IN)
             ->where('check_out', $start->toDateString())
-            ->with(['guest:id,name', 'rooms.room:id,number'])
+            ->with(['guest:id,name', 'rooms.room' => fn ($q) => $q->withTrashed()->select('id', 'number')])
             ->get();
 
         $inHouse = Reservation::query()->statusCode(ReservationStatus::CHECKED_IN)->count();

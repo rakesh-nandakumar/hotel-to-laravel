@@ -8,7 +8,7 @@ import { useToast } from "../lib/toast";
 type Task = {
   id: number; notes?: string | null; created_at: string;
   status: { code: string };
-  room: { number: string; name: string | null; status: { code: string }; room_type?: { name: string } | null };
+  room: { number: string; name: string | null; status: { code: string }; room_type?: { name: string } | null } | null;
   assigned_to?: { id: number; name: string } | null;
   checklist: { item: string; done: boolean }[];
 };
@@ -38,10 +38,10 @@ export default function Housekeeping() {
           return (
             <button key={t.id} className="card p-4 text-left hover:shadow-md" onClick={() => setOpen(t)}>
               <div className="flex items-center justify-between">
-                <span className="text-2xl font-black">Room {t.room.number}</span>
+                <span className="text-2xl font-black">Room {t.room?.number ?? "—"}</span>
                 <Badge color={statusColor(t.status.code)}>{t.status.code}</Badge>
               </div>
-              <div className="text-xs text-slate-500">{t.room.name ?? t.room.room_type?.name ?? "—"} · created {fmtDateTime(t.created_at)}</div>
+              <div className="text-xs text-slate-500">{t.room?.name ?? t.room?.room_type?.name ?? "—"} · created {fmtDateTime(t.created_at)}</div>
               <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100">
                 <div className="h-full bg-brand-500 transition-all" style={{ width: `${(done / t.checklist.length) * 100}%` }} />
               </div>
@@ -93,7 +93,7 @@ function ChecklistModal({ task, canAssign, canChecklist, canComplete, housekeepe
     setError("");
     try {
       await post(`/housekeeping/tasks/${task.id}/complete`, { checklist: items });
-      toast.success(`Room ${task.room.number} is now Available`, "Cleaning checklist submitted");
+      toast.success(`Room ${task.room?.number ?? "—"} is now Available`, "Cleaning checklist submitted");
       onClose();
     } catch (e) {
       setError((e as Error).message);
@@ -103,7 +103,7 @@ function ChecklistModal({ task, canAssign, canChecklist, canComplete, housekeepe
   };
 
   return (
-    <Modal open onClose={onClose} title={`Room ${task.room.number} — cleaning checklist`}>
+    <Modal open onClose={onClose} title={`Room ${task.room?.number ?? "—"} — cleaning checklist`}>
       {canAssign && (
         <div className="mb-3">
           <label className="label">Assigned to</label>

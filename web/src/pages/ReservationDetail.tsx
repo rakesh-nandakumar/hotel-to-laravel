@@ -23,7 +23,7 @@ type Detail = {
   corporate_account: { id: number; company_name: string } | null;
   rooms: {
     id: number; nightly_rate: number;
-    room: { id: number; number: string; name: string | null; item_checklist: string[] | null; status?: Lookup; room_type?: { name: string; item_checklist: string[] } | null };
+    room: { id: number; number: string; name: string | null; item_checklist: string[] | null; status?: Lookup; room_type?: { name: string; item_checklist: string[] } | null } | null;
     bill_to_guest: { id: number; name: string } | null;
   }[];
   // RoomItemCheck::kind() isn't eager-loaded by ReservationController::show()
@@ -136,7 +136,7 @@ export default function ReservationDetail() {
           <div className="space-y-2 text-sm">
             {r.rooms.map((rr) => (
               <div key={rr.id} className="flex items-center justify-between">
-                <span><b>Room {rr.room.number}</b> <span className="text-xs text-slate-400">{rr.room.name ?? rr.room.room_type?.name ?? "Standard"}</span></span>
+                <span><b>Room {rr.room?.number ?? "—"}</b> <span className="text-xs text-slate-400">{rr.room?.name ?? rr.room?.room_type?.name ?? "Standard"}</span></span>
                 <span className="flex items-center gap-2">
                   <span className="text-xs">{lkr(rr.nightly_rate)}/n</span>
                   {rr.room.status && <Badge color={statusColor(rr.room.status.code.toUpperCase())}>{rr.room.status.code.toUpperCase()}</Badge>}
@@ -144,7 +144,7 @@ export default function ReservationDetail() {
               </div>
             ))}
             {r.rooms.some((rr) => rr.bill_to_guest) && (
-              <div className="text-xs text-slate-500">Bill-to overrides: {r.rooms.filter((x) => x.bill_to_guest).map((x) => `Room ${x.room.number} → ${x.bill_to_guest!.name}`).join(", ")}</div>
+              <div className="text-xs text-slate-500">Bill-to overrides: {r.rooms.filter((x) => x.bill_to_guest).map((x) => `Room ${x.room?.number ?? "—"} → ${x.bill_to_guest!.name}`).join(", ")}</div>
             )}
           </div>
         </Card>

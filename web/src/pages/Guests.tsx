@@ -23,7 +23,7 @@ type LoyaltyTxn = { id: number; points: number; reason: string; created_at: stri
 type GuestDetail = Guest & { loyalty_transactions: LoyaltyTxn[] };
 type StayHistoryRow = {
   id: number; code: string; status: Lookup; check_in: string; check_out: string;
-  rooms: { room: { number: string } }[];
+  rooms: { room: { number: string } | null }[];
   folio?: { invoice_no?: string | null } | null;
 };
 
@@ -183,7 +183,7 @@ function GuestModal({ id, onClose }: { id: number; onClose: () => void }) {
             <div key={r.id} className="flex flex-wrap items-center gap-2 py-1.5">
               <span className="font-bold">{r.code}</span>
               <span>{fmtDate(r.check_in)} → {fmtDate(r.check_out)}</span>
-              <span className="text-xs text-slate-400">Rooms {r.rooms.map((x) => x.room.number).join(", ")}</span>
+              <span className="text-xs text-slate-400">Rooms {r.rooms.map((x) => x.room?.number).filter(Boolean).join(", ")}</span>
               <Badge color={statusColor(r.status.code.toUpperCase())}>{r.status.code.toUpperCase()}</Badge>
               {r.folio?.invoice_no && <span className="text-xs text-slate-400">{r.folio.invoice_no}</span>}
             </div>

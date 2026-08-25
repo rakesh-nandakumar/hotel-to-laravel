@@ -26,7 +26,7 @@ type Dash = {
 type Monthly = { days: { date: string; revenue: number; occupancy_pct: number }[] };
 type Notif = { id: number; type: string; channel: { code: string }; to: string; subject: string; status: { code: string }; created_at: string };
 type OnDuty = { id: number; name: string; role: string; clock_in: string };
-type SearchRow = { id: number; code: string; status: { code: string }; guest: { name: string }; rooms: { room: { number: string } }[] };
+type SearchRow = { id: number; code: string; status: { code: string }; guest: { name: string }; rooms: { room: { number: string } | null }[] };
 
 const initials = (name: string) =>
   name.split(" ").filter(Boolean).slice(0, 2).map((w) => w[0]).join("").toUpperCase();
@@ -83,7 +83,7 @@ function QuickSearch() {
               >
                 <span className="min-w-0">
                   <span className="block truncate font-semibold">{r.guest.name}</span>
-                  <span className="text-xs text-slate-400">{r.code} · Room {r.rooms.map((x) => x.room.number).join(", ") || "—"}</span>
+                  <span className="text-xs text-slate-400">{r.code} · Room {r.rooms.map((x) => x.room?.number).filter(Boolean).join(", ") || "—"}</span>
                 </span>
                 <Badge color={statusColor(r.status.code)}>{r.status.code}</Badge>
               </button>
@@ -332,7 +332,7 @@ function HeroStat({ icon: Icon, label, value, sub, accent, delta }: { icon: type
 
 type GuestRow = {
   id: number; code: string; guest: { name: string; loyalty_points?: number; id_number?: string | null };
-  rooms: { room: { number: string } }[];
+  rooms: { room: { number: string } | null }[];
   group_booking?: { reference: string } | null;
   corporate_account?: { company_name: string } | null;
 };
@@ -356,7 +356,7 @@ function GuestListCard({ title, empty, items, kind }: { title: string; empty: st
                     {kind === "arrival" && !!g.guest.loyalty_points && g.guest.loyalty_points >= VIP_POINTS_THRESHOLD && <Crown size={12} className="shrink-0 text-amber-500" />}
                   </div>
                   <div className="flex flex-wrap items-center gap-1 text-xs text-slate-400">
-                    <span>{g.code} · Room {g.rooms.map((r) => r.room.number).join(", ")}</span>
+                    <span>{g.code} · Room {g.rooms.map((r) => r.room?.number).filter(Boolean).join(", ")}</span>
                     {g.group_booking && <Badge color="purple">{g.group_booking.reference}</Badge>}
                     {g.corporate_account && <Badge color="blue">{g.corporate_account.company_name}</Badge>}
                     {kind === "arrival" && !g.guest.id_number && (

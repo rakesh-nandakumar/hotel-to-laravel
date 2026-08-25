@@ -37,7 +37,7 @@ type ResRow = {
   id: number; code: string; check_in: string; check_out: string;
   status: Lookup; channel: Lookup;
   guest: { id: number; name: string; loyalty_points: number };
-  rooms: { id: number; room: { id: number; number: string } }[];
+  rooms: { id: number; room: { id: number; number: string } | null }[];
   package: { id: number; code: string; name: string } | null;
   group_booking: { id: number; reference: string; name: string } | null;
   corporate_account: { id: number; company_name: string } | null;
@@ -59,7 +59,7 @@ type GroupRes = {
   // absent today; guarded below and kept typed for when that's added.
   status?: Lookup;
   guest: { name: string };
-  rooms: { room: { number: string } }[];
+  rooms: { room: { number: string } | null }[];
   folio?: { id: number; status: Lookup } | null;
 };
 type Group = {
@@ -140,7 +140,7 @@ function ReservationsList() {
                   {r.guest.name}
                   {r.guest.loyalty_points > 0 && <span className="ml-1 text-xs text-brand-600">★{r.guest.loyalty_points}</span>}
                 </td>
-                <td className="td">{r.rooms.map((x) => x.room.number).join(", ")}</td>
+                <td className="td">{r.rooms.map((x) => x.room?.number).filter(Boolean).join(", ")}</td>
                 <td className="td whitespace-nowrap">{fmtDate(r.check_in)} → {fmtDate(r.check_out)}</td>
                 <td className="td text-xs">{r.channel.code.toUpperCase()}</td>
                 <td className="td"><Badge color={statusColor(r.status.code.toUpperCase())}>{r.status.code.toUpperCase()}</Badge></td>
@@ -182,7 +182,7 @@ function GroupsTab() {
       <p className="text-xs text-slate-500">One reference, one consolidated invoice across all rooms in the group — created from "New booking" → Group booking.</p>
       <div className="grid gap-3 md:grid-cols-2">
         {(groups ?? []).map((g) => {
-          const rooms = g.reservations.flatMap((r) => r.rooms.map((x) => x.room.number));
+          const rooms = g.reservations.flatMap((r) => r.rooms.map((x) => x.room?.number).filter(Boolean));
           const active = g.reservations.filter((r) => r.status?.code.toUpperCase() !== "CANCELLED").length;
           return (
             <button key={g.id} className="card p-4 text-left transition hover:shadow-md" onClick={() => setSelected(g)}>
@@ -226,7 +226,7 @@ function GroupModal({ group, onClose, onOpenReservation }: { group: Group; onClo
             <button key={r.id} className="flex w-full flex-wrap items-center gap-2 py-2 text-left hover:bg-slate-50" onClick={() => onOpenReservation(String(r.id))}>
               <span className="font-bold">{r.code}</span>
               <span>{r.guest.name}</span>
-              <span className="text-xs text-slate-400">Rooms {r.rooms.map((x) => x.room.number).join(", ") || "—"}</span>
+              <span className="text-xs text-slate-400">Rooms {r.rooms.map((x) => x.room?.number).filter(Boolean).join(", ") || "—"}</span>
               {r.status && <Badge color={statusColor(r.status.code.toUpperCase())}>{r.status.code.toUpperCase()}</Badge>}
               {r.folio && <Badge color={statusColor(r.folio.status.code.toUpperCase())}>{r.folio.status.code.toUpperCase()}</Badge>}
             </button>
