@@ -3,7 +3,7 @@ import {
   ChefHat, Printer, Volume2, VolumeX, Maximize, Minimize, Clock3, Flame,
   BedDouble, ShoppingBag, Utensils, History, Sun, Moon,
 } from "lucide-react";
-import { api, openPdf } from "../lib/api";
+import { api, printDocument } from "../lib/api";
 import { useFetch, fmtDateTime } from "../lib/util";
 import { Empty } from "../components/ui";
 import { getSocket } from "../lib/socket";
@@ -387,7 +387,7 @@ export default function KOT() {
                           </button>
                         )}
                         {can("hotel_orders.kot_ticket") && (
-                          <button className={clsx("rounded-xl px-3 transition", T.neutralBtn)} title="Print KOT ticket" onClick={() => openPdf(`/orders/${o.id}/kot-ticket`)}>
+                          <button className={clsx("rounded-xl px-3 transition", T.neutralBtn)} title="Print KOT ticket" onClick={() => printDocument(`/orders/${o.id}/kot-ticket`)}>
                             <Printer size={18} />
                           </button>
                         )}

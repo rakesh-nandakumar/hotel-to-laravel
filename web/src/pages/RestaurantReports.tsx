@@ -4,7 +4,7 @@ import {
   BarChart3, ChevronLeft, Download, ShoppingCart, ClipboardList, Layers,
   Percent, Grid2x2, Bike, Timer, Wallet, DollarSign,
 } from "lucide-react";
-import { openPdf } from "../lib/api";
+import { downloadFile, printDocument } from "../lib/api";
 import { useFetch, lkr, todayStr, fmtDateTime, downloadCsv } from "../lib/util";
 import { Badge, Card, Empty, ErrorText, ReportGrid, ReportDef, SimpleTable, DateRangeBar, Stat } from "../components/ui";
 import { useAuth } from "../lib/auth";
@@ -148,7 +148,8 @@ function PosTab() {
           </Card>
           <div className="flex gap-2 lg:col-span-3">
             <button className="btn-secondary" onClick={exportCsv}><Download size={14} /> Export CSV</button>
-            <button className="btn-secondary" onClick={() => openPdf(`/reports/pos/pdf?from=${data.from}&to=${data.to}`)}>Download PDF</button>
+            <button className="btn-secondary" onClick={() => printDocument(`/reports/pos/pdf?from=${data.from}&to=${data.to}`)}>Print</button>
+            <button className="btn-secondary" onClick={() => downloadFile(`/reports/pos/pdf?from=${data.from}&to=${data.to}`, `pos-report-${data.from}_${data.to}.pdf`)}><Download size={14} /> Download PDF</button>
           </div>
         </div>
       ) : <Empty text="Loading…" />}

@@ -16,14 +16,19 @@ function flaggedUser(): User
     return $user;
 }
 
-it('blocks a flagged user from other endpoints until the password is changed', function () {
+it('does not block a flagged user from other endpoints — the forced-change gate was removed', function () {
+    // RequirePasswordChange used to 403 every route but a four-name
+    // allow-list; since the SPA never had a "set new password" screen to
+    // send the user to, every newly provisioned owner and every
+    // admin-reset staff member got locked out at first login with no way
+    // back in. The must_change_password flag/column stay (useful for
+    // reporting, and Password::update() still clears it on a real change)
+    // but nothing enforces it anymore.
     $user = flaggedUser();
 
-    $this->actingAs($user)->getJson(route('profile.edit'))
-        ->assertForbidden()
-        ->assertJson(['error_code' => 'must_change_password']);
+    $this->actingAs($user)->getJson(route('profile.edit'))->assertOk();
 
-    // The password-update endpoint itself stays reachable.
+    // The password-update endpoint still works for anyone who chooses to use it.
     $this->actingAs($user)->putJson(route('password.update'), [
         'current_password' => 'password',
         'password' => 'Fresh-Str0ng-Password-77',

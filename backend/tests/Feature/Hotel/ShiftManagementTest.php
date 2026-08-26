@@ -144,3 +144,32 @@ it('blocks a cash payment when the cashier has no open till session, but leaves 
         'payments' => [['method' => 'card', 'amount' => $order['total']]],
     ])->assertOk();
 });
+
+it('creates a till which then appears in the till list for opening', function () {
+    $manager = staffWithRole('Manager');
+
+    $created = $this->actingAs($manager)->postJson('/api/till/tills', ['name' => 'Restaurant Till'])
+        ->assertCreated();
+
+    $index = $this->actingAs($manager)->getJson('/api/till/tills')->assertOk();
+    expect(collect($index->json('tills'))->pluck('name'))->toContain('Restaurant Till');
+
+    $this->actingAs($manager)->postJson('/api/till/open', [
+        'till_id' => $created->json('till.id'), 'opening_balance' => 100000,
+    ])->assertCreated();
+});
+
+it('lists a deactivated till only when include_inactive is requested', function () {
+    $manager = staffWithRole('Manager');
+    $till = $this->actingAs($manager)->postJson('/api/till/tills', ['name' => 'Pool Bar Till'])
+        ->assertCreated()->json('till');
+
+    $this->actingAs($manager)->putJson("/api/till/tills/{$till['id']}", ['name' => $till['name'], 'is_active' => false])
+        ->assertOk();
+
+    $activeOnly = $this->actingAs($manager)->getJson('/api/till/tills')->assertOk();
+    expect(collect($activeOnly->json('tills'))->pluck('id'))->not->toContain($till['id']);
+
+    $withInactive = $this->actingAs($manager)->getJson('/api/till/tills?include_inactive=1')->assertOk();
+    expect(collect($withInactive->json('tills'))->pluck('id'))->toContain($till['id']);
+});

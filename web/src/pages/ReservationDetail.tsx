@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { Printer, LogIn, LogOut, Ban, Plus, Pencil, Trash2, Check, CircleDot, Circle } from "lucide-react";
-import { openPdf, post, put } from "../lib/api";
+import { printDocument, post, put } from "../lib/api";
 import { useFetch, lkr, usd, fmtDate, fmtDateTime, toCents, useSettings } from "../lib/util";
 import { Badge, Card, Empty, ErrorText, Field, Modal, statusColor } from "../components/ui";
 import { SplitPay, ReasonModal, DiscountModal } from "./POS";
@@ -39,11 +39,16 @@ type FolioT = {
   total: number; paid: number; refunded: number; balance: number;
 };
 /** ReservationService::checkoutQuote() nests the folio+totals under `folio`, distinct from FolioController::show()'s flat shape. */
+type EarlyDeparture = {
+  scheduled_check_out: string; unused_nights: number; unused_value: number;
+  fee_mode: string; fee: number; net_credit: number;
+};
 type CheckoutQuote = {
   folio: { id: number; status: Lookup; invoice_no: string | null; total: number; paid: number; refunded: number; balance: number };
   lines: FolioLineT[];
   late_surcharge: number; service_charge: number; service_charge_pct: number;
   vat: number; vat_pct: number; grand_total: number; balance_due: number;
+  early_departure: EarlyDeparture | null;
 };
 
 export default function ReservationDetail() {
@@ -92,13 +97,13 @@ export default function ReservationDetail() {
           )}
           {f && can("hotel_folios.invoice") && (
             <div className="flex">
-              <button className="btn-secondary !rounded-r-none" onClick={() => openPdf(`/folios/${f.id}/invoice?format=a4`)}>
+              <button className="btn-secondary !rounded-r-none" onClick={() => printDocument(`/folios/${f.id}/invoice?format=a4`)}>
                 <Printer size={16} /> Invoice {f.invoice_no ?? "(proforma)"}
               </button>
               <button
                 className="btn-secondary !rounded-l-none !border-l !border-slate-200 !px-2.5"
                 title="Print thermal (80mm)"
-                onClick={() => openPdf(`/folios/${f.id}/invoice?format=thermal`)}
+                onClick={() => printDocument(`/folios/${f.id}/invoice?format=thermal`)}
               >
                 80mm
               </button>
@@ -139,7 +144,7 @@ export default function ReservationDetail() {
                 <span><b>Room {rr.room?.number ?? "—"}</b> <span className="text-xs text-slate-400">{rr.room?.name ?? rr.room?.room_type?.name ?? "Standard"}</span></span>
                 <span className="flex items-center gap-2">
                   <span className="text-xs">{lkr(rr.nightly_rate)}/n</span>
-                  {rr.room.status && <Badge color={statusColor(rr.room.status.code.toUpperCase())}>{rr.room.status.code.toUpperCase()}</Badge>}
+                  {rr.room?.status && <Badge color={statusColor(rr.room.status.code.toUpperCase())}>{rr.room.status.code.toUpperCase()}</Badge>}
                 </span>
               </div>
             ))}
@@ -451,8 +456,11 @@ function CheckInModal({ r, onClose, onDone }: { r: Detail; onClose: () => void; 
   const early = now < str("frontdesk.check_in_time", "14:00");
   const surcharge = num("billing.early_checkin_surcharge", 0);
   const [applyEarly, setApplyEarly] = useState(early && surcharge > 0);
+  // A room can come back null (soft-deleted / out of scope) while its
+  // reservation_rooms row survives — skip it rather than crash the modal.
+  const checkableRooms = r.rooms.filter((rr): rr is typeof rr & { room: NonNullable<typeof rr.room> } => !!rr.room);
   const [checks, setChecks] = useState<Record<number, { item: string; ok: boolean; note?: string }[]>>(
-    Object.fromEntries(r.rooms.map((rr) => [rr.room.id, ((rr.room.item_checklist ?? rr.room.room_type?.item_checklist) ?? []).map((item: string) => ({ item, ok: true }))]))
+    Object.fromEntries(checkableRooms.map((rr) => [rr.room.id, ((rr.room.item_checklist ?? rr.room.room_type?.item_checklist) ?? []).map((item: string) => ({ item, ok: true }))]))
   );
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -492,9 +500,10 @@ function CheckInModal({ r, onClose, onDone }: { r: Detail; onClose: () => void; 
             Early check-in (before {str("frontdesk.check_in_time", "14:00")}) — surcharge {lkr(surcharge)} {surcharge === 0 && "(not configured)"}
           </label>
         )}
-        {r.rooms.map((rr) => (
+        {checkableRooms.map((rr) => (
           <div key={rr.room.id}>
             <div className="label">Room {rr.room.number} — item checklist (confirm present & undamaged)</div>
+            {checks[rr.room.id].length === 0 && <div className="text-xs text-slate-400">No checklist configured for this room.</div>}
             <div className="grid gap-1 sm:grid-cols-2">
               {checks[rr.room.id].map((c, i) => (
                 <label key={i} className="flex items-center gap-2 rounded px-1 py-0.5 text-sm hover:bg-slate-50">
@@ -527,7 +536,13 @@ function CheckOutModal({ r, usdRate, onClose, onDone }: { r: Detail; usdRate: nu
   const late = new Date().toTimeString().slice(0, 5) > str("frontdesk.check_out_time", "12:00");
   const lateAmt = num("billing.late_checkout_surcharge", 0);
   const [applyLate, setApplyLate] = useState(late && lateAmt > 0);
-  const { data: quote } = useFetch<CheckoutQuote>(`/reservations/${r.id}/checkout-quote?late=${applyLate ? "1" : "0"}`, [applyLate]);
+  // Default on — guest shouldn't get the unused nights free with no
+  // adjustment; staff can uncheck to bill the original amount in full.
+  const [applyEarlyDeparture, setApplyEarlyDeparture] = useState(true);
+  const { data: quote } = useFetch<CheckoutQuote>(
+    `/reservations/${r.id}/checkout-quote?late=${applyLate ? "1" : "0"}&early_departure=${applyEarlyDeparture ? "1" : "0"}`,
+    [applyLate, applyEarlyDeparture]
+  );
   const [payments, setPayments] = useState<{ method: string; amount: string; reference: string }[]>([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -540,8 +555,8 @@ function CheckOutModal({ r, usdRate, onClose, onDone }: { r: Detail; usdRate: nu
           <div className="text-3xl">🧾</div>
           <p className="text-sm">Consolidated invoice <b>{invoiceNo}</b> generated. Rooms sent to housekeeping.</p>
           <div className="flex justify-center gap-2">
-            <button className="btn-primary" onClick={() => quote && openPdf(`/folios/${quote.folio.id}/invoice?format=a4`)}><Printer size={15} /> Print A4</button>
-            <button className="btn-secondary" onClick={() => quote && openPdf(`/folios/${quote.folio.id}/invoice?format=thermal`)}>Thermal</button>
+            <button className="btn-primary" onClick={() => quote && printDocument(`/folios/${quote.folio.id}/invoice?format=a4`)}><Printer size={15} /> Print A4</button>
+            <button className="btn-secondary" onClick={() => quote && printDocument(`/folios/${quote.folio.id}/invoice?format=thermal`)}>Thermal</button>
           </div>
           <button className="btn-ghost w-full" onClick={onDone}>Done</button>
         </div>
@@ -552,6 +567,11 @@ function CheckOutModal({ r, usdRate, onClose, onDone }: { r: Detail; usdRate: nu
   if (!quote) return null;
   const newSum = payments.reduce((s, p) => s + toCents(p.amount), 0);
   const remaining = quote.balance_due - newSum;
+  // Over-tender is only meaningful as cash change — a card/bank/QR payment
+  // can't be partially reversed at the register the way handing back
+  // banknotes can, so the server rejects an over-tender with no cash row too.
+  const hasCashPayment = payments.some((p) => p.method === "cash" && toCents(p.amount) > 0);
+  const overTenderNeedsCash = remaining < 0 && !hasCashPayment;
 
   const doCheckout = async () => {
     setBusy(true);
@@ -559,6 +579,7 @@ function CheckOutModal({ r, usdRate, onClose, onDone }: { r: Detail; usdRate: nu
     try {
       const res = await post<{ invoice_no: string }>(`/reservations/${r.id}/checkout`, {
         apply_late_surcharge: applyLate,
+        apply_early_departure: applyEarlyDeparture,
         payments: payments.filter((p) => toCents(p.amount) > 0).map((p) => ({ method: p.method, amount: toCents(p.amount), reference: p.reference || undefined })),
       });
       setInvoiceNo(res.invoice_no);
@@ -590,6 +611,22 @@ function CheckOutModal({ r, usdRate, onClose, onDone }: { r: Detail; usdRate: nu
           Late check-out (after {str("frontdesk.check_out_time", "12:00")}) — surcharge {lkr(lateAmt)} {lateAmt === 0 && "(not configured)"}
         </label>
       )}
+      {quote.early_departure && (
+        <div className="mt-2 rounded-lg bg-amber-50 p-3 text-sm">
+          <div className="font-semibold text-amber-900">
+            Early departure — leaving {quote.early_departure.unused_nights} night{quote.early_departure.unused_nights === 1 ? "" : "s"} before the scheduled check-out ({fmtDate(quote.early_departure.scheduled_check_out)}).
+          </div>
+          <div className="mt-1 text-xs text-amber-800">
+            Unused nights −{lkr(quote.early_departure.unused_value)}
+            {quote.early_departure.fee > 0 && <> · Early departure fee (+{lkr(quote.early_departure.fee)})</>}
+            {" "}→ net {quote.early_departure.net_credit >= 0 ? "credit" : "charge"} {lkr(Math.abs(quote.early_departure.net_credit))}
+          </div>
+          <label className="mt-1.5 flex items-center gap-2 font-semibold text-amber-900">
+            <input type="checkbox" checked={applyEarlyDeparture} onChange={(e) => setApplyEarlyDeparture(e.target.checked)} />
+            Apply early departure adjustment (unchecked bills the full original amount)
+          </label>
+        </div>
+      )}
       <div className="mt-3 space-y-1 rounded-xl bg-slate-50 p-3 text-sm">
         <div className="flex justify-between font-extrabold"><span>Grand total</span><span>{lkr(quote.grand_total)} {usdRate > 0 && <span className="text-xs font-normal text-slate-400">{usd(quote.grand_total, usdRate)}</span>}</span></div>
         <div className="flex justify-between text-emerald-700"><span>Already paid (deposits etc.)</span><span>{lkr(quote.folio.paid - quote.folio.refunded)}</span></div>
@@ -614,13 +651,23 @@ function CheckOutModal({ r, usdRate, onClose, onDone }: { r: Detail; usdRate: nu
           <button className="btn-secondary w-full" onClick={() => setPayments([...payments, { method: "cash", amount: remaining > 0 ? (remaining / 100).toFixed(2) : "", reference: "" }])}>
             + Add payment
           </button>
-          <div className={`text-right text-sm font-bold ${remaining === 0 ? "text-emerald-600" : "text-red-600"}`}>
-            {remaining === 0 ? "Fully covered ✓" : remaining > 0 ? `Short ${lkr(remaining)}` : `Over ${lkr(-remaining)}`}
+          <div className={`text-right text-sm font-bold ${remaining === 0 ? "text-emerald-600" : remaining > 0 ? "text-red-600" : overTenderNeedsCash ? "text-amber-600" : "text-emerald-600"}`}>
+            {remaining === 0
+              ? "Fully covered ✓"
+              : remaining > 0
+                ? `Short ${lkr(remaining)}`
+                : overTenderNeedsCash
+                  ? `Over ${lkr(-remaining)} — add a cash payment to give change`
+                  : `Change due ${lkr(-remaining)}`}
           </div>
         </div>
       )}
       <ErrorText error={error} />
-      <button className="btn-primary mt-3 w-full !py-3" disabled={busy || (quote.balance_due > 0 && remaining !== 0)} onClick={doCheckout}>
+      <button
+        className="btn-primary mt-3 w-full !py-3"
+        disabled={busy || (quote.balance_due > 0 && (remaining > 0 || overTenderNeedsCash))}
+        onClick={doCheckout}
+      >
         {busy ? "Processing…" : quote.balance_due < 0 ? `Check out & refund ${lkr(-quote.balance_due)}` : "Complete checkout & generate invoice"}
       </button>
     </Modal>

@@ -83,6 +83,24 @@ it('stores a menu item photo and serves it back on both the admin list and the P
     expect($updated['image'])->toBeNull();
 });
 
+it('clears a menu item description instead of erroring when set to empty on update', function () {
+    // pos_menu_items.description is NOT NULL (default '') — clearing the
+    // field sends "" which ConvertEmptyStringsToNull turns into null, and
+    // the update FormRequest allows a nullable description, so without a
+    // coalesce in the controller this 500s: "Column 'description' cannot be null".
+    $manager = staffWithRole('Manager');
+    $category = MenuCategory::create(['name' => 'Mains']);
+    $item = MenuItem::create([
+        'name' => 'Fried Rice', 'menu_category_id' => $category->id, 'price' => 100000, 'description' => 'Spicy',
+    ]);
+
+    $response = $this->actingAs($manager)->putJson("/api/menu/items/{$item->id}", ['description' => ''])
+        ->assertOk();
+
+    expect($response->json('menu_item.description'))->toBe('');
+    $this->assertDatabaseHas('pos_menu_items', ['id' => $item->id, 'description' => '']);
+});
+
 it('hard-deletes a menu item that has never been ordered', function () {
     $manager = staffWithRole('Manager');
     $category = MenuCategory::create(['name' => 'Mains']);

@@ -42,10 +42,18 @@
 <hr class="hr">
 <x-pdf-row bold left="TOTAL (LKR)" :right="\App\Support\Money::format($totals['total'])" />
 
+@php
+    $hasChange = $folio->payments->contains(fn ($p) => $p->reason === 'Change returned to guest');
+@endphp
+@if($hasChange)
+    <x-pdf-row :left="'TENDERED'" :right="\App\Support\Money::format($totals['paid'])" />
+@endif
 @foreach($folio->payments as $payment)
     @php
-        $kindLabel = $payment->kind->code === \App\Support\Lookups\PaymentKind::REFUND ? 'Refund'
-            : ($payment->kind->code === \App\Support\Lookups\PaymentKind::DEPOSIT ? 'Deposit' : 'Payment');
+        $isChange = $payment->reason === 'Change returned to guest';
+        $kindLabel = $isChange ? 'Change'
+            : ($payment->kind->code === \App\Support\Lookups\PaymentKind::REFUND ? 'Refund'
+            : ($payment->kind->code === \App\Support\Lookups\PaymentKind::DEPOSIT ? 'Deposit' : 'Payment'));
     @endphp
     <x-pdf-row
         :left="$kindLabel.' — '.$payment->method->code.($payment->reference ? ' ('.$payment->reference.')' : '').' '.$payment->created_at->format('d/m/Y')"

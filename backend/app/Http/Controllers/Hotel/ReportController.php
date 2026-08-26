@@ -26,12 +26,12 @@ class ReportController extends Controller
         return response()->json($this->reports->computeDaily($request->query('date', today()->toDateString())));
     }
 
-    /** Branded A4 PDF of the daily report. */
+    /** Branded A4 daily report. ?output=html|pdf. */
     public function dailyPdf(Request $request): Response
     {
         $date = $request->query('date', today()->toDateString());
 
-        return $this->pdf->dailyReport($this->reports->computeDaily($date), ['title' => 'DAILY OPERATIONS REPORT']);
+        return $this->pdf->dailyReport($this->reports->computeDaily($date), ['title' => 'DAILY OPERATIONS REPORT'], $request->query('output') === 'html');
     }
 
     /** Night audit: computes + permanently stores the day's snapshot. */
@@ -53,12 +53,16 @@ class ReportController extends Controller
         return response()->json(['night_audits' => $query->limit(60)->get()]);
     }
 
-    /** Branded A4 PDF of a stored night-audit snapshot. */
-    public function nightAuditPdf(NightAudit $nightAudit): Response
+    /** Branded A4 night-audit snapshot. ?output=html|pdf. */
+    public function nightAuditPdf(Request $request, NightAudit $nightAudit): Response
     {
         $nightAudit->loadMissing('runBy:id,name');
 
-        return $this->pdf->dailyReport($nightAudit->data, ['title' => 'NIGHT AUDIT SNAPSHOT', 'run_by' => $nightAudit->runBy->name]);
+        return $this->pdf->dailyReport(
+            $nightAudit->data,
+            ['title' => 'NIGHT AUDIT SNAPSHOT', 'run_by' => $nightAudit->runBy->name],
+            $request->query('output') === 'html',
+        );
     }
 
     /** Monthly performance: per-day revenue + occupancy. */
@@ -67,10 +71,13 @@ class ReportController extends Controller
         return response()->json($this->reports->computeMonthly($request->query('month', today()->format('Y-m'))));
     }
 
-    /** Branded A4 PDF of the monthly report. */
+    /** Branded A4 monthly report. ?output=html|pdf. */
     public function monthlyPdf(Request $request): Response
     {
-        return $this->pdf->monthlyReport($this->reports->computeMonthly($request->query('month', today()->format('Y-m'))));
+        return $this->pdf->monthlyReport(
+            $this->reports->computeMonthly($request->query('month', today()->format('Y-m'))),
+            $request->query('output') === 'html',
+        );
     }
 
     /** POS sales report for a range: category totals, best sellers, method breakdown. */
@@ -82,13 +89,13 @@ class ReportController extends Controller
         return response()->json($this->reports->computePos($from, $to));
     }
 
-    /** Branded A4 PDF of the POS sales report. */
+    /** Branded A4 POS sales report. ?output=html|pdf. */
     public function posPdf(Request $request): Response
     {
         $from = $request->query('from', today()->subDays(6)->toDateString());
         $to = $request->query('to', today()->toDateString());
 
-        return $this->pdf->posReport($this->reports->computePos($from, $to));
+        return $this->pdf->posReport($this->reports->computePos($from, $to), $request->query('output') === 'html');
     }
 
     /** RevPAR / ADR / occupancy over a date range. */

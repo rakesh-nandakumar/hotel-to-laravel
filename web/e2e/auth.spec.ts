@@ -5,7 +5,9 @@ test.describe("Login", () => {
   test("signs in with valid credentials and lands on the dashboard", async ({ page }) => {
     await fillLogin(page, USERS.manager.email, PASSWORD);
     await expect(page).toHaveURL("/");
-    await expect(page.getByText(USERS.manager.name)).toBeVisible();
+    // The sidebar user badge AND the header's "Account settings" button both
+    // render this name — .first() confirms login without caring which one.
+    await expect(page.getByText(USERS.manager.name).first()).toBeVisible();
   });
 
   test("rejects a wrong password", async ({ page }) => {

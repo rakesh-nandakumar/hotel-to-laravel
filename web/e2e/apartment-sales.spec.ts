@@ -1,5 +1,5 @@
 import { test, expect, Locator } from "@playwright/test";
-import { authFile, collectConsoleErrors } from "./fixtures";
+import { authFile, collectConsoleErrors, ensureTillOpen } from "./fixtures";
 
 test.use({ storageState: authFile("manager") });
 
@@ -39,6 +39,8 @@ test("takes a unit through inquiry, reservation, agreement, full payment, and co
   await field(modal, "Sale price (LKR) *").fill("25000000");
   await modal.getByRole("button", { name: /^save$/i }).click();
   await expect(modal).toBeHidden();
+
+  await ensureTillOpen(page);
 
   const errors = await collectConsoleErrors(page, async () => {
     await page.goto("/apartments/sales");

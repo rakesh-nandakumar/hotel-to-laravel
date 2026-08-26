@@ -22,6 +22,7 @@ class CheckoutReservationRequest extends FormRequest
 
         return [
             'apply_late_surcharge' => ['nullable', 'boolean'],
+            'apply_early_departure' => ['nullable', 'boolean'],
             'payments' => ['nullable', 'array'],
             'payments.*.method' => ['required', 'string', $paymentMethod],
             'payments.*.amount' => ['required', 'integer', 'min:1'],
@@ -29,7 +30,9 @@ class CheckoutReservationRequest extends FormRequest
             'refund_method' => ['nullable', 'string', $paymentMethod],
             'item_checks' => ['nullable', 'array'],
             'item_checks.*.room_id' => ['required', 'integer', 'exists:rooms,id'],
-            'item_checks.*.items' => ['required', 'array'],
+            // 'present' (not 'required') — a room with no configured item
+            // checklist legitimately submits an empty items array.
+            'item_checks.*.items' => ['present', 'array'],
             'item_checks.*.items.*.item' => ['required', 'string', 'max:150'],
             'item_checks.*.items.*.ok' => ['required', 'boolean'],
             'item_checks.*.items.*.note' => ['nullable', 'string', 'max:500'],

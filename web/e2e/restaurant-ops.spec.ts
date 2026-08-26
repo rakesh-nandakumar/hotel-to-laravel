@@ -69,7 +69,7 @@ test("occupies a table on dine-in, frees it on settle, and dispatches a delivery
     if (await pickerModal.isVisible({ timeout: 1_000 }).catch(() => false)) {
       await pickerModal.getByRole("button", { name: /add to cart/i }).click();
     }
-    await page.getByRole("button", { name: /send to kitchen/i }).click();
+    await page.getByRole("button", { name: /send order/i }).click();
     await expect(page.getByRole("button", { name: /^open orders/i })).toBeVisible({ timeout: 10_000 }).catch(() => {});
 
     await page.goto("/tables");
@@ -106,7 +106,7 @@ test("occupies a table on dine-in, frees it on settle, and dispatches a delivery
     if (await pickerModal2.isVisible({ timeout: 1_000 }).catch(() => false)) {
       await pickerModal2.getByRole("button", { name: /add to cart/i }).click();
     }
-    await page.getByRole("button", { name: /send to kitchen/i }).click();
+    await page.getByRole("button", { name: /send order/i }).click();
 
     await page.getByRole("button", { name: /open orders/i }).click();
     await page.getByRole("button", { name: /^delivery$/i }).click();

@@ -17,7 +17,7 @@ test("uploads a menu item photo and it shows on the POS grid", async ({ page }) 
   await expect(itemModal.getByText(/new menu item/i)).toBeVisible();
 
   await fieldInput(itemModal, "Name").fill(itemName);
-  await fieldInput(itemModal, "Category").selectOption({ label: /E2E Seed Category/ });
+  await fieldInput(itemModal, "Category").selectOption({ label: "E2E Seed Category" });
   await fieldInput(itemModal, "Price (LKR)").fill("850");
 
   const fileInput = itemModal.locator('input[type="file"]');

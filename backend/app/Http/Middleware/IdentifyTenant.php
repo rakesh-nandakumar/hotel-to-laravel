@@ -38,6 +38,16 @@ class IdentifyTenant
 
     public function handle(Request $request, Closure $next): Response
     {
+        // Deploy utility (see routes/api.php): must work from a bare/unrecognized
+        // host with no tenant context at all — that's the point of it, a
+        // fallback for hosts where `php artisan migrate` can't be run over
+        // SSH. Migrations are schema-only and tenant-agnostic, so tenant
+        // resolution is skipped entirely for this one route rather than
+        // requiring the host to already resolve as central or a known tenant.
+        if ($request->is('api/deploy/migrate')) {
+            return $next($request);
+        }
+
         // CurrentContext is a container singleton — start every request with
         // a clean slate rather than risk a previous request's tenant leaking
         // forward (see CurrentContext::resetTenant()'s doc block).

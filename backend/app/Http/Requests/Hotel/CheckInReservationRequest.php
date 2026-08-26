@@ -21,7 +21,9 @@ class CheckInReservationRequest extends FormRequest
             'apply_early_surcharge' => ['nullable', 'boolean'],
             'item_checks' => ['nullable', 'array'],
             'item_checks.*.room_id' => ['required', 'integer', 'exists:rooms,id'],
-            'item_checks.*.items' => ['required', 'array'],
+            // 'present' (not 'required') — a room with no configured item
+            // checklist legitimately submits an empty items array.
+            'item_checks.*.items' => ['present', 'array'],
             'item_checks.*.items.*.item' => ['required', 'string', 'max:150'],
             'item_checks.*.items.*.ok' => ['required', 'boolean'],
             'item_checks.*.items.*.note' => ['nullable', 'string', 'max:500'],

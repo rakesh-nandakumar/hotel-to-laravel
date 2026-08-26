@@ -417,9 +417,18 @@ class OrderService
 
         $paidAlready = $this->orderPaid($order);
         $newSum = (int) collect($payments)->sum('amount');
-        if ($paidAlready + $newSum !== $order->total) {
+        $overpaid = $paidAlready + $newSum - $order->total;
+
+        if ($overpaid < 0) {
             throw ValidationException::withMessages([
                 'payments' => 'Split payments must total LKR '.number_format(($order->total - $paidAlready) / 100, 2).'.',
+            ]);
+        }
+        // "Change" only makes sense against cash actually tendered — a card/
+        // bank/QR payment can't be partially reversed at the register.
+        if ($overpaid > 0 && ! collect($payments)->contains(fn ($p) => $p['method'] === PaymentMethod::CASH)) {
+            throw ValidationException::withMessages([
+                'payments' => 'Only cash payments may exceed the amount due — reduce the tendered amount to match the total.',
             ]);
         }
 
@@ -430,6 +439,13 @@ class OrderService
                 'staff_id' => $staffId, 'guest_id_for_loyalty' => $order->reservation?->guest_id,
             ]);
         }
+        if ($overpaid > 0) {
+            $this->billing->recordPayment([
+                'order_id' => $order->id, 'method' => PaymentMethod::CASH,
+                'amount' => $overpaid, 'kind' => PaymentKind::REFUND,
+                'reason' => 'Change returned to guest', 'staff_id' => $staffId,
+            ]);
+        }
 
         $order->update(['order_status_id' => Lookup::id(LookupType::ORDER_STATUS, OrderStatus::SETTLED), 'settled_at' => now()]);
         $this->freeTableToCleaning($order);
@@ -438,7 +454,7 @@ class OrderService
             $this->billing->accrueLoyalty($order->reservation->guest_id, $order->total, 'ORDER', $order->id, $staffId);
         }
 
-        AuditLog::record('order.settled', $order, ['total' => $order->total, 'methods' => collect($payments)->pluck('method')->all()]);
+        AuditLog::record('order.settled', $order, ['total' => $order->total, 'methods' => collect($payments)->pluck('method')->all(), 'change_due' => $overpaid]);
         broadcast(new RealtimeUpdate(RealtimeEvent::ORDERS, ['order_id' => $order->id]));
 
         return $order->load(self::WITH_FULL);

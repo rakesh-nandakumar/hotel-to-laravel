@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { authFile, collectConsoleErrors } from "./fixtures";
+import { authFile, collectConsoleErrors, ensureTillOpen } from "./fixtures";
 
 test.use({ storageState: authFile("manager") });
 
@@ -11,6 +11,9 @@ test.use({ storageState: authFile("manager") });
  * (reading 'code')" before the `status` relation was eager-loaded.
  */
 test("books a room, checks a guest in and out, and the resulting cleaning task appears", async ({ page }) => {
+  // Opening a till (below) adds a full extra page round-trip before checkout
+  // can even be attempted — past the 30s default alongside the rest of this flow.
+  test.setTimeout(60_000);
   const guestName = `E2E Guest ${Date.now()}`;
 
   await page.goto("/reservations");
@@ -35,6 +38,10 @@ test("books a room, checks a guest in and out, and the resulting cleaning task a
   await checkinModal.getByPlaceholder(/NIC or passport/i).fill("912345678V");
   await checkinModal.getByRole("button", { name: /confirm check-in/i }).click();
   await expect(page.getByRole("button", { name: /check out/i })).toBeVisible({ timeout: 10_000 });
+
+  await ensureTillOpen(page);
+  await page.goto(`/reservations`);
+  await page.getByText(guestName).click();
 
   // ── Check out (cover the full balance with one cash payment) ───────────
   await page.getByRole("button", { name: /check out/i }).click();

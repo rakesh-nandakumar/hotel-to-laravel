@@ -1,5 +1,5 @@
 import { test, expect, Locator } from "@playwright/test";
-import { authFile, collectConsoleErrors } from "./fixtures";
+import { authFile, collectConsoleErrors, ensureTillOpen } from "./fixtures";
 
 test.use({ storageState: authFile("manager") });
 
@@ -48,6 +48,8 @@ test("checks a booking out to Dirty, completes the housekeeping checklist, and r
   await field(modal, "Unit type *").selectOption({ label: unitTypeName });
   await modal.getByRole("button", { name: /^save$/i }).click();
   await expect(modal).toBeHidden();
+
+  await ensureTillOpen(page);
 
   const errors = await collectConsoleErrors(page, async () => {
     // Book, check in, check out.

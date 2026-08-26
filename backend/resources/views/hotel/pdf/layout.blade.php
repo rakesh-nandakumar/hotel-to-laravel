@@ -5,8 +5,13 @@
 <title>{{ $title ?? 'Document' }}</title>
 <style>
     @page {
-        margin: {{ $format === 'thermal' ? '10px 8px' : '40px' }};
-        @if($format === 'thermal') size: 226px 1200px; @else size: A4; @endif
+        @if(($medium ?? 'pdf') === 'browser')
+            size: {{ $format === 'thermal' ? '80mm auto' : 'A4' }};
+            margin: {{ $format === 'thermal' ? '3mm' : '12mm' }};
+        @else
+            margin: {{ $format === 'thermal' ? '10px 8px' : '40px' }};
+            @if($format === 'thermal') size: 226px 1200px; @else size: A4; @endif
+        @endif
     }
     body { font-family: Helvetica, Arial, sans-serif; color: #000; font-size: {{ $format === 'thermal' ? '8px' : '10px' }}; }
     .center { text-align: center; }

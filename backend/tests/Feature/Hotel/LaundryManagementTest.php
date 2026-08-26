@@ -76,3 +76,27 @@ it('rejects charging laundry to a room with no checked-in guest', function () {
         'room_id' => $room->id, 'items' => [['laundry_item_id' => $shirt->id, 'qty' => 1]],
     ])->assertUnprocessable()->assertJsonValidationErrors('room_id');
 });
+
+it('lists only checked-in rooms for the laundry charge dropdown, without requiring hotel_rooms.access', function () {
+    // A laundry-only housekeeper doesn't hold hotel_rooms.access, so the
+    // dropdown must be served by /laundry/rooms rather than the full /rooms
+    // board — otherwise it 403s and the select silently stays empty.
+    $housekeeper = staffWithRole('Housekeeper');
+    $room102 = Room::query()->where('number', '102')->firstOrFail();
+    $room103 = Room::query()->where('number', '103')->firstOrFail();
+    $guest = Guest::factory()->create();
+
+    $reservation = $this->actingAs(staffWithRole('Manager'))->postJson('/api/reservations', [
+        'guest_id' => $guest->id, 'channel' => 'walkin', 'check_in' => '2026-08-03', 'check_out' => '2026-08-05',
+        'adults' => 1, 'rooms' => [['room_id' => $room102->id]],
+    ])->assertCreated();
+    $this->actingAs(staffWithRole('Manager'))
+        ->postJson("/api/reservations/{$reservation->json('reservation.id')}/check-in", [])
+        ->assertOk();
+
+    $response = $this->actingAs($housekeeper)->getJson('/api/laundry/rooms')->assertOk();
+    $rooms = collect($response->json('rooms'));
+
+    expect($rooms->pluck('number'))->toContain('102')
+        ->and($rooms->pluck('number'))->not->toContain('103');
+});

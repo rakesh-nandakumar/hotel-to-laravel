@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Wallet, Play, Lock, Printer, Download, Trash2, CheckCircle2 } from "lucide-react";
-import { api, openPdf, post, put, API_ORIGIN } from "../lib/api";
+import { api, printDocument, post, put, API_ORIGIN } from "../lib/api";
 import { useFetch, usePagedFetch, lkr, toCents, centsToRupees, fmtDate } from "../lib/util";
 import { Badge, Card, Empty, ErrorText, Field, Modal, Tabs, Pagination } from "../components/ui";
 import { useToast } from "../lib/toast";
@@ -273,7 +273,7 @@ function RunModal({ runId, onClose }: { runId: number; onClose: () => void }) {
                     )}
                     {!draft && l.paid && <Badge color="green">PAID</Badge>}
                     {can("hotel_payroll.payslip") && (
-                      <button className="btn-ghost !py-1 text-xs" title="Payslip PDF" onClick={() => openPdf(`/payroll/lines/${l.id}/payslip`)}>
+                      <button className="btn-ghost !py-1 text-xs" title="Payslip PDF" onClick={() => printDocument(`/payroll/lines/${l.id}/payslip`)}>
                         <Printer size={13} />
                       </button>
                     )}

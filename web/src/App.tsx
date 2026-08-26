@@ -76,7 +76,7 @@ export default function App() {
     <AuthProvider>
       <BrandingProvider>
       <ToastProvider>
-        <BrowserRouter>
+        <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
           <Routes>
           <Route path="/login" element={<Login />} />
           {/* Public guest-facing pages (no login) */}

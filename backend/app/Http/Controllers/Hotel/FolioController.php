@@ -118,11 +118,11 @@ class FolioController extends Controller
         return response()->json(['payment' => $payment], 201);
     }
 
-    /** Branded invoice PDF — ?format=thermal|a4 (guest INV / venue VNU types). */
+    /** Branded invoice — ?format=thermal|a4 (guest INV / venue VNU types), ?output=html|pdf. */
     public function invoice(Request $request, Folio $folio): Response
     {
         $format = $request->query('format') === 'thermal' ? 'thermal' : 'a4';
 
-        return $this->pdf->folioInvoice($folio, $format);
+        return $this->pdf->folioInvoice($folio, $format, $request->query('output') === 'html');
     }
 }

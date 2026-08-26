@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Hotel\Guest;
 use App\Models\Hotel\Package;
 use App\Models\Hotel\Room;
 use App\Models\Lookup;
@@ -152,4 +153,44 @@ it('lets a manager update a package but blocks other roles', function () {
     $this->actingAs($manager)->putJson("/api/rooms/packages/{$package->id}", [
         'name' => 'Bed & Breakfast Plus',
     ])->assertOk()->assertJsonPath('package.name', 'Bed & Breakfast Plus');
+});
+
+it('blocks deleting an occupied room', function () {
+    $this->seed(HotelRoomsSeeder::class);
+    $manager = staffWithRole('Manager');
+    $room = Room::query()->where('number', '102')->firstOrFail();
+    $room->update(['room_status_id' => Lookup::id(LookupType::ROOM_STATUS, RoomStatus::OCCUPIED)]);
+
+    $this->actingAs($manager)->deleteJson("/api/rooms/{$room->id}")
+        ->assertUnprocessable()->assertJsonValidationErrors('room');
+
+    $this->assertDatabaseHas('rooms', ['id' => $room->id, 'deleted_at' => null]);
+});
+
+it('blocks deleting a room with an active or upcoming reservation', function () {
+    $this->seed(HotelRoomsSeeder::class);
+    $manager = staffWithRole('Manager');
+    $room = Room::query()->where('number', '103')->firstOrFail();
+    $guest = Guest::factory()->create();
+
+    $this->actingAs($manager)->postJson('/api/reservations', [
+        'guest_id' => $guest->id, 'channel' => 'walkin',
+        'check_in' => now()->addDay()->toDateString(), 'check_out' => now()->addDays(3)->toDateString(),
+        'adults' => 1, 'rooms' => [['room_id' => $room->id]],
+    ])->assertCreated();
+
+    $this->actingAs($manager)->deleteJson("/api/rooms/{$room->id}")
+        ->assertUnprocessable()->assertJsonValidationErrors('room');
+});
+
+it('deletes a vacant room with no reservations or housekeeping tasks', function () {
+    $manager = staffWithRole('Manager');
+    $roomResponse = $this->actingAs($manager)->postJson('/api/rooms', [
+        'number' => '888', 'max_occupancy' => 2, 'weekday_rate' => 10000, 'weekend_rate' => 12000,
+    ])->assertCreated();
+    $roomId = $roomResponse->json('room.id');
+
+    $this->actingAs($manager)->deleteJson("/api/rooms/{$roomId}")->assertOk();
+
+    $this->assertSoftDeleted('rooms', ['id' => $roomId]);
 });

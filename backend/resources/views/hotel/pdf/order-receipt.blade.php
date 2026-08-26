@@ -35,9 +35,19 @@
 <x-pdf-row bold left="TOTAL (LKR)" :right="\App\Support\Money::format($order->total)" />
 @if($order->payments->isNotEmpty())
     <hr class="hr">
+    @php
+        $hasChange = $order->payments->contains(fn ($p) => $p->reason === 'Change returned to guest');
+    @endphp
+    @if($hasChange)
+        <x-pdf-row left="TENDERED" :right="\App\Support\Money::format($paid + $order->payments->where('reason', 'Change returned to guest')->sum('amount'))" />
+    @endif
     @foreach($order->payments as $payment)
+        @php
+            $isChange = $payment->reason === 'Change returned to guest';
+            $label = $isChange ? 'Change' : ($payment->kind->code === \App\Support\Lookups\PaymentKind::REFUND ? 'Refund' : null);
+        @endphp
         <x-pdf-row
-            :left="($payment->kind->code === \App\Support\Lookups\PaymentKind::REFUND ? 'Refund — ' : '').$payment->method->code.($payment->reference ? ' ('.$payment->reference.')' : '')"
+            :left="($label ? $label.' — ' : '').$payment->method->code.($payment->reference ? ' ('.$payment->reference.')' : '')"
             :right="($payment->kind->code === \App\Support\Lookups\PaymentKind::REFUND ? '-' : '').\App\Support\Money::format($payment->amount)"
         />
     @endforeach

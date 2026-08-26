@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Wrench, Search, Plus, Users, BedDouble, Sparkles, UtensilsCrossed, Pencil, Eye, StickyNote, ChevronDown } from "lucide-react";
+import { Wrench, Search, Plus, Users, BedDouble, Sparkles, UtensilsCrossed, Pencil, Eye, StickyNote, ChevronDown, Trash2 } from "lucide-react";
 import { api, post, put } from "../lib/api";
 import { useFetch, lkr, toCents, centsToRupees, fmtDate } from "../lib/util";
 import { Badge, Card, Empty, ErrorText, Field, Modal, statusColor, Tabs } from "../components/ui";
@@ -102,6 +102,16 @@ function Board() {
       })
       .catch((e) => setError(e.message));
 
+  const removeRoom = (r: BoardRoom) => {
+    if (!confirm(`Delete room "${r.number}"? This cannot be undone.`)) return;
+    api(`/rooms/${r.id}`, { method: "DELETE" })
+      .then(() => {
+        setError("");
+        reload();
+      })
+      .catch((e) => setError(e.message));
+  };
+
   return (
     <div className="space-y-3">
       <div className="flex justify-end">
@@ -159,6 +169,11 @@ function Board() {
                 {can("hotel_rooms.edit") && (
                   <button className="btn-ghost !p-1 text-slate-400 hover:text-brand-600" title="Edit room" onClick={() => setEdit(r)}>
                     <Pencil size={13} />
+                  </button>
+                )}
+                {can("hotel_rooms.delete") && r.status.code !== "occupied" && (
+                  <button className="btn-ghost !p-1 text-slate-400 hover:text-red-600" title="Delete room" onClick={() => removeRoom(r)}>
+                    <Trash2 size={13} />
                   </button>
                 )}
               </div>

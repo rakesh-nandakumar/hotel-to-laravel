@@ -5,7 +5,7 @@ import {
   Play, Calendar, Trophy, Wallet, FileText, Gauge, Share2, XCircle, Heart,
   Building2, ClipboardCheck, PartyPopper, Shirt,
 } from "lucide-react";
-import { post, openPdf } from "../lib/api";
+import { post, printDocument, downloadFile } from "../lib/api";
 import { useFetch, usePagedFetch, lkr, todayStr, fmtDate, downloadCsv } from "../lib/util";
 import { Badge, Card, Empty, ErrorText, Pagination, ReportGrid, ReportDef, SimpleTable, DateRangeBar, Stat } from "../components/ui";
 import { useAuth } from "../lib/auth";
@@ -240,7 +240,8 @@ function DailyView({ d, prev, pdfUrl }: { d: Daily; prev?: Daily | null; pdfUrl?
       )}
       <div className="flex gap-2">
         <button className="btn-secondary" onClick={exportCsv}><Download size={14} /> Export CSV</button>
-        <button className="btn-secondary" onClick={() => openPdf(pdfUrl ?? `/reports/daily/pdf?date=${d.date}`)}><FileText size={14} /> Download PDF</button>
+        <button className="btn-secondary" onClick={() => printDocument(pdfUrl ?? `/reports/daily/pdf?date=${d.date}`)}><FileText size={14} /> Print</button>
+        <button className="btn-secondary" onClick={() => downloadFile(pdfUrl ?? `/reports/daily/pdf?date=${d.date}`, `report-${d.date}.pdf`)}><FileText size={14} /> Download PDF</button>
       </div>
     </div>
   );
@@ -301,7 +302,8 @@ function MonthlyTab() {
             actions={
               <div className="flex gap-1">
                 <button className="btn-ghost !py-1 text-xs" onClick={exportCsv}><Download size={13} /> CSV</button>
-                <button className="btn-ghost !py-1 text-xs" onClick={() => openPdf(`/reports/monthly/pdf?month=${data.month}`)}><FileText size={13} /> PDF</button>
+                <button className="btn-ghost !py-1 text-xs" onClick={() => printDocument(`/reports/monthly/pdf?month=${data.month}`)}><FileText size={13} /> Print</button>
+                <button className="btn-ghost !py-1 text-xs" onClick={() => downloadFile(`/reports/monthly/pdf?month=${data.month}`, `monthly-report-${data.month}.pdf`)}><FileText size={13} /> PDF</button>
               </div>
             }
           >

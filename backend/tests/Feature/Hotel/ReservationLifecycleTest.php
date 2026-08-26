@@ -2,6 +2,7 @@
 
 use App\Models\Hotel\Guest;
 use App\Models\Hotel\HousekeepingTask;
+use App\Models\Hotel\Reservation;
 use App\Models\Hotel\Room;
 use App\Models\Hotel\RoomType;
 use App\Models\Lookup;
@@ -483,4 +484,166 @@ it('records a folio payment and caps a refund at the net amount paid', function 
 
     $this->actingAs($manager)->postJson("/api/folios/{$folioId}/refund", ['method' => 'cash', 'amount' => 50_000, 'reason' => 'Guest cancelled extra'])
         ->assertCreated();
+});
+
+it('accepts check-in when a room has no configured item checklist', function () {
+    $manager = staffWithRole('Manager');
+    ['room' => $room, 'check_in' => $checkIn, 'check_out' => $checkOut] = bookTwoPersonRoom();
+    $guest = Guest::factory()->create();
+
+    $created = $this->actingAs($manager)->postJson('/api/reservations', [
+        'guest_id' => $guest->id, 'channel' => 'walkin', 'check_in' => $checkIn, 'check_out' => $checkOut,
+        'adults' => 1, 'rooms' => [['room_id' => $room->id]],
+    ])->assertCreated();
+    $reservationId = $created->json('reservation.id');
+
+    // Laravel's `required` rule fails on an empty array — this must use
+    // 'present' instead, or a room with no item_checklist configured (the
+    // frontend still sends one entry per room, with items: []) 422s.
+    $this->actingAs($manager)->postJson("/api/reservations/{$reservationId}/check-in", [
+        'item_checks' => [['room_id' => $room->id, 'items' => []]],
+    ])->assertOk();
+});
+
+it('credits unused nights and charges a percentage departure fee when checking out early', function () {
+    $manager = staffWithRole('Manager');
+    openTillFor($manager);
+    $room = Room::query()->where('number', '102')->firstOrFail();
+    $guest = Guest::factory()->create();
+    $checkIn = now()->toDateString();
+    $checkOut = now()->addDays(4)->toDateString();
+
+    $created = $this->actingAs($manager)->postJson('/api/reservations', [
+        'guest_id' => $guest->id, 'channel' => 'walkin', 'check_in' => $checkIn, 'check_out' => $checkOut,
+        'adults' => 1, 'rooms' => [['room_id' => $room->id]],
+    ])->assertCreated();
+    $reservationId = $created->json('reservation.id');
+    $folioId = $created->json('reservation.folio.id');
+    $this->actingAs($manager)->postJson("/api/reservations/{$reservationId}/check-in", [])->assertOk();
+
+    $nightlyRate = 1_200_000;
+    $unusedValue = $nightlyRate * 4;
+    $expectedFee = (int) round($unusedValue * 0.5); // default billing.early_departure_fee_pct = 50
+
+    $quote = $this->actingAs($manager)
+        ->getJson("/api/reservations/{$reservationId}/checkout-quote?early_departure=1")
+        ->assertOk();
+
+    expect($quote->json('early_departure.unused_nights'))->toBe(4)
+        ->and($quote->json('early_departure.unused_value'))->toBe($unusedValue)
+        ->and($quote->json('early_departure.fee'))->toBe($expectedFee)
+        ->and($quote->json('grand_total'))->toBe($expectedFee);
+
+    $response = $this->actingAs($manager)->postJson("/api/reservations/{$reservationId}/checkout", [
+        'apply_early_departure' => true,
+        'payments' => [['method' => 'cash', 'amount' => $quote->json('balance_due')]],
+    ])->assertOk();
+
+    expect($response->json('total'))->toBe($expectedFee);
+
+    $folio = $this->actingAs($manager)->getJson("/api/folios/{$folioId}")->assertOk();
+    $lines = collect($folio->json('folio.lines'));
+    $credit = $lines->first(fn ($l) => str_starts_with($l['description'], 'Early departure credit'));
+    $fee = $lines->first(fn ($l) => str_starts_with($l['description'], 'Early departure fee'));
+
+    expect($credit['amount'])->toBe(-$unusedValue)
+        ->and($fee['amount'])->toBe($expectedFee)
+        ->and(Reservation::find($reservationId)->check_out->toDateString())->toBe($checkIn);
+});
+
+it('charges a flat departure fee when the fee mode is set to fixed', function () {
+    Settings::set('billing.early_departure_fee_mode', 'fixed');
+    Settings::set('billing.early_departure_fee_fixed', 300_000);
+
+    $manager = staffWithRole('Manager');
+    openTillFor($manager);
+    $room = Room::query()->where('number', '102')->firstOrFail();
+    $guest = Guest::factory()->create();
+    $checkIn = now()->toDateString();
+    $checkOut = now()->addDays(4)->toDateString();
+
+    $created = $this->actingAs($manager)->postJson('/api/reservations', [
+        'guest_id' => $guest->id, 'channel' => 'walkin', 'check_in' => $checkIn, 'check_out' => $checkOut,
+        'adults' => 1, 'rooms' => [['room_id' => $room->id]],
+    ])->assertCreated();
+    $reservationId = $created->json('reservation.id');
+    $this->actingAs($manager)->postJson("/api/reservations/{$reservationId}/check-in", [])->assertOk();
+
+    $quote = $this->actingAs($manager)
+        ->getJson("/api/reservations/{$reservationId}/checkout-quote?early_departure=1")
+        ->assertOk();
+
+    expect($quote->json('early_departure.fee_mode'))->toBe('fixed')
+        ->and($quote->json('early_departure.fee'))->toBe(300_000);
+});
+
+it('bills the full original amount when the early departure adjustment is waived', function () {
+    $manager = staffWithRole('Manager');
+    openTillFor($manager);
+    $room = Room::query()->where('number', '102')->firstOrFail();
+    $guest = Guest::factory()->create();
+    $checkIn = now()->toDateString();
+    $checkOut = now()->addDays(4)->toDateString();
+
+    $created = $this->actingAs($manager)->postJson('/api/reservations', [
+        'guest_id' => $guest->id, 'channel' => 'walkin', 'check_in' => $checkIn, 'check_out' => $checkOut,
+        'adults' => 1, 'rooms' => [['room_id' => $room->id]],
+    ])->assertCreated();
+    $reservationId = $created->json('reservation.id');
+
+    $this->actingAs($manager)->postJson("/api/reservations/{$reservationId}/check-in", [])->assertOk();
+
+    // apply_early_departure omitted (falsy default) — full 4-night amount stands.
+    $response = $this->actingAs($manager)->postJson("/api/reservations/{$reservationId}/checkout", [
+        'payments' => [['method' => 'cash', 'amount' => 1_200_000 * 4]],
+    ])->assertOk();
+
+    expect($response->json('total'))->toBe(1_200_000 * 4)
+        ->and(Reservation::find($reservationId)->check_out->toDateString())->toBe($checkOut);
+});
+
+it('allows a cash over-tender at checkout and returns the excess as change', function () {
+    $manager = staffWithRole('Manager');
+    openTillFor($manager);
+    ['room' => $room, 'check_in' => $checkIn, 'check_out' => $checkOut] = bookTwoPersonRoom();
+    $guest = Guest::factory()->create();
+
+    $created = $this->actingAs($manager)->postJson('/api/reservations', [
+        'guest_id' => $guest->id, 'channel' => 'walkin', 'check_in' => $checkIn, 'check_out' => $checkOut,
+        'adults' => 1, 'rooms' => [['room_id' => $room->id]],
+    ])->assertCreated();
+    $reservationId = $created->json('reservation.id');
+    $folioId = $created->json('reservation.folio.id');
+    $this->actingAs($manager)->postJson("/api/reservations/{$reservationId}/check-in", [])->assertOk();
+
+    // Total is 2,400,000 — tender 2,500,000 cash, expect 100,000 change back.
+    $response = $this->actingAs($manager)->postJson("/api/reservations/{$reservationId}/checkout", [
+        'payments' => [['method' => 'cash', 'amount' => 2_500_000]],
+    ])->assertOk();
+
+    expect($response->json('change_due'))->toBe(100_000);
+
+    $folio = $this->actingAs($manager)->getJson("/api/folios/{$folioId}")->assertOk();
+    $change = collect($folio->json('folio.payments'))->first(fn ($p) => $p['reason'] === 'Change returned to guest');
+    expect($change)->not->toBeNull()
+        ->and($change['amount'])->toBe(100_000)
+        ->and($change['method']['code'])->toBe('cash');
+});
+
+it('rejects a card over-tender at checkout that exceeds the amount due', function () {
+    $manager = staffWithRole('Manager');
+    openTillFor($manager);
+    ['room' => $room, 'check_in' => $checkIn, 'check_out' => $checkOut] = bookTwoPersonRoom();
+    $guest = Guest::factory()->create();
+
+    $created = $this->actingAs($manager)->postJson('/api/reservations', [
+        'guest_id' => $guest->id, 'channel' => 'walkin', 'check_in' => $checkIn, 'check_out' => $checkOut,
+        'adults' => 1, 'rooms' => [['room_id' => $room->id]],
+    ])->assertCreated();
+    $reservationId = $created->json('reservation.id');
+    $this->actingAs($manager)->postJson("/api/reservations/{$reservationId}/check-in", [])->assertOk();
+
+    $this->actingAs($manager)->postJson("/api/reservations/{$reservationId}/checkout", [
+        'payments' => [['method' => 'card', 'amount' => 2_500_000]],
+    ])->assertUnprocessable()->assertJsonValidationErrors('payments');
 });

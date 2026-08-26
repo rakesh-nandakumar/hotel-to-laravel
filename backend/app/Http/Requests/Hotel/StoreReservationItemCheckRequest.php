@@ -21,7 +21,9 @@ class StoreReservationItemCheckRequest extends FormRequest
         return [
             'room_id' => ['required', 'integer', 'exists:rooms,id'],
             'kind' => ['required', 'string', Rule::exists('lookups', 'code')->where('type', LookupType::CHECK_KIND)],
-            'items' => ['required', 'array'],
+            // 'present' (not 'required') — a room with no configured item
+            // checklist legitimately submits an empty items array.
+            'items' => ['present', 'array'],
             'items.*.item' => ['required', 'string', 'max:150'],
             'items.*.ok' => ['required', 'boolean'],
             'items.*.note' => ['nullable', 'string', 'max:500'],

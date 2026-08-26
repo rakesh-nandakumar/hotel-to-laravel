@@ -44,9 +44,8 @@ export default function CentralTenantDetail() {
   }, [id]);
 
   const impersonate = async () => {
-    // Opened synchronously, before the await, or the popup blocker kills it
-    // (same reasoning as openPdf() in lib/api.ts). A new tab also keeps master
-    // control open behind it — navigating this one away strands the operator
+    // Opened synchronously, before the await, or the popup blocker kills it.
+    // A new tab also keeps master control open behind it — navigating this one away strands the operator
     // inside the tenant's app with no way back, and the token is single-use
     // so the back button can't recover it.
     const tab = window.open("", "_blank");
@@ -242,8 +241,7 @@ function OverviewTab({
             </p>
             <code className="block rounded-lg bg-slate-950 px-4 py-3 font-mono text-lg text-emerald-300">{resetPassword.password}</code>
             <p className="text-xs text-slate-400">
-              They'll be forced to change it on first sign-in. The password is not stored anywhere else — close this
-              dialog to discard it.
+              The password is not stored anywhere else — close this dialog to discard it.
             </p>
             <div className="flex justify-end">
               <button className="btn-primary" onClick={() => setResetPassword(null)}>Done</button>
@@ -251,7 +249,45 @@ function OverviewTab({
           </div>
         </Card>
       )}
+
+      <TillsCard tenantId={tenant.id} />
     </div>
+  );
+}
+
+type TillRow = { id: number; name: string; is_active: boolean };
+
+/**
+ * Read-only visibility into the tenant's tills — creation/management stays
+ * tenant-side (their own Till page, gated by till.manage). Branches were
+ * removed from the data model entirely, so this is a flat list, not grouped.
+ */
+function TillsCard({ tenantId }: { tenantId: number }) {
+  const [tills, setTills] = useState<TillRow[] | null>(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    setTills(null);
+    api<{ tills: TillRow[] }>(`/central/tenants/${tenantId}/tills`)
+      .then((d) => setTills(d.tills))
+      .catch((e) => setError(e.message));
+  }, [tenantId]);
+
+  return (
+    <Card title="Tills">
+      <ErrorText error={error} />
+      {tills === null ? (
+        <p className="text-sm text-slate-400">Loading…</p>
+      ) : tills.length === 0 ? (
+        <p className="text-sm text-slate-400">No tills created yet — the tenant creates these from their own Till page.</p>
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          {tills.map((t) => (
+            <Badge key={t.id} color={t.is_active ? "green" : "slate"}>{t.name}{!t.is_active && " (inactive)"}</Badge>
+          ))}
+        </div>
+      )}
+    </Card>
   );
 }
 

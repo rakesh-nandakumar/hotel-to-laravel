@@ -26,7 +26,7 @@ export default function CentralApp() {
   return (
     <CentralAuthProvider>
       <ToastProvider>
-        <BrowserRouter>
+        <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
           <Routes>
             <Route path="/login" element={<CentralLogin />} />
             <Route path="/" element={<Guard><CentralDashboard /></Guard>} />

@@ -35,18 +35,44 @@ export async function loginAsUI(page: Page, role: RoleKey) {
 /**
  * Finds the input/select for a `<Field label="...">` (components/ui.tsx) —
  * that component doesn't associate the label with its control via `for`/
- * wrapping, so `getByLabel` can't find it; this finds the field's wrapper div
- * by its label text and returns the control inside.
+ * wrapping, so `getByLabel` can't find it.
+ *
+ * Was previously a div-filter heuristic (walk up to the Field's wrapper div,
+ * then query its first input/select) — that timed out intermittently in
+ * this environment, reproduced even on pre-existing, untouched forms (not
+ * something any one form did wrong). `<Field>` always renders
+ * `<label>{text}</label>` immediately followed by the control, so walking
+ * straight to the label's next sibling is both simpler and reliable.
  */
 export function fieldInput(scope: Locator, label: string): Locator {
-  // Every ANCESTOR div of the label also "contains" its text, so .filter() matches
-  // several nested divs, not just the Field's own wrapper — .last() picks the
-  // innermost (most specific) one, since document order lists outer divs first.
-  return scope
-    .locator("div")
-    .filter({ has: scope.getByText(label, { exact: true }) })
-    .last()
-    .locator("input, select");
+  return scope.locator(`label:text-is("${label}")`).locator("xpath=following-sibling::*[1]");
+}
+
+/**
+ * Opens a till for the current staff member through the real UI (Till.tsx)
+ * if one isn't already open — idempotent, since several spec files share
+ * one fixed "manager" user (see USERS above) and a till, once opened, stays
+ * open for the rest of a sequential suite run (nothing closes it between
+ * spec files). Needed before any cash payment: BillingService::recordPayment()
+ * rejects cash with "Open a till before accepting or refunding cash"
+ * otherwise, and TillSeeder only creates the till row, never a session.
+ */
+export async function ensureTillOpen(page: Page): Promise<void> {
+  await page.goto("/till");
+  const openBtn = page.getByRole("button", { name: /^open till$/i });
+  // "My till" (Till.tsx) renders one of exactly two states once its /till/current
+  // fetch resolves: the "Open till" trigger, or this Stat label when a session is
+  // already open. Waiting for either first — rather than an immediate isVisible()
+  // check right after goto(), which races the page's own data fetch and always
+  // loses — is what makes the "already open" read trustworthy.
+  const alreadyOpen = page.getByText(/expected cash in till/i);
+  await expect(openBtn.or(alreadyOpen)).toBeVisible({ timeout: 10_000 });
+  if (await alreadyOpen.isVisible()) return;
+  await openBtn.click();
+  const tillModal = page.locator(".modal-panel");
+  await fieldInput(tillModal, "Opening cash in drawer (LKR)").fill("50000");
+  await tillModal.getByRole("button", { name: /^open till$/i }).click();
+  await expect(tillModal).toBeHidden({ timeout: 10_000 });
 }
 
 /** Collects console `error`/`pageerror` events for the duration of a callback so a test can assert none occurred. */

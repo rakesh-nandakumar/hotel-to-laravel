@@ -1,5 +1,5 @@
 import { test, expect, Locator } from "@playwright/test";
-import { authFile, collectConsoleErrors } from "./fixtures";
+import { authFile, collectConsoleErrors, ensureTillOpen } from "./fixtures";
 
 test.use({ storageState: authFile("manager") });
 
@@ -59,6 +59,10 @@ test("books an apartment unit, checks a customer in and out, and settles the led
   await checkinModal.getByPlaceholder(/NIC or passport/i).fill("912345678V");
   await checkinModal.getByRole("button", { name: /confirm check-in/i }).click();
   await expect(page.getByRole("button", { name: /check out/i })).toBeVisible({ timeout: 10_000 });
+
+  const bookingUrl = page.url();
+  await ensureTillOpen(page);
+  await page.goto(bookingUrl);
 
   const errors = await collectConsoleErrors(page, async () => {
     await page.getByRole("button", { name: /check out/i }).click();

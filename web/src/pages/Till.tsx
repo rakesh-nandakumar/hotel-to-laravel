@@ -1,11 +1,13 @@
-import { useState } from "react";
-import { post } from "../lib/api";
+import { useEffect, useState } from "react";
+import { Plus } from "lucide-react";
+import { post, put } from "../lib/api";
 import { useFetch, usePagedFetch, lkr, toCents, fmtDateTime } from "../lib/util";
 import { Badge, Card, Empty, ErrorText, Field, Modal, Pagination, Stat } from "../components/ui";
 import { useToast } from "../lib/toast";
 import { useAuth } from "../lib/auth";
 
 type TillOption = { id: number; name: string };
+type TillManageOption = { id: number; name: string; is_active: boolean };
 type CurrentSession = {
   id: number; till: { id: number; name: string }; opened_at: string;
   opening_cash: number; expected_balance: number;
@@ -23,10 +25,21 @@ type SessionHistory = {
 
 export default function Till() {
   const { can } = useAuth();
+  const canManage = can("till.manage");
   const { data: currentData, reload: reloadCurrent } = useFetch<{ session: CurrentSession }>("/till/current");
   const current = currentData?.session ?? null;
-  const { data: tillsData } = useFetch<{ tills: TillOption[] }>("/till/tills");
+  const { data: tillsData, reload: reloadTillOptions } = useFetch<{ tills: TillOption[] }>("/till/tills");
   const tillOptions = tillsData?.tills ?? [];
+  const { data: manageTillsData, reload: reloadManageTills } = useFetch<{ tills: TillManageOption[] }>(
+    canManage ? "/till/tills?include_inactive=1" : null
+  );
+  const manageTills = manageTillsData?.tills ?? [];
+  const [newTillOpen, setNewTillOpen] = useState(false);
+
+  const reloadTills = () => {
+    reloadTillOptions();
+    reloadManageTills();
+  };
 
   const [mPage, setMPage] = useState(1);
   const [mPageSize, setMPageSize] = useState(25);
@@ -81,6 +94,11 @@ export default function Till() {
               <button className="btn-primary" onClick={() => setCloseOpen(true)}>Close till & count cash</button>
             )}
           </div>
+        ) : tillOptions.length === 0 ? (
+          <div className="flex flex-wrap items-center gap-3 text-sm">
+            <span>No tills exist yet — {canManage ? "create one below to get started." : "ask a manager to create one before you can take cash payments."}</span>
+            {canManage && <button className="btn-primary" onClick={() => setNewTillOpen(true)}><Plus size={16} /> New till</button>}
+          </div>
         ) : (
           <div className="flex items-center gap-3 text-sm">
             <span>No till open — open one before taking cash payments.</span>
@@ -88,6 +106,18 @@ export default function Till() {
           </div>
         )}
       </Card>
+
+      {canManage && (
+        <Card
+          title="Manage tills"
+          actions={<button className="btn-secondary !py-1 text-xs" onClick={() => setNewTillOpen(true)}><Plus size={13} /> New till</button>}
+        >
+          <div className="space-y-2">
+            {manageTills.map((t) => <TillRow key={t.id} till={t} onDone={reloadTills} />)}
+          </div>
+          {manageTills.length === 0 && <Empty text="No tills yet — create one to get started" />}
+        </Card>
+      )}
 
       {current && (
         <Card title="Cash movement ledger — this session">
@@ -175,19 +205,27 @@ export default function Till() {
           onClose={() => { setMovementModal(null); refreshAll(); }}
         />
       )}
+      {newTillOpen && <NewTillModal onClose={() => { setNewTillOpen(false); reloadTills(); }} />}
     </div>
   );
 }
 
 function OpenTill({ tills, onClose }: { tills: TillOption[]; onClose: () => void }) {
   const toast = useToast();
-  const [tillId, setTillId] = useState(tills[0]?.id ?? "");
+  // Re-sync when `tills` resolves after this modal mounts (was captured once
+  // from the initial empty/stale prop, so the select showed the first option
+  // while tillId silently stayed "" and /till/open got sent an empty id).
+  const [tillId, setTillId] = useState<number | "">(tills[0]?.id ?? "");
+  useEffect(() => {
+    if (tillId === "" && tills[0]) setTillId(tills[0].id);
+  }, [tills]); // eslint-disable-line react-hooks/exhaustive-deps
   const [amount, setAmount] = useState("");
   const [error, setError] = useState("");
   return (
     <Modal open onClose={onClose} title="Open till — count opening cash">
       <Field label="Till">
         <select className="input" value={tillId} onChange={(e) => setTillId(Number(e.target.value))}>
+          {tills.length === 0 && <option value="">No tills available</option>}
           {tills.map((t) => (
             <option key={t.id} value={t.id}>{t.name}</option>
           ))}
@@ -199,6 +237,7 @@ function OpenTill({ tills, onClose }: { tills: TillOption[]; onClose: () => void
       <ErrorText error={error} />
       <button
         className="btn-primary mt-3 w-full"
+        disabled={tillId === ""}
         onClick={() =>
           post("/till/open", { till_id: tillId, opening_balance: toCents(amount) })
             .then(() => {
@@ -209,6 +248,61 @@ function OpenTill({ tills, onClose }: { tills: TillOption[]; onClose: () => void
         }
       >
         Open till
+      </button>
+    </Modal>
+  );
+}
+
+function TillRow({ till, onDone }: { till: TillManageOption; onDone: () => void }) {
+  const [name, setName] = useState(till.name);
+  const [error, setError] = useState("");
+  return (
+    <div>
+      <div className="flex items-center gap-2">
+        <input
+          className="input !w-48"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onBlur={() => {
+            const trimmed = name.trim();
+            if (!trimmed || trimmed === till.name) return setName(till.name);
+            put(`/till/tills/${till.id}`, { name: trimmed, is_active: till.is_active }).then(onDone).catch((e) => setError(e.message));
+          }}
+        />
+        <button
+          className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${till.is_active ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-400"}`}
+          onClick={() => put(`/till/tills/${till.id}`, { name: till.name, is_active: !till.is_active }).then(onDone).catch((e) => setError(e.message))}
+        >
+          {till.is_active ? "ACTIVE" : "INACTIVE"}
+        </button>
+      </div>
+      <ErrorText error={error} />
+    </div>
+  );
+}
+
+function NewTillModal({ onClose }: { onClose: () => void }) {
+  const toast = useToast();
+  const [name, setName] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const save = () => {
+    setBusy(true);
+    setError("");
+    post("/till/tills", { name: name.trim() })
+      .then(() => {
+        toast.success("Till created", name.trim());
+        onClose();
+      })
+      .catch((e) => setError(e.message))
+      .finally(() => setBusy(false));
+  };
+  return (
+    <Modal open onClose={onClose} title="New till">
+      <Field label="Till name *"><input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Front Desk Till" autoFocus /></Field>
+      <ErrorText error={error} />
+      <button className="btn-primary mt-3 w-full" disabled={busy || !name.trim()} onClick={save}>
+        {busy ? "Creating…" : "Create till"}
       </button>
     </Modal>
   );

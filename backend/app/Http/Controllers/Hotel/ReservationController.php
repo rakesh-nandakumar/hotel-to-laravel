@@ -215,7 +215,11 @@ class ReservationController extends Controller
     /** Preview: consolidated bill incl. VAT + service charge as separate lines. */
     public function checkoutQuote(Request $request, Reservation $reservation): JsonResponse
     {
-        return response()->json($this->reservations->checkoutQuote($reservation, $request->boolean('late')));
+        return response()->json($this->reservations->checkoutQuote(
+            $reservation,
+            $request->boolean('late'),
+            $request->boolean('early_departure', true),
+        ));
     }
 
     public function checkout(CheckoutReservationRequest $request, Reservation $reservation): JsonResponse

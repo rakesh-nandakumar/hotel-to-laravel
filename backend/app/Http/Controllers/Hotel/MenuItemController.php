@@ -131,7 +131,16 @@ class MenuItemController extends Controller
                 $menuItem->recipe()->createMany($data['recipe']);
             }
 
-            $menuItem->update(collect($data)->except('recipe')->all());
+            // pos_menu_items.description is NOT NULL (default '') — the update
+            // request allows a nullable description (guest clears the field,
+            // ConvertEmptyStringsToNull turns "" into null), so coalesce here
+            // the same way store() already does or the write 500s.
+            $payload = collect($data)->except('recipe')->all();
+            if (array_key_exists('description', $payload)) {
+                $payload['description'] = $payload['description'] ?? '';
+            }
+
+            $menuItem->update($payload);
         });
 
         AuditLog::record('menu_item.updated', $menuItem, ['name' => $menuItem->name]);

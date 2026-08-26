@@ -4,7 +4,7 @@ import {
   Search, StickyNote, Trash2, UtensilsCrossed, Timer, ShoppingBag, Bike, Split, Combine,
   ChefHat, HandPlatter, ScanBarcode, X,
 } from "lucide-react";
-import { api, openPdf, post, put } from "../lib/api";
+import { api, printDocument, post, put } from "../lib/api";
 import { posRequest } from "../lib/offline";
 import { lkr, toCents, useFetch, useSettings, usd } from "../lib/util";
 import { Badge, Card, Empty, ErrorText, Field, Modal, statusColor, Tabs } from "../components/ui";
@@ -414,9 +414,6 @@ function NewOrder({ categories, rooms, tables, usdRate, scPct, vatPct, onDone }:
     if (cart.length === 0) return setError("Add items first");
     if (type === "room_guest" && !roomId) return setError("Select the guest's room");
     if (type === "delivery" && (!deliveryAddress.trim() || !deliveryPhone.trim())) return setError("Delivery address and phone are required");
-    // Open the slip's tab synchronously, in direct response to this click — opening it later, after the
-    // order-creation request resolves, would fall outside the browser's popup-blocker gesture window.
-    const slipTab = type === "walkin" ? window.open("", "_blank") : null;
     setBusy(true);
     try {
       const res = await posRequest("/orders", {
@@ -445,19 +442,17 @@ function NewOrder({ categories, rooms, tables, usdRate, scPct, vatPct, onDone }:
       setDeliveryAddress("");
       setDeliveryPhone("");
       if ((res as { queued?: boolean }).queued) {
-        slipTab?.close();
         setQueuedMsg("No connection — order saved and will sync to the kitchen automatically when back online. Print the slip from Open Orders after sync.");
         toast.warning("Order queued offline", "Will sync to the kitchen automatically when back online");
       } else {
         const created = (res as { order: { id: number } }).order;
         toast.success(`Order #${created.id} sent to kitchen`);
         if (type === "walkin") {
-          openPdf(`/orders/${created.id}/slip`, slipTab).catch(() => {});
+          printDocument(`/orders/${created.id}/slip`).catch(() => {});
         }
         onDone();
       }
     } catch (e) {
-      slipTab?.close();
       setError((e as Error).message);
     } finally {
       setBusy(false);
@@ -1066,17 +1061,17 @@ function OrderModal({ orderId, usdRate, mergeCandidates, onClose }: { orderId: n
           <button className="btn-danger" onClick={() => setReasonAction("refund")}>Refund…</button>
         )}
         {order.type.code === "walkin" && can("hotel_orders.slip") && (
-          <button className="btn-secondary" onClick={() => openPdf(`/orders/${order.id}/slip`)}>
+          <button className="btn-secondary" onClick={() => printDocument(`/orders/${order.id}/slip`)}>
             <Printer size={15} /> Bill + token
           </button>
         )}
         {can("hotel_orders.receipt") && (
-          <button className="btn-secondary" onClick={() => openPdf(`/orders/${order.id}/receipt?format=thermal`)}>
+          <button className="btn-secondary" onClick={() => printDocument(`/orders/${order.id}/receipt?format=thermal`)}>
             <Printer size={15} /> Receipt
           </button>
         )}
         {can("hotel_orders.kot_ticket") && (
-          <button className="btn-secondary" onClick={() => openPdf(`/orders/${order.id}/kot-ticket`)}>
+          <button className="btn-secondary" onClick={() => printDocument(`/orders/${order.id}/kot-ticket`)}>
             <Printer size={15} /> KOT ticket
           </button>
         )}
@@ -1085,6 +1080,7 @@ function OrderModal({ orderId, usdRate, mergeCandidates, onClose }: { orderId: n
       {payOpen && (
         <SplitPay
           due={due}
+          allowOverpay
           onDone={async (payments) => {
             const ok = await act(() =>
               post(`/orders/${order.id}/settle`, {
@@ -1262,10 +1258,23 @@ function MergeOrdersModal({ order, candidates, onDone, onClose }: { order: Order
 }
 
 /** Split bill across multiple people / payment methods. */
-export function SplitPay({ due, onDone, onClose }: { due: number; onDone: (p: { method: string; amount: number; reference?: string }[]) => void; onClose: () => void }) {
+export function SplitPay({
+  due, onDone, onClose, allowOverpay = false,
+}: {
+  due: number;
+  onDone: (p: { method: string; amount: number; reference?: string }[]) => void;
+  onClose: () => void;
+  // POS settle: an over-tender is fine as long as it's cash (the till hands
+  // back change). The folio "record a payment" and venue-deposit call sites
+  // don't have a "change" concept, so they keep the strict exact-match.
+  allowOverpay?: boolean;
+}) {
   const [rows, setRows] = useState<{ method: string; amount: string; reference: string }[]>([{ method: "cash", amount: (due / 100).toFixed(2), reference: "" }]);
   const sum = rows.reduce((s, r) => s + toCents(r.amount), 0);
   const remaining = due - sum;
+  const hasCash = rows.some((r) => r.method.toLowerCase() === "cash" && toCents(r.amount) > 0);
+  const overTenderNeedsCash = allowOverpay && remaining < 0 && !hasCash;
+  const blocked = allowOverpay ? remaining > 0 || overTenderNeedsCash : remaining !== 0;
 
   return (
     <Modal open onClose={onClose} title="Take payment — split across methods">
@@ -1289,11 +1298,19 @@ export function SplitPay({ due, onDone, onClose }: { due: number; onDone: (p: { 
         </button>
         <div className="flex justify-between text-sm font-semibold">
           <span>Bill due: {lkr(due)}</span>
-          <span className={remaining === 0 ? "text-emerald-600" : "text-red-600"}>{remaining === 0 ? "Balanced ✓" : remaining > 0 ? `Short ${lkr(remaining)}` : `Over ${lkr(-remaining)}`}</span>
+          <span className={remaining === 0 || (allowOverpay && remaining < 0 && !overTenderNeedsCash) ? "text-emerald-600" : overTenderNeedsCash ? "text-amber-600" : "text-red-600"}>
+            {remaining === 0
+              ? "Balanced ✓"
+              : remaining > 0
+                ? `Short ${lkr(remaining)}`
+                : allowOverpay
+                  ? overTenderNeedsCash ? `Over ${lkr(-remaining)} — add a cash payment to give change` : `Change due ${lkr(-remaining)}`
+                  : `Over ${lkr(-remaining)}`}
+          </span>
         </div>
         <button
           className="btn-primary w-full !py-3"
-          disabled={remaining !== 0 || due <= 0}
+          disabled={blocked || due <= 0}
           onClick={() => onDone(rows.map((r) => ({ method: r.method, amount: toCents(r.amount), reference: r.reference || undefined })))}
         >
           Confirm {lkr(due)}

@@ -127,10 +127,10 @@ class PayrollController extends Controller
         ]);
     }
 
-    /** Branded payslip PDF (A4). */
-    public function payslip(PayrollLine $line): Response
+    /** Branded payslip (A4). ?output=html|pdf. */
+    public function payslip(Request $request, PayrollLine $line): Response
     {
-        return $this->pdf->payslip($line);
+        return $this->pdf->payslip($line, $request->query('output') === 'html');
     }
 
     private function withRunTotals(PayrollRun $run): PayrollRun

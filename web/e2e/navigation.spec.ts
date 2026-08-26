@@ -28,7 +28,7 @@ const ROUTES: [string, string | RegExp][] = [
   ["/maintenance", /maintenance/i],
   ["/visitors", /visitor/i],
   ["/attendance", /attendance/i],
-  ["/shifts", /shift|cash/i],
+  ["/till", /till/i],
   ["/corporate", /corporate/i],
   ["/reports", /reports/i],
   ["/notifications", /notification/i],

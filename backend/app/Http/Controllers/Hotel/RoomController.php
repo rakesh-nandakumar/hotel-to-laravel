@@ -134,6 +134,58 @@ class RoomController extends Controller
         return response()->json(['message' => 'Room updated.', 'room' => $room->load(['seasonalRates', 'status'])]);
     }
 
+    /**
+     * Soft-delete — Room already uses SoftDeletes, and three FKs
+     * (reservation_rooms, room_item_checks, housekeeping_tasks) are
+     * restrictOnDelete, so a hard delete would fail for any room that's
+     * ever been booked anyway. Blocks on anything that would make the
+     * deletion surprising: currently occupied, an active/upcoming
+     * reservation, or a pending housekeeping task.
+     */
+    public function destroy(Request $request, Room $room): JsonResponse
+    {
+        if (! $request->user()?->hasPermissionTo('hotel_rooms.delete')) {
+            abort(403);
+        }
+
+        if ($room->status?->code === RoomStatus::OCCUPIED) {
+            throw ValidationException::withMessages([
+                'room' => "Room \"{$room->number}\" is occupied — check out the guest before deleting.",
+            ]);
+        }
+
+        $hasActiveReservation = ReservationRoom::query()
+            ->where('room_id', $room->id)
+            ->whereHas('reservation', fn ($q) => $q->statusIn([
+                ReservationStatus::CONFIRMED, ReservationStatus::PENDING, ReservationStatus::CHECKED_IN,
+            ]))
+            ->exists();
+
+        if ($hasActiveReservation) {
+            throw ValidationException::withMessages([
+                'room' => "Room \"{$room->number}\" has an active or upcoming reservation — cancel or complete it before deleting.",
+            ]);
+        }
+
+        $hasPendingHousekeeping = HousekeepingTask::query()
+            ->where('room_id', $room->id)
+            ->whereHas('status', fn ($q) => $q->where('code', '!=', TaskStatus::DONE))
+            ->exists();
+
+        if ($hasPendingHousekeeping) {
+            throw ValidationException::withMessages([
+                'room' => "Room \"{$room->number}\" has a pending housekeeping task — complete it before deleting.",
+            ]);
+        }
+
+        $number = $room->number;
+        $room->delete();
+
+        AuditLog::record('room.deleted', $room, ['number' => $number]);
+
+        return response()->json(['message' => "Room \"{$number}\" deleted."]);
+    }
+
     public function storeSeasonalRate(StoreSeasonalRateRequest $request, Room $room): JsonResponse
     {
         $rate = $room->seasonalRates()->create($request->validated());

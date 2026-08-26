@@ -4,6 +4,7 @@ use App\Models\Hotel\Guest;
 use App\Models\Hotel\Ingredient;
 use App\Models\Hotel\MenuCategory;
 use App\Models\Hotel\MenuItem;
+use App\Models\Hotel\Payment;
 use App\Models\Hotel\Room;
 use App\Services\Settings;
 use Database\Seeders\HotelRoomsSeeder;
@@ -141,6 +142,45 @@ it('settles an order only when split payments sum exactly to the total', functio
     $this->actingAs($manager)->postJson("/api/orders/{$orderId}/settle", [
         'payments' => [['method' => 'cash', 'amount' => $total - 30000], ['method' => 'card', 'amount' => 30000]],
     ])->assertOk()->assertJsonPath('order.status.code', 'settled');
+});
+
+it('allows a cash over-tender when settling an order and refunds the change', function () {
+    $manager = staffWithRole('Manager');
+    openTillFor($manager);
+    $item = posMenuItem();
+
+    $created = $this->actingAs($manager)->postJson('/api/orders', [
+        'type' => 'walkin', 'items' => [['menu_item_id' => $item->id, 'qty' => 1]],
+    ])->assertCreated();
+    $orderId = $created->json('order.id');
+    $total = $created->json('order.total');
+
+    $this->actingAs($manager)->postJson("/api/orders/{$orderId}/settle", [
+        'payments' => [['method' => 'cash', 'amount' => $total + 5000]],
+    ])->assertOk()->assertJsonPath('order.status.code', 'settled');
+
+    $refund = Payment::query()
+        ->where('order_id', $orderId)
+        ->where('reason', 'Change returned to guest')
+        ->first();
+    expect($refund)->not->toBeNull()
+        ->and($refund->amount)->toBe(5000);
+});
+
+it('rejects a card over-tender when settling an order', function () {
+    $manager = staffWithRole('Manager');
+    openTillFor($manager);
+    $item = posMenuItem();
+
+    $created = $this->actingAs($manager)->postJson('/api/orders', [
+        'type' => 'walkin', 'items' => [['menu_item_id' => $item->id, 'qty' => 1]],
+    ])->assertCreated();
+    $orderId = $created->json('order.id');
+    $total = $created->json('order.total');
+
+    $this->actingAs($manager)->postJson("/api/orders/{$orderId}/settle", [
+        'payments' => [['method' => 'card', 'amount' => $total + 5000]],
+    ])->assertUnprocessable()->assertJsonValidationErrors('payments');
 });
 
 it('charges a room-guest order to the folio without double-taxing it at reservation checkout', function () {

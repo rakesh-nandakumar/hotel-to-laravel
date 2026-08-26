@@ -4,7 +4,6 @@ use App\Http\Middleware\CheckActiveUser;
 use App\Http\Middleware\CheckPermission;
 use App\Http\Middleware\EnsureCentralContext;
 use App\Http\Middleware\IdentifyTenant;
-use App\Http\Middleware\RequirePasswordChange;
 use App\Http\Middleware\ResetDefaultGuardAfterCentralAuth;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Auth\AuthenticationException;
@@ -58,10 +57,6 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->api(prepend: [
             EnsureFrontendRequestsAreStateful::class,
             IdentifyTenant::class,
-        ]);
-
-        $middleware->api(append: [
-            RequirePasswordChange::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {

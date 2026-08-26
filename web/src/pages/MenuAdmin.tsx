@@ -318,7 +318,7 @@ function ItemEditor({ item, cats, ingredients, onClose }: { item: Item | null; c
       menu_category_id: Number(f.categoryId),
       price: toCents(f.price),
       item_no: f.itemNo.trim() ? parseInt(f.itemNo) : null,
-      description: f.description,
+      description: f.description.trim(),
       image: f.image || null,
       stock_ingredient_id: f.stockIngredientId ? Number(f.stockIngredientId) : null,
       recipe: recipe.filter((r) => r.ingredientId && parseFloat(r.qty) > 0).map((r) => ({ ingredient_id: Number(r.ingredientId), qty: parseFloat(r.qty) })),

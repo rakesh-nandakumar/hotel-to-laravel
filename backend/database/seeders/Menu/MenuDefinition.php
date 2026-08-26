@@ -54,7 +54,7 @@ class MenuDefinition
                         'name' => 'Rooms',
                         'route_name' => 'hotel.rooms.index',
                         'module_key' => 'hotel_rooms',
-                        'actions' => ['access', 'create', 'edit', 'edit_status'],
+                        'actions' => ['access', 'create', 'edit', 'edit_status', 'delete'],
                     ],
                     [
                         'name' => 'Packages',
@@ -150,7 +150,7 @@ class MenuDefinition
                 'icon' => 'grid-2x2',
                 'route_name' => 'hotel.dining-tables.index',
                 'module_key' => 'hotel_dining_tables',
-                'actions' => ['access', 'create', 'edit', 'edit_status'],
+                'actions' => ['access', 'create', 'edit', 'edit_status', 'delete'],
             ],
             [
                 'name' => 'QR Ordering',

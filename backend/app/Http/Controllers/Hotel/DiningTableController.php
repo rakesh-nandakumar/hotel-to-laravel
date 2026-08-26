@@ -14,6 +14,7 @@ use App\Support\Lookups\LookupType;
 use App\Support\Lookups\OrderStatus;
 use App\Support\Lookups\TableStatus;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
 
 class DiningTableController extends Controller
@@ -59,6 +60,31 @@ class DiningTableController extends Controller
         AuditLog::record('dining_table.updated', $diningTable, ['table_no' => $diningTable->table_no]);
 
         return response()->json(['message' => 'Table updated.', 'dining_table' => $diningTable->load(['area', 'status'])]);
+    }
+
+    public function destroy(Request $request, DiningTable $diningTable): JsonResponse
+    {
+        if (! $request->user()?->hasPermissionTo('hotel_dining_tables.delete')) {
+            abort(403);
+        }
+
+        $hasOpenOrder = Order::query()
+            ->where('dining_table_id', $diningTable->id)
+            ->statusIn([OrderStatus::OPEN, OrderStatus::PARKED])
+            ->exists();
+
+        if ($hasOpenOrder) {
+            throw ValidationException::withMessages([
+                'dining_table' => "Table \"{$diningTable->table_no}\" has an open order — settle or void it before deleting the table.",
+            ]);
+        }
+
+        $tableNo = $diningTable->table_no;
+        $diningTable->delete();
+
+        AuditLog::record('dining_table.deleted', $diningTable, ['table_no' => $tableNo]);
+
+        return response()->json(['message' => "Table \"{$tableNo}\" deleted."]);
     }
 
     public function updateStatus(UpdateDiningTableStatusRequest $request, DiningTable $diningTable): JsonResponse

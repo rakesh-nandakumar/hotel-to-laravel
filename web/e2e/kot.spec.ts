@@ -3,16 +3,13 @@ import { authFile } from "./fixtures";
 
 test.use({ storageState: authFile("manager") });
 
-test("a POS order sent to the kitchen appears on the KOT board and can be advanced", async ({ page, context }) => {
+test("a POS order sent to the kitchen appears on the KOT board and can be advanced", async ({ page }) => {
   await page.goto("/pos");
   await page.locator("button.card", { hasText: "E2E Seed Dish" }).first().click();
 
-  const [slipTab] = await Promise.all([
-    context.waitForEvent("page"),
-    page.getByRole("button", { name: /send to kitchen/i }).click(),
-  ]);
-  await slipTab.waitForLoadState().catch(() => {});
-  await slipTab.close().catch(() => {});
+  // Walk-in auto-print (printDocument(), web/src/lib/api.ts) prints via a
+  // hidden same-origin iframe, not a new tab/page — nothing to wait for here.
+  await page.getByRole("button", { name: /send order/i }).click();
 
   await page.goto("/kot");
   const ticketCard = page.locator(".rounded-2xl.border-2", { hasText: "E2E Seed Dish" });

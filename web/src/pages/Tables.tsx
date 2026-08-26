@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { Plus, Grid2x2, Users } from "lucide-react";
-import { post, put } from "../lib/api";
+import { Plus, Grid2x2, Users, Pencil, Trash2 } from "lucide-react";
+import { api, post, put } from "../lib/api";
 import { useFetch } from "../lib/util";
 import { Badge, Empty, ErrorText, Field, Modal, statusColor, Tabs } from "../components/ui";
 import { useAuth } from "../lib/auth";
@@ -25,25 +25,39 @@ export default function Tables() {
         <h1 className="flex items-center gap-2 text-xl font-extrabold"><Grid2x2 /> Dining Tables</h1>
         <Tabs tabs={[{ id: "floor" as const, label: "Floor plan" }, { id: "areas" as const, label: "Areas" }]} active={tab} onChange={setTab} />
       </div>
-      {tab === "floor" && <FloorPlan canManage={can("hotel_dining_tables.create")} canEditStatus={can("hotel_dining_tables.edit_status")} />}
+      {tab === "floor" && (
+        <FloorPlan
+          canManage={can("hotel_dining_tables.create")}
+          canEdit={can("hotel_dining_tables.edit")}
+          canDelete={can("hotel_dining_tables.delete")}
+          canEditStatus={can("hotel_dining_tables.edit_status")}
+        />
+      )}
       {tab === "areas" && <Areas />}
     </div>
   );
 }
 
-function FloorPlan({ canManage, canEditStatus }: { canManage: boolean; canEditStatus: boolean }) {
+function FloorPlan({ canManage, canEdit, canDelete, canEditStatus }: { canManage: boolean; canEdit: boolean; canDelete: boolean; canEditStatus: boolean }) {
   const { data, reload, error: loadError } = useFetch<{ dining_tables: DiningTable[] }>("/dining-tables");
   const { data: areasData } = useFetch<{ dining_areas: Area[] }>("/dining-areas");
   const tables = data?.dining_tables ?? [];
   const areas = areasData?.dining_areas ?? [];
   const [areaFilter, setAreaFilter] = useState("");
-  const [openNew, setOpenNew] = useState(false);
+  const [editing, setEditing] = useState<DiningTable | "new" | null>(null);
   const [error, setError] = useState("");
 
   const setStatus = (id: number, status: string) =>
     put(`/dining-tables/${id}/status`, { status })
       .then(() => { setError(""); reload(); })
       .catch((e) => setError(e.message));
+
+  const remove = (t: DiningTable) => {
+    if (!confirm(`Delete table "${t.table_no}"? This cannot be undone.`)) return;
+    api(`/dining-tables/${t.id}`, { method: "DELETE" })
+      .then(() => { setError(""); reload(); })
+      .catch((e) => setError(e.message));
+  };
 
   const shown = areaFilter ? tables.filter((t) => String(t.area?.id) === areaFilter) : tables;
   const counts = {
@@ -69,14 +83,26 @@ function FloorPlan({ canManage, canEditStatus }: { canManage: boolean; canEditSt
           <option value="">All areas</option>
           {areas.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
         </select>
-        {canManage && <button className="btn-primary ml-auto" onClick={() => setOpenNew(true)}><Plus size={16} /> New table</button>}
+        {canManage && <button className="btn-primary ml-auto" onClick={() => setEditing("new")}><Plus size={16} /> New table</button>}
       </div>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
         {shown.map((t) => (
           <div key={t.id} className="card p-3">
             <div className="flex items-start justify-between">
               <div className="text-2xl font-black">{t.table_no}</div>
-              <Badge color={statusColor(t.status.code)}>{t.status.code.toUpperCase()}</Badge>
+              <div className="flex items-center gap-1">
+                <Badge color={statusColor(t.status.code)}>{t.status.code.toUpperCase()}</Badge>
+                {canEdit && (
+                  <button className="btn-ghost !p-1 text-slate-400 hover:text-brand-600" title="Edit table" onClick={() => setEditing(t)}>
+                    <Pencil size={13} />
+                  </button>
+                )}
+                {canDelete && !t.open_order && (
+                  <button className="btn-ghost !p-1 text-slate-400 hover:text-red-600" title="Delete table" onClick={() => remove(t)}>
+                    <Trash2 size={13} />
+                  </button>
+                )}
+              </div>
             </div>
             <div className="mt-0.5 flex items-center gap-2 text-xs text-slate-500">
               {t.area && <span>{t.area.name}</span>}
@@ -103,26 +129,39 @@ function FloorPlan({ canManage, canEditStatus }: { canManage: boolean; canEditSt
       </div>
       {tables.length === 0 && <Empty text="No dining tables yet" />}
       {tables.length > 0 && shown.length === 0 && <Empty text="No tables in this area" />}
-      {openNew && <TableEditor areas={areas} onClose={() => { setOpenNew(false); reload(); }} />}
+      {editing && (
+        <TableEditor
+          table={editing === "new" ? null : editing}
+          areas={areas}
+          onClose={() => { setEditing(null); reload(); }}
+        />
+      )}
     </div>
   );
 }
 
-function TableEditor({ areas, onClose }: { areas: Area[]; onClose: () => void }) {
-  const [f, setF] = useState({ tableNo: "", areaId: "", capacity: "4", notes: "" });
+function TableEditor({ table, areas, onClose }: { table: DiningTable | null; areas: Area[]; onClose: () => void }) {
+  const [f, setF] = useState({
+    tableNo: table?.table_no ?? "",
+    areaId: table?.area ? String(table.area.id) : "",
+    capacity: table ? String(table.capacity) : "4",
+    notes: table?.notes ?? "",
+  });
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
   const save = async () => {
     setBusy(true);
     setError("");
+    const body = {
+      table_no: f.tableNo.trim(),
+      dining_area_id: f.areaId ? Number(f.areaId) : undefined,
+      capacity: parseInt(f.capacity) || 1,
+      notes: f.notes.trim() || undefined,
+    };
     try {
-      await post("/dining-tables", {
-        table_no: f.tableNo.trim(),
-        dining_area_id: f.areaId ? Number(f.areaId) : undefined,
-        capacity: parseInt(f.capacity) || 1,
-        notes: f.notes.trim() || undefined,
-      });
+      if (table) await put(`/dining-tables/${table.id}`, body);
+      else await post("/dining-tables", body);
       onClose();
     } catch (e) {
       setError((e as Error).message);
@@ -132,7 +171,7 @@ function TableEditor({ areas, onClose }: { areas: Area[]; onClose: () => void })
   };
 
   return (
-    <Modal open onClose={onClose} title="New table">
+    <Modal open onClose={onClose} title={table ? `Edit table ${table.table_no}` : "New table"}>
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Table number *"><input className="input" value={f.tableNo} onChange={(e) => setF({ ...f, tableNo: e.target.value })} autoFocus /></Field>
         <Field label="Capacity"><input className="input" inputMode="numeric" value={f.capacity} onChange={(e) => setF({ ...f, capacity: e.target.value })} /></Field>
@@ -148,7 +187,7 @@ function TableEditor({ areas, onClose }: { areas: Area[]; onClose: () => void })
       </div>
       <ErrorText error={error} />
       <button className="btn-primary mt-4 w-full" disabled={busy || !f.tableNo.trim()} onClick={save}>
-        {busy ? "Saving…" : "Create table"}
+        {busy ? "Saving…" : table ? "Save changes" : "Create table"}
       </button>
     </Modal>
   );

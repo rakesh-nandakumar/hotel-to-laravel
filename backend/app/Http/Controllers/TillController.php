@@ -17,10 +17,20 @@ class TillController extends Controller
 {
     public function __construct(private readonly TillService $till) {}
 
-    /** Tills the current user may open — every active till in the tenant. */
-    public function index(): JsonResponse
+    /**
+     * Tills the current user may open — every active till in the tenant.
+     * ?include_inactive=1 also returns deactivated tills, for the till-
+     * management list (a deactivated till would otherwise have no way
+     * back to active — it simply disappears from this endpoint).
+     */
+    public function index(Request $request): JsonResponse
     {
-        return response()->json(['tills' => Till::query()->active()->orderBy('name')->get()]);
+        $query = Till::query()->orderBy('name');
+        if (! $request->boolean('include_inactive')) {
+            $query->active();
+        }
+
+        return response()->json(['tills' => $query->get()]);
     }
 
     public function store(StoreTillRequest $request): JsonResponse

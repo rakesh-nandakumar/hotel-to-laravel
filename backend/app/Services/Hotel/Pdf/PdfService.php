@@ -10,10 +10,17 @@ use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Response;
 
 /**
- * Branded PDF documents — two formats everywhere a document supports both:
+ * Branded documents — two formats everywhere a document supports both:
  * "thermal" (80mm bill printer) and "a4". Ported from the Node app's
  * lib/pdf.ts (PDFKit, drawn programmatically) onto dompdf (HTML/Blade),
  * same information and layout intent, rendered via resources/views/hotel/pdf/*.
+ *
+ * Every document can also be rendered as plain HTML ($asHtml = true) instead
+ * of a dompdf PDF — the browser's own print dialog (window.print(), see
+ * web/src/lib/api.ts printDocument()) is far more reliable across browsers
+ * than scripting into an embedded PDF viewer. The Blade views are unchanged;
+ * only `medium` (passed alongside `format`) tells layout.blade.php which CSS
+ * page box to emit.
  */
 class PdfService
 {
@@ -21,37 +28,31 @@ class PdfService
 
     public function __construct(private readonly BillingService $billing) {}
 
-    public function orderReceipt(Order $order, string $format): Response
+    public function orderReceipt(Order $order, string $format, bool $asHtml = false): Response
     {
         $order->load(['items', 'payments.method', 'payments.kind', 'staff:id,name', 'room:id,number', 'type', 'diningMode']);
 
-        return Pdf::loadView('hotel.pdf.order-receipt', ['order' => $order, 'format' => $format])
-            ->setPaper($format === 'thermal' ? self::THERMAL_PAPER : 'a4')
-            ->stream("receipt-{$order->id}.pdf");
+        return $this->render('hotel.pdf.order-receipt', ['order' => $order], $format, "receipt-{$order->id}", $asHtml);
     }
 
     /** Walk-in double slip: bill + numbered collection token, one thermal print. */
-    public function orderSlip(Order $order): Response
+    public function orderSlip(Order $order, bool $asHtml = false): Response
     {
         $order->load(['items', 'payments.kind', 'staff:id,name', 'room:id,number', 'type', 'diningMode']);
 
-        return Pdf::loadView('hotel.pdf.order-slip', ['order' => $order, 'format' => 'thermal'])
-            ->setPaper(self::THERMAL_PAPER)
-            ->stream("order-slip-{$order->id}.pdf");
+        return $this->render('hotel.pdf.order-slip', ['order' => $order], 'thermal', "order-slip-{$order->id}", $asHtml);
     }
 
     /** Kitchen Order Ticket — kitchen-only layout: no prices, grouped by station, KOT banner. */
-    public function kotTicket(Order $order): Response
+    public function kotTicket(Order $order, bool $asHtml = false): Response
     {
         $order->load(['items.menuItem.category.kitchenStation', 'room:id,number', 'diningTable:id,table_no', 'type', 'diningMode']);
 
-        return Pdf::loadView('hotel.pdf.kot-ticket', ['order' => $order, 'format' => 'thermal'])
-            ->setPaper(self::THERMAL_PAPER)
-            ->stream("kot-{$order->id}.pdf");
+        return $this->render('hotel.pdf.kot-ticket', ['order' => $order], 'thermal', "kot-{$order->id}", $asHtml);
     }
 
     /** Guest stay (INV-…) or venue event (VNU-…) invoice — ?format=thermal|a4. */
-    public function folioInvoice(Folio $folio, string $format): Response
+    public function folioInvoice(Folio $folio, string $format, bool $asHtml = false): Response
     {
         $folio->loadMissing([
             'type', 'status',
@@ -61,49 +62,53 @@ class PdfService
         ]);
         $totals = $this->billing->totals($folio);
 
-        return Pdf::loadView('hotel.pdf.folio-invoice', ['folio' => $folio, 'totals' => $totals, 'format' => $format])
-            ->setPaper($format === 'thermal' ? self::THERMAL_PAPER : 'a4')
-            ->stream(($folio->invoice_no ?? 'proforma').'.pdf');
+        return $this->render('hotel.pdf.folio-invoice', ['folio' => $folio, 'totals' => $totals], $format, $folio->invoice_no ?? 'proforma', $asHtml);
     }
 
-    public function payslip(PayrollLine $line): Response
+    public function payslip(PayrollLine $line, bool $asHtml = false): Response
     {
         $line->load(['user.roles', 'run']);
         $safeName = preg_replace('/\W+/', '-', $line->user->name);
 
-        return Pdf::loadView('hotel.pdf.payslip', ['line' => $line, 'format' => 'a4'])
-            ->setPaper('a4')
-            ->stream("payslip-{$line->run->month}-{$safeName}.pdf");
+        return $this->render('hotel.pdf.payslip', ['line' => $line], 'a4', "payslip-{$line->run->month}-{$safeName}", $asHtml);
     }
 
     /**
      * @param  array<string, mixed>  $data
      * @param  array{title: string, run_by?: string|null}  $meta
      */
-    public function dailyReport(array $data, array $meta): Response
+    public function dailyReport(array $data, array $meta, bool $asHtml = false): Response
     {
-        return Pdf::loadView('hotel.pdf.daily-report', ['data' => $data, 'meta' => $meta, 'format' => 'a4'])
-            ->setPaper('a4')
-            ->stream("report-{$data['date']}.pdf");
+        return $this->render('hotel.pdf.daily-report', ['data' => $data, 'meta' => $meta], 'a4', "report-{$data['date']}", $asHtml);
     }
 
     /**
      * @param  array<string, mixed>  $data
      */
-    public function monthlyReport(array $data): Response
+    public function monthlyReport(array $data, bool $asHtml = false): Response
     {
-        return Pdf::loadView('hotel.pdf.monthly-report', ['data' => $data, 'format' => 'a4'])
-            ->setPaper('a4')
-            ->stream("monthly-report-{$data['month']}.pdf");
+        return $this->render('hotel.pdf.monthly-report', ['data' => $data], 'a4', "monthly-report-{$data['month']}", $asHtml);
     }
 
     /**
      * @param  array<string, mixed>  $data
      */
-    public function posReport(array $data): Response
+    public function posReport(array $data, bool $asHtml = false): Response
     {
-        return Pdf::loadView('hotel.pdf.pos-report', ['data' => $data, 'format' => 'a4'])
-            ->setPaper('a4')
-            ->stream("pos-report-{$data['from']}_{$data['to']}.pdf");
+        return $this->render('hotel.pdf.pos-report', ['data' => $data], 'a4', "pos-report-{$data['from']}_{$data['to']}", $asHtml);
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function render(string $view, array $data, string $format, string $filename, bool $asHtml): Response
+    {
+        if ($asHtml) {
+            return response()->view($view, [...$data, 'format' => $format, 'medium' => 'browser']);
+        }
+
+        return Pdf::loadView($view, [...$data, 'format' => $format, 'medium' => 'pdf'])
+            ->setPaper($format === 'thermal' ? self::THERMAL_PAPER : 'a4')
+            ->stream("{$filename}.pdf");
     }
 }

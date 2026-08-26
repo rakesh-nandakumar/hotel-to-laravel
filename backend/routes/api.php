@@ -33,6 +33,7 @@ use App\Http\Controllers\Central\TenantController;
 use App\Http\Controllers\Central\TenantModuleController;
 use App\Http\Controllers\Central\TenantRoleController;
 use App\Http\Controllers\Central\TenantSettingController;
+use App\Http\Controllers\Central\TenantTillController;
 use App\Http\Controllers\Central\TestInstanceController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\HostContextController;
@@ -75,12 +76,34 @@ use App\Http\Controllers\Settings\ProfileController;
 use App\Http\Controllers\TillController;
 use App\Http\Controllers\UserManagement\RoleController;
 use App\Http\Controllers\UserManagement\UserManagementUserController;
+use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route;
 
 // ── Boot gate ───────────────────────────────────────────────────────────────
 // Tells the SPA which shell to mount (and nginx whether to serve the app at
 // all) purely from the Host header — see HostContextController.
 Route::get('host-context', HostContextController::class)->name('host-context');
+
+// ── Deploy utility ────────────────────────────────────────────────────────
+// Deliberately public (no auth, no CSRF, no token) for hosts where shell/SSH
+// access isn't available to run `php artisan migrate` directly — see the
+// IdentifyTenant bypass for this path in app/Http/Middleware/IdentifyTenant.php.
+// WARNING: this means anyone who discovers the URL can run migrations
+// against this environment. Requested as-is; remove or gate behind a secret
+// once SSH access exists.
+Route::get('deploy/migrate', function () {
+    $exitCode = Artisan::call('migrate', ['--force' => true]);
+    $output = Artisan::output();
+
+    Log::warning('Public deploy/migrate route invoked', ['ip' => request()->ip(), 'exit_code' => $exitCode]);
+
+    return response()->json([
+        'ok' => $exitCode === 0,
+        'exit_code' => $exitCode,
+        'output' => $output,
+    ], $exitCode === 0 ? 200 : 500);
+})->name('deploy.migrate');
 
 // ── Guest auth ──────────────────────────────────────────────────────────────
 Route::middleware('guest')->group(function () {
@@ -165,6 +188,8 @@ Route::prefix('central')->name('central.')->middleware('central_only')->group(fu
 
         Route::get('tenants/{tenant}/settings', [TenantSettingController::class, 'index'])->name('tenants.settings.index');
         Route::put('tenants/{tenant}/settings/{key}', [TenantSettingController::class, 'update'])->name('tenants.settings.update');
+
+        Route::get('tenants/{tenant}/tills', [TenantTillController::class, 'index'])->name('tenants.tills.index');
 
         Route::get('tenants/{tenant}/modules', [TenantModuleController::class, 'index'])->name('tenants.modules.index');
         Route::put('tenants/{tenant}/modules/{moduleKey}', [TenantModuleController::class, 'update'])->name('tenants.modules.update');
@@ -353,6 +378,9 @@ Route::middleware(['auth', 'check_active'])->group(function () {
         Route::put('{room}/status', [RoomController::class, 'updateStatus'])
             ->middleware('can_do:hotel_rooms.edit_status')
             ->name('rooms.update-status');
+        Route::delete('{room}', [RoomController::class, 'destroy'])
+            ->middleware('can_do:hotel_rooms.delete')
+            ->name('rooms.destroy');
         Route::post('{room}/seasonal', [RoomController::class, 'storeSeasonalRate'])
             ->middleware('can_do:hotel_rooms.edit')
             ->name('rooms.seasonal.store');
@@ -384,6 +412,9 @@ Route::middleware(['auth', 'check_active'])->group(function () {
         Route::put('{diningTable}/status', [DiningTableController::class, 'updateStatus'])
             ->middleware('can_do:hotel_dining_tables.edit_status')
             ->name('update-status');
+        Route::delete('{diningTable}', [DiningTableController::class, 'destroy'])
+            ->middleware('can_do:hotel_dining_tables.delete')
+            ->name('destroy');
     });
 
     // ── QR ordering — per-room/table QR link management ─────────────────────
@@ -796,6 +827,9 @@ Route::middleware(['auth', 'check_active'])->group(function () {
         Route::get('items', [LaundryController::class, 'index'])
             ->middleware('can_do:hotel_laundry.access')
             ->name('items.index');
+        Route::get('rooms', [LaundryController::class, 'rooms'])
+            ->middleware('can_do:hotel_laundry.access')
+            ->name('rooms.index');
         Route::post('items', [LaundryController::class, 'store'])
             ->middleware('can_do:hotel_laundry.create')
             ->name('items.store');

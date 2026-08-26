@@ -7,7 +7,7 @@ import { useAuth } from "../lib/auth";
 import { useToast } from "../lib/toast";
 
 type LaundryItem = { id: number; name: string; price: number; active: boolean };
-type BoardRoom = { id: number; number: string; status: { code: string }; occupant: { code: string; guest: { name: string } } | null };
+type LaundryRoom = { id: number; number: string; guest_name: string };
 
 /**
  * Laundry service — housekeeper/manager records collected laundry against a
@@ -20,10 +20,10 @@ export default function Laundry() {
   const canEditPrices = can("hotel_laundry.edit");
   const canCharge = can("hotel_laundry.charge");
   const canCreate = can("hotel_laundry.create");
-  const { data: itemsData, reload } = useFetch<{ items: LaundryItem[] }>("/laundry/items");
-  const { data: roomsData } = useFetch<{ rooms: BoardRoom[] }>("/rooms");
-  const items = itemsData?.items;
-  const occupied = (roomsData?.rooms ?? []).filter((r) => r.status.code === "OCCUPIED" && r.occupant);
+  const { data: itemsData, reload, error: itemsError } = useFetch<{ laundry_items: LaundryItem[] }>("/laundry/items");
+  const { data: roomsData, error: roomsError } = useFetch<{ rooms: LaundryRoom[] }>("/laundry/rooms");
+  const items = itemsData?.laundry_items;
+  const occupied = roomsData?.rooms ?? [];
 
   const [roomId, setRoomId] = useState("");
   const [qty, setQty] = useState<Record<number, number>>({});
@@ -73,9 +73,11 @@ export default function Laundry() {
               <select className="input" value={roomId} onChange={(e) => setRoomId(e.target.value)}>
                 <option value="">Select room…</option>
                 {occupied.map((r) => (
-                  <option key={r.id} value={r.id}>Room {r.number} — {r.occupant?.guest.name}</option>
+                  <option key={r.id} value={r.id}>Room {r.number} — {r.guest_name}</option>
                 ))}
               </select>
+              {roomsError && <ErrorText error={roomsError} />}
+              {!roomsError && roomsData && occupied.length === 0 && <div className="mt-1 text-xs text-slate-400">No checked-in rooms right now.</div>}
             </Field>
             <Field label="Note (optional)">
               <input className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. express — return by 6pm" />
@@ -110,6 +112,7 @@ export default function Laundry() {
         </Card>
 
         <Card title={`Price list ${canEditPrices ? "(edit & click away to save)" : ""}`}>
+          {itemsError && <ErrorText error={itemsError} />}
           <div className="space-y-2">
             {(items ?? []).map((i) => (
               <div key={i.id} className="flex items-center gap-2">

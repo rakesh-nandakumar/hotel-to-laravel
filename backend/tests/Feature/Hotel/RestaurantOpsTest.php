@@ -201,3 +201,39 @@ it('rejects a kitchen station code that is not seeded', function () {
         'name' => 'Cocktails', 'kitchen_station' => 'bar',
     ])->assertCreated()->assertJsonPath('menu_category.kitchen_station.code', 'bar');
 });
+
+it('edits a dining table\'s details', function () {
+    $manager = staffWithRole('Manager');
+    $table = freeDiningTable();
+
+    $this->actingAs($manager)->putJson("/api/dining-tables/{$table->id}", [
+        'table_no' => 'T1-renamed', 'capacity' => 6,
+    ])->assertOk()->assertJsonPath('dining_table.table_no', 'T1-renamed')
+        ->assertJsonPath('dining_table.capacity', 6);
+});
+
+it('blocks deleting a dining table that has an open order', function () {
+    $manager = staffWithRole('Manager');
+    openTillFor($manager);
+    $item = restaurantMenuItem();
+    $table = freeDiningTable();
+
+    $this->actingAs($manager)->postJson('/api/orders', [
+        'type' => 'walkin', 'dining_mode' => 'dine_in', 'dining_table_id' => $table->id,
+        'items' => [['menu_item_id' => $item->id, 'qty' => 1]],
+    ])->assertCreated();
+
+    $this->actingAs($manager)->deleteJson("/api/dining-tables/{$table->id}")
+        ->assertUnprocessable()->assertJsonValidationErrors('dining_table');
+
+    $this->assertDatabaseHas('dining_tables', ['id' => $table->id, 'deleted_at' => null]);
+});
+
+it('deletes a dining table with no open order', function () {
+    $manager = staffWithRole('Manager');
+    $table = freeDiningTable();
+
+    $this->actingAs($manager)->deleteJson("/api/dining-tables/{$table->id}")->assertOk();
+
+    $this->assertSoftDeleted('dining_tables', ['id' => $table->id]);
+});

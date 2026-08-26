@@ -105,89 +105,50 @@ export const put = <T = unknown>(path: string, body: unknown) => api<T>(path, { 
 export const post = <T = unknown>(path: string, body?: unknown) => api<T>(path, { method: "POST", body: body ?? {} });
 
 /**
- * Standard print — fetch a server-generated PDF and trigger the browser's
- * print dialog. The PDF is opened in a new tab (captured synchronously to
- * avoid popup blocking) and automatically prints. If the popup is blocked,
- * a hidden iframe in the current page is used instead.
- *
- * The tab is opened SYNCHRONOUSLY, before the `await fetch(...)`, so it
- * counts as a direct response to the click for the popup blocker. If the
- * caller already opened a tab itself (POS walk-in slip — needs to open
- * before its own `await`), it passes that tab in.
+ * Standard print — fetch the server-rendered HTML document (same branded
+ * Blade view the PDF download uses, ?output=html instead of a dompdf
+ * stream) into a hidden same-origin iframe and call the browser's own
+ * print() on it. A real window.print() on a real HTML document is reliable
+ * across Chrome, Firefox, Safari and mobile — scripting a `print()` call
+ * into an embedded PDF viewer (the previous approach) silently no-ops on
+ * Firefox and most mobile browsers, so this replaces that entirely rather
+ * than layering another fallback on top of it.
  */
-export async function openPdf(path: string, tab: Window | null = window.open("", "_blank")) {
-  let blobUrl: string | null = null;
-  try {
-    const res = await fetch(`${API_ORIGIN}/api${path}`, { credentials: "include", headers: { Accept: "application/pdf" } });
-    if (!res.ok) throw new ApiFail(res.status, "Could not generate PDF");
-    const blob = await res.blob();
-    blobUrl = URL.createObjectURL(blob);
+export async function printDocument(path: string): Promise<void> {
+  const url = `${API_ORIGIN}/api${path}${path.includes("?") ? "&" : "?"}output=html`;
+  const res = await fetch(url, { credentials: "include", headers: { Accept: "text/html" } });
+  if (!res.ok) throw new ApiFail(res.status, "Could not generate the document");
+  const html = await res.text();
 
-    if (tab && !tab.closed) {
-      // Navigate the (already gesture-approved) tab to the PDF blob and
-      // auto-print once the PDF has loaded in the viewer.
-      tab.location.href = blobUrl;
-      tab.focus();
-      // Give the PDF viewer a moment to render, then trigger the standard
-      // browser print dialog. Wrapped in try/catch — some viewers block scripting.
-      setTimeout(() => {
-        try {
-          tab.focus();
-          tab.print();
-        } catch {}
-      }, 600);
-      // Fallback if viewer doesn't fire print: try iframe inside the new tab.
-      setTimeout(() => {
-        try {
-          if (tab.closed) return;
-          // If user hasn't printed yet, ensure the PDF is at least visible (blob url).
-          // Revoke after a minute — after the print dialog has had time to spool.
-          URL.revokeObjectURL(blobUrl!);
-        } catch {}
-      }, 60000);
-      // Revoke is delayed — immediately revoking breaks Chrome's PDF viewer.
-      setTimeout(() => {
-        try { URL.revokeObjectURL(blobUrl!); } catch {}
-      }, 60000);
-      return;
-    }
+  const iframe = document.createElement("iframe");
+  iframe.setAttribute("aria-hidden", "true");
+  iframe.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0";
+  document.body.appendChild(iframe);
 
-    // Popup blocked — fall back to hidden iframe print in the current window.
-    const iframe = document.createElement("iframe");
-    iframe.style.position = "fixed";
-    iframe.style.right = "0";
-    iframe.style.bottom = "0";
-    iframe.style.width = "0";
-    iframe.style.height = "0";
-    iframe.style.border = "0";
-    iframe.src = blobUrl;
+  await new Promise<void>((resolve) => {
+    iframe.onload = () => resolve();
+    iframe.srcdoc = html;
+  });
 
-    iframe.onload = () => {
-      setTimeout(() => {
-        try {
-          iframe.contentWindow?.focus();
-          iframe.contentWindow?.print();
-        } catch {
-          window.open(blobUrl!, "_blank");
-        }
-        setTimeout(() => { try { URL.revokeObjectURL(blobUrl!); } catch {} }, 60000);
-        setTimeout(() => iframe.remove(), 120000);
-      }, 400);
-    };
-    iframe.onerror = () => {
-      window.open(blobUrl!, "_blank");
-      setTimeout(() => { try { URL.revokeObjectURL(blobUrl!); } catch {} }, 60000);
-      iframe.remove();
-    };
-    document.body.appendChild(iframe);
-    setTimeout(() => {
-      if (document.body.contains(iframe)) {
-        try { iframe.contentWindow?.print(); } catch {}
-      }
-    }, 1500);
-  } catch (e) {
-    if (blobUrl) try { URL.revokeObjectURL(blobUrl); } catch {}
-    if (tab && !tab.closed) try { tab.close(); } catch {}
-    throw e;
+  const win = iframe.contentWindow;
+  if (win) {
+    win.focus();
+    win.print();
   }
+  // onafterprint isn't implemented everywhere, so this is a backstop, not the
+  // primary cleanup path — it just guarantees the iframe doesn't linger.
+  setTimeout(() => iframe.remove(), 60000);
+}
+
+/** Server-generated PDF, saved to disk (report "Download PDF" buttons — printDocument() is the print path). */
+export async function downloadFile(path: string, filename: string): Promise<void> {
+  const res = await fetch(`${API_ORIGIN}/api${path}`, { credentials: "include", headers: { Accept: "application/pdf" } });
+  if (!res.ok) throw new ApiFail(res.status, "Could not generate the document");
+  const blob = await res.blob();
+  const blobUrl = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = blobUrl;
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
 }

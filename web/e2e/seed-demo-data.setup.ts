@@ -1,7 +1,20 @@
 import { test as setup, expect } from "@playwright/test";
-import { authFile, fieldInput } from "./fixtures";
+import { authFile } from "./fixtures";
 
 setup.use({ storageState: authFile("fullAdmin") });
+
+/**
+ * fixtures.ts's fieldInput() div-filter heuristic times out intermittently in
+ * this environment (reproduced even on this exact pre-existing, untouched
+ * form — see apartments.spec.ts / restaurant-ops.spec.ts for the same
+ * workaround elsewhere) — existing test-infra flakiness, not a bug in the
+ * form itself. `<Field>` (components/ui.tsx) always renders
+ * `<label>{text}</label>` immediately followed by the control, so the
+ * label's next sibling is the input/select.
+ */
+function field(scope: import("@playwright/test").Locator, label: string) {
+  return scope.locator(`label:text-is("${label}")`).locator("xpath=following-sibling::*[1]");
+}
 
 /**
  * Runs after auth.setup.ts (alphabetically later, same "setup" project) as
@@ -17,7 +30,7 @@ setup.use({ storageState: authFile("fullAdmin") });
  * doesn't attach automatically the way an in-page fetch() does. Going through
  * the UI sidesteps that entirely and is simpler to keep correct.
  */
-setup.skip("seed a demo menu category + item for POS/KOT tests", async ({ page }) => {
+setup("seed a demo menu category + item for POS/KOT tests", async ({ page }) => {
   await page.goto("/menu");
 
   await page.getByRole("button", { name: /categories/i }).click();
@@ -38,11 +51,9 @@ setup.skip("seed a demo menu category + item for POS/KOT tests", async ({ page }
   const itemModal = page.locator(".modal-panel");
   await expect(itemModal.getByText(/new menu item/i)).toBeVisible();
 
-  console.log("div-with-Name count:", await itemModal.locator("div").filter({ has: itemModal.getByText("Name", { exact: true }) }).count());
-  console.log("getByText Name count:", await itemModal.getByText("Name", { exact: true }).count());
-  await fieldInput(itemModal, "Name").fill("E2E Seed Dish");
-  await fieldInput(itemModal, "Category").selectOption({ label: "E2E Seed Category" });
-  await fieldInput(itemModal, "Price (LKR)").fill("950");
+  await field(itemModal, "Name").fill("E2E Seed Dish");
+  await field(itemModal, "Category").selectOption({ label: "E2E Seed Category" });
+  await field(itemModal, "Price (LKR)").fill("950");
   await itemModal.getByRole("button", { name: /^save item$/i }).click();
   await expect(itemModal).toBeHidden();
   await expect(page.getByText("E2E Seed Dish")).toBeVisible();

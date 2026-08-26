@@ -180,22 +180,22 @@ class OrderController extends Controller
         ], 201);
     }
 
-    /** Branded receipt PDF — ?format=thermal|a4 (default thermal). */
+    /** Branded receipt — ?format=thermal|a4 (default thermal), ?output=html|pdf (default pdf). */
     public function receipt(Request $request, Order $order): Response
     {
         $format = $request->query('format') === 'a4' ? 'a4' : 'thermal';
 
-        return $this->pdf->orderReceipt($order, $format);
+        return $this->pdf->orderReceipt($order, $format, $request->query('output') === 'html');
     }
 
     /** Walk-in double slip: bill + numbered collection token (thermal, one print). */
-    public function slip(Order $order): Response
+    public function slip(Request $request, Order $order): Response
     {
-        return $this->pdf->orderSlip($order);
+        return $this->pdf->orderSlip($order, $request->query('output') === 'html');
     }
 
-    public function kotTicket(Order $order): Response
+    public function kotTicket(Request $request, Order $order): Response
     {
-        return $this->pdf->kotTicket($order);
+        return $this->pdf->kotTicket($order, $request->query('output') === 'html');
     }
 }

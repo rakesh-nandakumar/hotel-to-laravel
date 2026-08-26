@@ -249,7 +249,7 @@ class ReservationService
     /**
      * @return array<string, mixed>
      */
-    public function checkoutQuote(Reservation $reservation, bool $applyLate): array
+    public function checkoutQuote(Reservation $reservation, bool $applyLate, bool $applyEarlyDeparture = false): array
     {
         $folio = $reservation->folio;
         if (! $folio) {
@@ -263,15 +263,21 @@ class ReservationService
         $folio->loadMissing(['lines.source', 'lines.staff:id,name', 'type', 'status']);
 
         $lateAmt = $applyLate ? (int) Settings::num('billing.late_checkout_surcharge', 0) : 0;
+        $earlyDeparture = $this->earlyDepartureQuote($reservation);
+        $applyEarlyDeparture = $applyEarlyDeparture && $earlyDeparture !== null;
+        // Net delta of the credit + fee — negative unless the fee mode makes
+        // it exceed the unused value, which the settings-level cap prevents.
+        $earlyAdjustment = $applyEarlyDeparture ? $earlyDeparture['fee'] - $earlyDeparture['unused_value'] : 0;
+
         $cleanLines = $folio->lines->reject(fn (FolioLine $line) => $this->isStaleCheckoutLine($line));
 
         // Order-linked lines were already taxed at POS-order time — only
         // non-order lines feed the folio-level tax base (they still count
         // toward the grand total below).
-        $base = (int) $cleanLines->whereNull('order_id')->sum('amount') + $lateAmt;
+        $base = (int) $cleanLines->whereNull('order_id')->sum('amount') + $lateAmt + $earlyAdjustment;
         $tax = $this->billing->calcTax($base);
 
-        $grandTotal = (int) $cleanLines->sum('amount') + $lateAmt + $tax['service_charge'] + $tax['vat'];
+        $grandTotal = (int) $cleanLines->sum('amount') + $lateAmt + $earlyAdjustment + $tax['service_charge'] + $tax['vat'];
 
         return [
             'folio' => array_merge($folio->toArray(), $totals),
@@ -283,6 +289,8 @@ class ReservationService
             'vat_pct' => $tax['vat_pct'],
             'grand_total' => $grandTotal,
             'balance_due' => $grandTotal - $totals['paid'] + $totals['refunded'],
+            'early_departure' => $earlyDeparture,
+            'early_departure_applied' => $applyEarlyDeparture,
         ];
     }
 
@@ -292,7 +300,7 @@ class ReservationService
      */
     public function checkout(Reservation $reservation, array $data, int $staffId): array
     {
-        $reservation->loadMissing(['guest', 'folio', 'status', 'rooms.room']);
+        $reservation->loadMissing(['guest', 'folio', 'status', 'rooms.room', 'package']);
 
         if (! $reservation->folio) {
             throw ValidationException::withMessages(['reservation' => 'Reservation has no folio.']);
@@ -311,23 +319,33 @@ class ReservationService
 
         $folioId = $reservation->folio->id;
         $lateAmt = ! empty($data['apply_late_surcharge']) ? (int) Settings::num('billing.late_checkout_surcharge', 0) : 0;
+        $earlyDeparture = $this->earlyDepartureQuote($reservation);
+        $applyEarlyDeparture = $earlyDeparture !== null && ! empty($data['apply_early_departure']);
 
-        $result = DB::transaction(function () use ($folioId, $lateAmt, $payments, $staffId) {
+        $result = DB::transaction(function () use ($folioId, $lateAmt, $payments, $staffId, $earlyDeparture, $applyEarlyDeparture) {
             $scId = Lookup::id(LookupType::LINE_SOURCE, LineSource::SERVICE_CHARGE);
             $vatId = Lookup::id(LookupType::LINE_SOURCE, LineSource::VAT);
             $surchargeId = Lookup::id(LookupType::LINE_SOURCE, LineSource::SURCHARGE);
+            $discountId = Lookup::id(LookupType::LINE_SOURCE, LineSource::DISCOUNT);
+            $cancellationFeeId = Lookup::id(LookupType::LINE_SOURCE, LineSource::CANCELLATION_FEE);
 
-            // Retry safety: strip stale folio-level tax/late-surcharge lines left
-            // by a previously-interrupted checkout — never taxed twice. Scoped to
-            // order_id IS NULL: an order's own SC/VAT lines (from postOrderToFolio)
-            // must never be touched here, or a later checkout would silently erase
-            // that order's charges from the bill.
+            // Retry safety: strip stale folio-level tax/late-surcharge/early-departure
+            // lines left by a previously-interrupted checkout — never taxed or
+            // charged twice. Scoped to order_id IS NULL: an order's own SC/VAT
+            // lines (from postOrderToFolio) must never be touched here, or a
+            // later checkout would silently erase that order's charges from the bill.
             FolioLine::where('folio_id', $folioId)
                 ->whereNull('order_id')
-                ->where(function ($q) use ($scId, $vatId, $surchargeId) {
+                ->where(function ($q) use ($scId, $vatId, $surchargeId, $discountId, $cancellationFeeId) {
                     $q->whereIn('line_source_id', [$scId, $vatId])
                         ->orWhere(function ($q2) use ($surchargeId) {
                             $q2->where('line_source_id', $surchargeId)->where('description', 'Late check-out surcharge');
+                        })
+                        ->orWhere(function ($q2) use ($discountId) {
+                            $q2->where('line_source_id', $discountId)->where('description', 'like', 'Early departure credit%');
+                        })
+                        ->orWhere(function ($q2) use ($cancellationFeeId) {
+                            $q2->where('line_source_id', $cancellationFeeId)->where('description', 'like', 'Early departure fee%');
                         });
                 })
                 ->delete();
@@ -338,6 +356,23 @@ class ReservationService
                     'description' => 'Late check-out surcharge', 'qty' => 1, 'unit_price' => $lateAmt, 'amount' => $lateAmt,
                     'staff_id' => $staffId,
                 ]);
+            }
+
+            if ($applyEarlyDeparture) {
+                FolioLine::create([
+                    'folio_id' => $folioId, 'line_source_id' => $discountId,
+                    'description' => "Early departure credit — {$earlyDeparture['unused_nights']} unused night(s)",
+                    'qty' => 1, 'unit_price' => -$earlyDeparture['unused_value'], 'amount' => -$earlyDeparture['unused_value'],
+                    'staff_id' => $staffId,
+                ]);
+                if ($earlyDeparture['fee'] > 0) {
+                    FolioLine::create([
+                        'folio_id' => $folioId, 'line_source_id' => $cancellationFeeId,
+                        'description' => "Early departure fee — {$earlyDeparture['fee_mode']} of {$earlyDeparture['unused_nights']} unused night(s)",
+                        'qty' => 1, 'unit_price' => $earlyDeparture['fee'], 'amount' => $earlyDeparture['fee'],
+                        'staff_id' => $staffId,
+                    ]);
+                }
             }
 
             // Order-linked lines were already taxed at POS-order time — excluded
@@ -378,6 +413,19 @@ class ReservationService
             return ['grand_total' => $grandTotal, 'overpaid' => -$balance];
         });
 
+        // "Change" only makes sense against cash actually tendered just now —
+        // a card/bank/QR payment can't be partially reversed at the register.
+        // A net overpay with no new payment at all (newTotal === 0) is the
+        // separate, pre-existing "large deposit exceeds the final bill" case,
+        // which keeps following refund_method below.
+        $newTotal = (int) collect($payments)->sum('amount');
+        $isChangeFromTender = $result['overpaid'] > 0 && $newTotal > 0;
+        if ($isChangeFromTender && ! collect($payments)->contains(fn ($p) => $p['method'] === PaymentMethod::CASH)) {
+            throw ValidationException::withMessages([
+                'payments' => 'Only cash payments may exceed the amount due — reduce the tendered amount to match the balance.',
+            ]);
+        }
+
         foreach ($payments as $p) {
             $this->billing->recordPayment([
                 'folio_id' => $folioId, 'method' => $p['method'], 'amount' => $p['amount'],
@@ -387,9 +435,11 @@ class ReservationService
         }
         if ($result['overpaid'] > 0) {
             $this->billing->recordPayment([
-                'folio_id' => $folioId, 'method' => $data['refund_method'] ?? PaymentMethod::CASH,
+                'folio_id' => $folioId,
+                'method' => $isChangeFromTender ? PaymentMethod::CASH : ($data['refund_method'] ?? PaymentMethod::CASH),
                 'amount' => $result['overpaid'], 'kind' => PaymentKind::REFUND,
-                'reason' => 'Deposit/overpayment refund at checkout', 'staff_id' => $staffId,
+                'reason' => $isChangeFromTender ? 'Change returned to guest' : 'Deposit/overpayment refund at checkout',
+                'staff_id' => $staffId,
             ]);
         }
 
@@ -403,15 +453,21 @@ class ReservationService
 
         $invoiceNo = $this->documentNumbers->next(Folio::class, 'invoice_no', 'INV-'.now()->year.'-');
 
-        DB::transaction(function () use ($reservation, $folioId, $invoiceNo) {
+        DB::transaction(function () use ($reservation, $folioId, $invoiceNo, $applyEarlyDeparture) {
             Folio::where('id', $folioId)->update([
                 'folio_status_id' => Lookup::id(LookupType::FOLIO_STATUS, FolioStatus::SETTLED),
                 'invoice_no' => $invoiceNo, 'settled_at' => now(),
             ]);
-            $reservation->update([
+            $reservationUpdate = [
                 'reservation_status_id' => Lookup::id(LookupType::RESERVATION_STATUS, ReservationStatus::CHECKED_OUT),
                 'checked_out_at' => now(),
-            ]);
+            ];
+            // Free up the unused nights for other bookings — the folio has
+            // already been credited/charged for them above.
+            if ($applyEarlyDeparture) {
+                $reservationUpdate['check_out'] = now()->startOfDay();
+            }
+            $reservation->update($reservationUpdate);
 
             $dirtyId = Lookup::id(LookupType::ROOM_STATUS, RoomStatus::DIRTY);
             $pendingTaskId = Lookup::id(LookupType::TASK_STATUS, TaskStatus::PENDING);
@@ -430,10 +486,14 @@ class ReservationService
         $points = $this->billing->accrueLoyalty($reservation->guest_id, $result['grand_total'], 'FOLIO', $folioId, $staffId);
         AuditLog::record('reservation.checked_out', $reservation, [
             'invoice_no' => $invoiceNo, 'total' => $result['grand_total'], 'loyalty_earned' => $points,
+            'early_departure' => $applyEarlyDeparture ? $earlyDeparture : null,
         ]);
         broadcast(new RealtimeUpdate(RealtimeEvent::ROOMS, ['changed' => $reservation->rooms->pluck('room_id')->all()]));
 
-        return array_merge($this->billing->present(Folio::findOrFail($folioId)), ['invoice_no' => $invoiceNo]);
+        return array_merge($this->billing->present(Folio::findOrFail($folioId)), [
+            'invoice_no' => $invoiceNo,
+            'change_due' => $isChangeFromTender ? $result['overpaid'] : 0,
+        ]);
     }
 
     /**
@@ -545,6 +605,54 @@ class ReservationService
         return $this->billing->present($reservation->folio->fresh());
     }
 
+    /**
+     * When a checked-in guest is departing before their scheduled check_out,
+     * the nights already posted at check-in (see checkIn() above) for the
+     * unused period should not simply be left on the folio at full price —
+     * nor waived entirely — so this credits their value back and charges a
+     * configurable fee against it (percentage of the unused value, a flat
+     * amount, or none), the same "don't just make it free" policy cancel()
+     * already applies to a pre-arrival cancellation.
+     *
+     * @return array{scheduled_check_out: string, unused_nights: int, unused_value: int, fee_mode: string, fee: int, net_credit: int}|null
+     */
+    private function earlyDepartureQuote(Reservation $reservation): ?array
+    {
+        $today = now()->startOfDay();
+        $scheduledCheckOut = $reservation->check_out->copy()->startOfDay();
+
+        if (! $today->lt($scheduledCheckOut)) {
+            return null;
+        }
+
+        $unusedNights = (int) $today->diffInDays($scheduledCheckOut);
+        if ($unusedNights < 1) {
+            return null;
+        }
+
+        $reservation->loadMissing('rooms', 'package');
+        $unusedValue = (int) $reservation->rooms->sum('nightly_rate') * $unusedNights;
+        if ($reservation->package && $reservation->package->price_per_person_per_night > 0) {
+            $unusedValue += $reservation->package->price_per_person_per_night * $reservation->adults * $unusedNights;
+        }
+
+        $mode = Settings::str('billing.early_departure_fee_mode', 'percentage');
+        $fee = match ($mode) {
+            'fixed' => min((int) round(Settings::num('billing.early_departure_fee_fixed', 0)), $unusedValue),
+            'none' => 0,
+            default => (int) round($unusedValue * Settings::num('billing.early_departure_fee_pct', 50) / 100),
+        };
+
+        return [
+            'scheduled_check_out' => $reservation->check_out->toDateString(),
+            'unused_nights' => $unusedNights,
+            'unused_value' => $unusedValue,
+            'fee_mode' => $mode,
+            'fee' => $fee,
+            'net_credit' => $unusedValue - $fee,
+        ];
+    }
+
     private function stayTotal(Reservation $reservation): int
     {
         $nights = count($this->pricing->nights($reservation->check_in, $reservation->check_out));
@@ -590,6 +698,14 @@ class ReservationService
             return true;
         }
 
-        return $line->source->code === LineSource::SURCHARGE && $line->description === 'Late check-out surcharge';
+        if ($line->source->code === LineSource::SURCHARGE && $line->description === 'Late check-out surcharge') {
+            return true;
+        }
+
+        if ($line->source->code === LineSource::DISCOUNT && str_starts_with($line->description, 'Early departure credit')) {
+            return true;
+        }
+
+        return $line->source->code === LineSource::CANCELLATION_FEE && str_starts_with($line->description, 'Early departure fee');
     }
 }

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Plus, Printer } from "lucide-react";
-import { openPdf, post, put } from "../lib/api";
+import { printDocument, post, put } from "../lib/api";
 import { useFetch, usePagedFetch, lkr, toCents, centsToRupees, fmtDate, todayStr } from "../lib/util";
 import { Badge, Card, Empty, ErrorText, Field, Modal, statusColor, Tabs, Pagination } from "../components/ui";
 import { SplitPay, ReasonModal } from "./POS";
@@ -361,7 +361,7 @@ function BookingModal({ b, onClose }: { b: Booking; onClose: () => void }) {
           </>
         )}
         {state.folio && can("hotel_folios.invoice") && (
-          <button className="btn-secondary" onClick={() => openPdf(`/folios/${state.folio!.id}/invoice?format=a4`)}>
+          <button className="btn-secondary" onClick={() => printDocument(`/folios/${state.folio!.id}/invoice?format=a4`)}>
             <Printer size={15} /> Invoice {state.folio.invoice_no ?? "(proforma)"}
           </button>
         )}

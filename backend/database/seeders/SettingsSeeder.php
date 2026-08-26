@@ -73,6 +73,9 @@ class SettingsSeeder extends Seeder
             ['key' => 'billing.venue_deposit_mode', 'value' => 'percentage', 'type' => SettingType::TEXT, 'category' => 'billing', 'label' => 'Venue Booking Deposit Mode', 'hint' => '"percentage" or "fixed".'],
             ['key' => 'billing.venue_deposit_pct', 'value' => 25, 'type' => SettingType::PERCENT, 'category' => 'billing', 'label' => 'Venue Booking Deposit %', 'hint' => 'Used when the deposit mode is "percentage".'],
             ['key' => 'billing.venue_deposit_fixed', 'value' => 0, 'type' => SettingType::MONEY, 'category' => 'billing', 'label' => 'Venue Booking Deposit — Fixed Amount (LKR cents)', 'hint' => 'Used when the deposit mode is "fixed"; capped to the rental total.'],
+            ['key' => 'billing.early_departure_fee_mode', 'value' => 'percentage', 'type' => SettingType::TEXT, 'category' => 'billing', 'label' => 'Early Departure Fee Mode', 'hint' => '"percentage", "fixed", or "none" — charged on the unused nights when a guest checks out before their scheduled date.'],
+            ['key' => 'billing.early_departure_fee_pct', 'value' => 50, 'type' => SettingType::PERCENT, 'category' => 'billing', 'label' => 'Early Departure Fee %', 'hint' => 'Of the unused-nights value. Used when the fee mode is "percentage".'],
+            ['key' => 'billing.early_departure_fee_fixed', 'value' => 0, 'type' => SettingType::MONEY, 'category' => 'billing', 'label' => 'Early Departure Fee — Fixed Amount (LKR cents)', 'hint' => 'Used when the fee mode is "fixed"; capped to the unused-nights value.'],
 
             // ── Currency ─────────────────────────────────────────────────────
             ['key' => 'currency.usd_rate', 'value' => 300, 'type' => SettingType::NUMBER, 'category' => 'currency', 'label' => 'LKR per 1 USD (display only)'],
