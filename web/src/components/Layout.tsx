@@ -47,8 +47,6 @@ import {
   HandCoins,
   Grid2x2,
   QrCode,
-  ShoppingBasket,
-  Truck,
 } from "lucide-react";
 import { useAuth } from "../lib/auth";
 import { useBranding, brandInitials } from "../lib/branding";
@@ -146,21 +144,13 @@ const SECTIONS: Section[] = [
       },
       {
         to: "/inventory",
-        label: "Ingredients",
+        label: "Inventory",
         icon: <Package size={18} />,
-        permission: "hotel_ingredients.access",
-      },
-      {
-        to: "/inventory/products",
-        label: "Products",
-        icon: <ShoppingBasket size={18} />,
-        permission: "hotel_products.access",
-      },
-      {
-        to: "/inventory/grn",
-        label: "Goods Received",
-        icon: <Truck size={18} />,
-        permission: "hotel_grn.access",
+        permission: [
+          "hotel_ingredients.access",
+          "hotel_products.access",
+          "hotel_grn.access",
+        ],
       },
       {
         to: "/restaurant/reports",
@@ -343,6 +333,14 @@ const SECTIONS: Section[] = [
     ],
   },
 ];
+
+/** Inventory is one sidebar entry backed by three separately-permissioned pages; route to whichever the user can actually reach. */
+function inventoryTarget(can: (permission: string) => boolean) {
+  if (can("hotel_ingredients.access")) return "/inventory";
+  if (can("hotel_products.access")) return "/inventory/products";
+  if (can("hotel_grn.access")) return "/inventory/grn";
+  return "/inventory";
+}
 
 /** A single nav item flattened together with the section it lives under, for search. */
 type FlatItem = Item & { section: string };
@@ -615,7 +613,9 @@ export default function Layout({ children }: { children: ReactNode }) {
 
   const visibleSections = SECTIONS.map((s) => ({
     ...s,
-    items: visible(s.items),
+    items: visible(s.items).map((i) =>
+      i.to === "/inventory" ? { ...i, to: inventoryTarget(can) } : i,
+    ),
   })).filter((s) => s.items.length > 0);
 
   /**
