@@ -85,8 +85,8 @@ it('routes kitchen items to the KOT board and excludes direct-fulfill products f
 it('deducts a product\'s stock FEFO from expiry batches', function () {
     $manager = staffWithRole('Manager');
     $water = directProduct('Water', 30);
-    $soonBatch = $water->batches()->create(['qty' => 10, 'initial_qty' => 10, 'expiry_date' => '2026-08-01']);
-    $laterBatch = $water->batches()->create(['qty' => 20, 'initial_qty' => 20, 'expiry_date' => '2026-12-01']);
+    $soonBatch = $water->batches()->create(['qty' => 10, 'initial_qty' => 10, 'expiry_date' => now()->addDays(30)->toDateString()]);
+    $laterBatch = $water->batches()->create(['qty' => 20, 'initial_qty' => 20, 'expiry_date' => now()->addDays(120)->toDateString()]);
 
     $this->actingAs($manager)->postJson('/api/orders', [
         'type' => 'walkin', 'items' => [['product_id' => $water->id, 'qty' => 3]],

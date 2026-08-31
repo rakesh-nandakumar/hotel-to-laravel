@@ -26,6 +26,8 @@ export type StockItem = {
   kind?: { id: number; code: string };
   next_expiry?: string | null;
   has_expired: boolean;
+  /** What's actually sellable/usable right now — stock_qty minus any not-yet-written-off expired batch qty (0 if inactive). This is what POS/menus show, not stock_qty. */
+  sellable_qty: number;
   used_in: string[];
   batches: Batch[];
 };

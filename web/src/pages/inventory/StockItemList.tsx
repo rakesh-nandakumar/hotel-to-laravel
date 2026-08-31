@@ -163,6 +163,11 @@ export default function StockItemList({
                     <span className="font-bold tabular-nums">{r.stock_qty.toLocaleString()} {r.unit}</span>
                     <span className="text-slate-400">min {r.low_stock_threshold.toLocaleString()}</span>
                   </div>
+                  {r.sellable_qty < r.stock_qty && (
+                    <div className="text-[11px] font-semibold text-red-500">
+                      only {r.sellable_qty.toLocaleString()} {r.unit} sellable — rest expired
+                    </div>
+                  )}
                   <div className="relative mt-1 h-2 overflow-hidden rounded-full bg-slate-100">
                     <div className={clsx("h-full rounded-full transition-all", r.low ? "bg-red-400" : pct < 55 ? "bg-amber-400" : "bg-emerald-500")} style={{ width: `${pct}%` }} />
                     {r.low_stock_threshold > 0 && <div className="absolute top-0 h-full w-px bg-slate-400/60" style={{ left: "33.3%" }} />}

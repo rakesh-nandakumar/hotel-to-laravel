@@ -115,6 +115,20 @@ it('rejects a base that does not match the pinned base domain', function () {
         ->and(resolveHost('acme.evil-example.com')->isUnknown())->toBeTrue();
 });
 
+it('treats the bare host as central when the pinned base domain has 3+ labels', function () {
+    // Regression: a pin like "htl.vellixglobal.com" (3 labels) peels down to
+    // a remainder ("vellixglobal.com", 2 labels) that isn't short enough to
+    // trip the generic apex check, so without a direct pin match the bare
+    // pinned host used to misread as tenant slug "htl" and 404.
+    config()->set('tenancy.base_domain', 'htl.vellixglobal.com');
+
+    expect(resolveHost('htl.vellixglobal.com')->isCentral())->toBeTrue()
+        ->and(resolveHost('admin.htl.vellixglobal.com')->isCentral())->toBeTrue()
+        ->and(resolveHost('acme.htl.vellixglobal.com')->isTenant())->toBeTrue()
+        ->and(resolveHost('acme.htl.vellixglobal.com')->slug())->toBe('acme')
+        ->and(resolveHost('acme.evil-example.com')->isUnknown())->toBeTrue();
+});
+
 it('derives the base of the current host for tenant URL building', function () {
     $resolver = app(TenantHostResolver::class);
 
@@ -123,4 +137,18 @@ it('derives the base of the current host for tenant URL building', function () {
         ->and($resolver->baseOf('acme.localhost'))->toBe('localhost')
         ->and($resolver->baseOf('admin.localhost'))->toBe('localhost')
         ->and($resolver->baseOf('ADMIN.Example.COM.'))->toBe('example.com');
+});
+
+it('derives the full pinned base for a multi-label base domain, not the peeled remainder', function () {
+    // Same regression as the resolve() pin-match test above: without a direct
+    // pin match, "htl.vellixglobal.com" would peel to "vellixglobal.com" and
+    // tenant URLs would be built as "acme.vellixglobal.com" instead of
+    // "acme.htl.vellixglobal.com".
+    config()->set('tenancy.base_domain', 'htl.vellixglobal.com');
+
+    $resolver = app(TenantHostResolver::class);
+
+    expect($resolver->baseOf('htl.vellixglobal.com'))->toBe('htl.vellixglobal.com')
+        ->and($resolver->baseOf('admin.htl.vellixglobal.com'))->toBe('htl.vellixglobal.com')
+        ->and($resolver->baseOf('acme.htl.vellixglobal.com'))->toBe('htl.vellixglobal.com');
 });

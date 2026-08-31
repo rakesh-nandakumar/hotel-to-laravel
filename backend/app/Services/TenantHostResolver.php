@@ -78,6 +78,20 @@ class TenantHostResolver
             return HostContext::unknown();
         }
 
+        $pinned = config('tenancy.base_domain');
+        $pinned = is_string($pinned) && trim($pinned) !== '' ? strtolower(trim($pinned)) : null;
+
+        // The pinned base domain itself, bare, is the apex/central host. The
+        // label-peeling apex check below only catches a short remainder (a
+        // 2-label pin like "vellixglobal.com" peels down to "com", which
+        // trips it) — a multi-label pin (e.g. "htl.vellixglobal.com") peels
+        // down to a remainder that's still a valid-looking base ("vellixglobal.com"),
+        // so without this direct match the pin's own bare host misreads as a
+        // tenant subdomain of itself and 404s.
+        if ($pinned !== null && $host === $pinned) {
+            return HostContext::central();
+        }
+
         $labels = explode('.', $host);
         $firstLabel = $labels[0];
         $base = implode('.', array_slice($labels, 1));
@@ -90,8 +104,7 @@ class TenantHostResolver
             return HostContext::central();
         }
 
-        $pinned = config('tenancy.base_domain');
-        if (is_string($pinned) && trim($pinned) !== '' && $base !== strtolower(trim($pinned))) {
+        if ($pinned !== null && $base !== $pinned) {
             return HostContext::unknown();
         }
 
@@ -109,6 +122,17 @@ class TenantHostResolver
 
         if ($host === '') {
             return '';
+        }
+
+        $pinned = config('tenancy.base_domain');
+        $pinned = is_string($pinned) && trim($pinned) !== '' ? strtolower(trim($pinned)) : null;
+
+        // Same reasoning as the direct pin match in resolve(): a multi-label
+        // pin (e.g. "htl.vellixglobal.com") is itself the base for tenant URLs
+        // ("acme.htl.vellixglobal.com"), not the shorter remainder label-peeling
+        // would otherwise produce ("vellixglobal.com").
+        if ($pinned !== null && $host === $pinned) {
+            return $host;
         }
 
         $labels = explode('.', $host);

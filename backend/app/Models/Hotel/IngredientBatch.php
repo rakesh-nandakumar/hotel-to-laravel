@@ -3,6 +3,7 @@
 namespace App\Models\Hotel;
 
 use App\Models\Concerns\BelongsToTenant;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -44,5 +45,21 @@ class IngredientBatch extends Model
     public function grnLine(): BelongsTo
     {
         return $this->belongsTo(GrnLine::class);
+    }
+
+    /**
+     * @param  Builder<IngredientBatch>  $query
+     */
+    public function scopeExpired(Builder $query): Builder
+    {
+        return $query->whereNotNull('expiry_date')->where('expiry_date', '<', today());
+    }
+
+    /**
+     * @param  Builder<IngredientBatch>  $query
+     */
+    public function scopeNotExpired(Builder $query): Builder
+    {
+        return $query->where(fn (Builder $q) => $q->whereNull('expiry_date')->orWhere('expiry_date', '>=', today()));
     }
 }

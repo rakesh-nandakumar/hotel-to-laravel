@@ -9,6 +9,7 @@ use App\Http\Requests\Hotel\UpdateIngredientRequest;
 use App\Http\Requests\Hotel\WriteOffIngredientBatchRequest;
 use App\Models\Hotel\Ingredient;
 use App\Models\Hotel\IngredientBatch;
+use App\Models\Hotel\MenuItem;
 use App\Models\Lookup;
 use App\Services\AuditLog;
 use App\Services\Hotel\InventoryService;
@@ -33,6 +34,7 @@ class IngredientController extends Controller
                 'batches' => fn ($q) => $q->where('qty', '>', 0)->whereNotNull('expiry_date')->orderBy('expiry_date')->limit(5),
                 'recipeItems.menuItem:id,name',
             ])
+            ->withSum('expiredBatches as expired_qty', 'qty')
             ->orderBy('name');
 
         $kind = $request->string('kind')->toString();
@@ -50,6 +52,10 @@ class IngredientController extends Controller
                 $row['low'] = $ingredient->isLow();
                 $row['next_expiry'] = $ingredient->batches->first()?->expiry_date;
                 $row['has_expired'] = $ingredient->batches->contains(fn (IngredientBatch $b) => $b->expiry_date && $b->expiry_date->lt($today));
+                // What's actually sellable/usable right now — total minus any
+                // not-yet-written-off expired batch quantity (the hourly sweep
+                // normally clears this gap; see Ingredient::sellableQty()).
+                $row['sellable_qty'] = $ingredient->active ? max(0, $ingredient->stock_qty - (float) $ingredient->expired_qty) : 0;
 
                 return $row;
             });
@@ -196,6 +202,10 @@ class IngredientController extends Controller
             ->whereNotNull('selling_price')
             ->where('selling_price', '>', 0)
             ->select('id', 'name', 'selling_price', 'stock_qty', 'image', 'menu_category_id', 'unit')
+            // select() must come before withSum() — select() replaces the
+            // column list wholesale, which would otherwise wipe out the
+            // aggregate subquery column withSum() adds.
+            ->withSum('expiredBatches as expired_qty', 'qty')
             ->orderBy('name');
 
         if ($q !== '') {
@@ -205,18 +215,27 @@ class IngredientController extends Controller
             });
         }
 
-        $products = $query->limit($limit)->get()->map(function (Ingredient $p) {
-            return [
+        // Never surface expired quantity: subtract any not-yet-written-off
+        // expired batch qty before filtering/limiting, so a product sitting
+        // on entirely-expired stock simply doesn't appear.
+        $products = $query->limit($limit)->get()
+            ->map(function (Ingredient $p) {
+                $p->stock_qty = max(0, $p->stock_qty - (float) $p->expired_qty);
+
+                return $p;
+            })
+            ->filter(fn (Ingredient $p) => $p->stock_qty > 0)
+            ->values()
+            ->map(fn (Ingredient $p) => [
                 'id' => $p->id,
                 'name' => $p->name,
                 'selling_price' => $p->selling_price,
                 'stock_qty' => $p->stock_qty,
                 'image' => $p->image,
                 'unit' => $p->unit,
-            ];
-        });
+            ]);
 
-return response()->json(['products' => $products]);
+        return response()->json(['products' => $products]);
     }
 
     /** Dedicated barcode scan endpoint — fast path for POS scanners. */
@@ -238,9 +257,14 @@ return response()->json(['products' => $products]);
                     ->orWhere('name', 'like', "%{$code}%");
             })
             ->select('id', 'name', 'selling_price', 'stock_qty', 'image', 'menu_category_id', 'unit')
+            ->withSum('expiredBatches as expired_qty', 'qty')
             ->first();
 
-        if ($product) {
+        // A product sitting on entirely-expired, not-yet-written-off stock is
+        // treated exactly like an out-of-stock scan — fall through below.
+        $sellableQty = $product ? max(0, $product->stock_qty - (float) $product->expired_qty) : 0;
+
+        if ($product && $sellableQty > 0) {
             return response()->json([
                 'found' => true,
                 'type' => 'product',
@@ -248,7 +272,7 @@ return response()->json(['products' => $products]);
                     'id' => $product->id,
                     'name' => $product->name,
                     'selling_price' => $product->selling_price,
-                    'stock_qty' => $product->stock_qty,
+                    'stock_qty' => $sellableQty,
                     'image' => $product->image,
                     'unit' => $product->unit,
                 ],
@@ -256,7 +280,7 @@ return response()->json(['products' => $products]);
         }
 
         // Fallback to menu item search by item_no
-        $menuItem = \App\Models\Hotel\MenuItem::query()
+        $menuItem = MenuItem::query()
             ->where('active', true)
             ->where('sold_out', false)
             ->where('item_no', (int) $code)
@@ -265,11 +289,21 @@ return response()->json(['products' => $products]);
                 'modifierGroups' => fn ($g) => $g->orderBy('sort_order')->with(['modifiers' => fn ($m) => $m->where('active', true)->orderBy('sort_order')]),
                 'linkedAddOns' => fn ($a) => $a->active()->orderBy('sort_order'),
                 'categoryAddOns' => fn ($a) => $a->active()->orderBy('sort_order'),
+                'recipe.ingredient',
+                'stockIngredient',
             ])
             ->first();
 
+        // Same live expiry/active recheck as the menu search endpoint — a
+        // scanned item whose recipe or direct-stock ingredient just expired
+        // is not orderable, regardless of its cached sold_out flag.
+        if ($menuItem && $this->inventory->unavailableMenuItemIds(collect([$menuItem]))->isNotEmpty()) {
+            $menuItem = null;
+        }
+
         if ($menuItem) {
             $addOns = $menuItem->linkedAddOns->concat($menuItem->categoryAddOns)->unique('id')->values();
+
             return response()->json([
                 'found' => true,
                 'type' => 'menu_item',

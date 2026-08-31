@@ -56,6 +56,12 @@ class Ingredient extends Model
         return $this->hasMany(IngredientBatch::class);
     }
 
+    /** Batches past their expiry date that still carry stock — not yet written off. */
+    public function expiredBatches(): HasMany
+    {
+        return $this->hasMany(IngredientBatch::class)->where('qty', '>', 0)->expired();
+    }
+
     public function recipeItems(): HasMany
     {
         return $this->hasMany(RecipeItem::class);
@@ -80,6 +86,25 @@ class Ingredient extends Model
     public function isLow(): bool
     {
         return $this->stock_qty <= $this->low_stock_threshold;
+    }
+
+    /**
+     * Stock actually available to sell or use right now: the recorded total
+     * minus any batch quantity that has passed its expiry date but hasn't
+     * been written off yet (the hourly sweep normally keeps that gap at
+     * zero — this is the real-time guard for the window before it runs),
+     * and zero outright for an inactive ingredient/product. This is a
+     * single-instance check (queries `expiredBatches` fresh) — list/search
+     * endpoints should batch the same computation instead of calling this
+     * per row.
+     */
+    public function sellableQty(): float
+    {
+        if (! $this->active) {
+            return 0.0;
+        }
+
+        return max(0.0, $this->stock_qty - (float) $this->expiredBatches()->sum('qty'));
     }
 
     /**

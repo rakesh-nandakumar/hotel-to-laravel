@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Hotel\StoreMenuItemRequest;
 use App\Http\Requests\Hotel\ToggleMenuItemSoldOutRequest;
 use App\Http\Requests\Hotel\UpdateMenuItemRequest;
+use App\Models\Hotel\Ingredient;
 use App\Models\Hotel\MenuCategory;
 use App\Models\Hotel\MenuItem;
 use App\Services\AuditLog;
@@ -37,17 +38,37 @@ class MenuItemController extends Controller
                         'modifierGroups' => fn ($g) => $g->orderBy('sort_order')->with(['modifiers' => fn ($m) => $m->where('active', true)->orderBy('sort_order')]),
                         'linkedAddOns' => fn ($a) => $a->active()->orderBy('sort_order'),
                         'categoryAddOns' => fn ($a) => $a->active()->orderBy('sort_order'),
+                        'recipe.ingredient',
+                        'stockIngredient',
                     ]),
-                'products' => fn ($q) => $q->products()->active()->where('stock_qty', '>', 0)->orderBy('name'),
+                'products' => fn ($q) => $q->products()->active()->where('stock_qty', '>', 0)
+                    ->withSum('expiredBatches as expired_qty', 'qty')
+                    ->orderBy('name'),
             ])
             ->get();
 
-        // Fold item-scoped + category-scoped add-ons into one `addons` list per item.
-        $categories->each(function (MenuCategory $category) {
-            $category->items->each(function (MenuItem $item) {
+        // Batched (not per-item) live recheck — hides anything whose recipe or
+        // direct-stock ingredient has since expired or gone inactive, even
+        // before the (hourly) sold_out sweep catches up.
+        $blocked = $this->inventory->unavailableMenuItemIds($categories->flatMap(fn (MenuCategory $c) => $c->items));
+
+        // Fold item-scoped + category-scoped add-ons into one `addons` list per
+        // item, drop blocked items, and never surface expired product quantity.
+        $categories->each(function (MenuCategory $category) use ($blocked) {
+            $available = $category->items->reject(fn (MenuItem $item) => $blocked->contains($item->id))->values();
+            $available->each(function (MenuItem $item) {
                 $item->setAttribute('addons', $item->linkedAddOns->concat($item->categoryAddOns)->unique('id')->values());
-                $item->unsetRelation('linkedAddOns')->unsetRelation('categoryAddOns');
+                $item->unsetRelation('linkedAddOns')->unsetRelation('categoryAddOns')->unsetRelation('recipe')->unsetRelation('stockIngredient');
             });
+            $category->setRelation('items', $available);
+
+            $category->setRelation(
+                'products',
+                $category->products
+                    ->each(fn (Ingredient $p) => $p->setAttribute('stock_qty', max(0, $p->stock_qty - (float) $p->expired_qty)))
+                    ->filter(fn (Ingredient $p) => $p->stock_qty > 0)
+                    ->values()
+            );
         });
 
         return response()->json(['categories' => $categories]);
@@ -207,6 +228,8 @@ class MenuItemController extends Controller
                 'modifierGroups' => fn ($g) => $g->orderBy('sort_order')->with(['modifiers' => fn ($m) => $m->where('active', true)->orderBy('sort_order')]),
                 'linkedAddOns' => fn ($a) => $a->active()->orderBy('sort_order'),
                 'categoryAddOns' => fn ($a) => $a->active()->orderBy('sort_order'),
+                'recipe.ingredient',
+                'stockIngredient',
             ])
             ->where('active', true)
             ->where('sold_out', false)
@@ -226,7 +249,12 @@ class MenuItemController extends Controller
             });
         }
 
-        $items = $query->limit($limit)->get()->map(function (MenuItem $item) {
+        $candidates = $query->limit($limit)->get();
+        // Live recheck (see full()) — never list an item whose recipe/direct
+        // stock ingredient has expired or gone inactive since the last sweep.
+        $blocked = $this->inventory->unavailableMenuItemIds($candidates);
+
+        $items = $candidates->reject(fn (MenuItem $item) => $blocked->contains($item->id))->values()->map(function (MenuItem $item) {
             $addOns = $item->linkedAddOns->concat($item->categoryAddOns)->unique('id')->values();
 
             return [

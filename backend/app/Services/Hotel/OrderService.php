@@ -107,7 +107,7 @@ class OrderService
                 if (! $product || ! $product->active) {
                     throw ValidationException::withMessages(['items' => 'Product not found.']);
                 }
-                if ($product->stock_qty <= 0) {
+                if ($product->sellableQty() <= 0) {
                     throw ValidationException::withMessages(['items' => "\"{$product->name}\" is out of stock."]);
                 }
                 if (empty($product->selling_price)) {
@@ -233,7 +233,7 @@ class OrderService
 
             if (isset($line['product_id'])) {
                 $product = $products->get($line['product_id']);
-                if (! $product || ! $product->active || $product->stock_qty <= 0) {
+                if (! $product || ! $product->active || $product->sellableQty() <= 0) {
                     throw ValidationException::withMessages(['items' => '"'.($product->name ?? 'product').'" is unavailable.']);
                 }
 
