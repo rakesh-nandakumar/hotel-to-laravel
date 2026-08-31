@@ -7,80 +7,62 @@ use Database\Seeders\MenuSeeder;
 use Database\Seeders\PermissionsAndRolesSeeder;
 
 /**
- * Host-based resolution of "master control" vs. a tenant — the boundary the
- * whole architecture rests on (App\Http\Middleware\IdentifyTenant plus
+ * Resolution of "master control" vs. a tenant — the boundary the whole
+ * architecture rests on (App\Http\Middleware\IdentifyTenant plus
  * EnsureCentralContext).
  *
- * Resolution is RELATIVE: the first DNS label is the identity, the rest is
- * the base. Hosts here use the *.localhost base, which resolves without any
- * hosts-file entry — "admin.localhost" is master control, "acme.localhost"
- * is tenant "acme", bare "localhost" is the apex (also master control).
+ * Master control is named by the central path: a request with NO
+ * X-Tenant-Slug header on the bare host (phpunit's APP_URL, "http://localhost")
+ * is the apex — central, exactly like hms.com in production. A tenant-slot
+ * request always names its slug in the header, the way the SPA at /{slug}/…
+ * does. The old {slug}.{base} host style is exercised by the host-fallback
+ * unit tests (TenantHostResolverTest).
  */
 beforeEach(function () {
     $this->seed(MenuSeeder::class);
     $this->seed(PermissionsAndRolesSeeder::class);
+    // Master control requests carry NO tenant header — the TestCase's default
+    // X-Tenant-Slug would override this suite's absence.
+    $this->withoutHeader('X-Tenant-Slug');
 });
 
-/**
- * Absolute URLs, not a `Host` header: Laravel's prepareUrlForRequest() makes a
- * relative test URI absolute against config('app.url') ('http://default.localhost'),
- * and Symfony's Request::create() then derives HTTP_HOST from that — silently
- * discarding any Host header passed in. The host has to be in the URL itself.
- */
-function centralUrl(string $path = '/api/central/tenants'): string
-{
-    return 'http://'.config('tenancy.central_subdomain').'.localhost'.$path;
-}
-
-function tenantUrl(string $slug, string $path = '/api/dashboard'): string
-{
-    return 'http://'.$slug.'.localhost'.$path;
-}
-
-it('serves master control on the central subdomain', function () {
+it('serves master control on the bare host (no tenant header)', function () {
     actingAsCentral(CentralAdmin::factory()->create());
 
-    $this->getJson(centralUrl())
+    $this->getJson('/api/central/tenants')
         ->assertOk()
         ->assertJsonStructure(['tenants']);
 });
 
-it('treats the bare base domain as central context too', function () {
-    actingAsCentral(CentralAdmin::factory()->create());
-
-    $this->getJson('http://localhost/api/central/tenants')
-        ->assertOk();
-});
-
-it('hides master control from a tenant subdomain even for a signed-in central admin', function () {
+it('hides master control from a tenant-slot request even for a signed-in central admin', function () {
     Tenant::factory()->create(['slug' => 'acme']);
     actingAsCentral(CentralAdmin::factory()->create());
 
     // EnsureCentralContext: a resolved tenant means this is NOT master control,
-    // so the panel 404s rather than leaking one tenant's host into central scope.
-    $this->getJson(tenantUrl('acme', '/api/central/tenants'))
+    // so the panel 404s rather than leaking a tenant context into central scope.
+    $this->getJson('/api/central/tenants', ['X-Tenant-Slug' => 'acme'])
         ->assertNotFound();
 });
 
-it('rejects an unknown subdomain rather than falling through unscoped', function () {
+it('rejects an unknown slug rather than falling through unscoped', function () {
     Tenant::factory()->create(['slug' => 'acme']);
 
-    $this->getJson(tenantUrl('nobody'))->assertNotFound();
+    $this->getJson('/api/dashboard', ['X-Tenant-Slug' => 'nobody'])->assertNotFound();
 });
 
-it('rejects a suspended tenant subdomain', function () {
+it('rejects a suspended tenant slug', function () {
     Tenant::factory()->suspended()->create(['slug' => 'lapsed']);
 
-    $this->getJson(tenantUrl('lapsed'))->assertNotFound();
+    $this->getJson('/api/dashboard', ['X-Tenant-Slug' => 'lapsed'])->assertNotFound();
 });
 
-it('resolves the tenant that owns the subdomain', function () {
+it('resolves the tenant the header names', function () {
     $acme = Tenant::factory()->create(['slug' => 'acme']);
     Tenant::factory()->create(['slug' => 'globex']);
 
-    // Unauthenticated, so this stops at 401 rather than 404 — proving the host
+    // Unauthenticated, so this stops at 401 rather than 404 — proving the slug
     // resolved to a real tenant and the request got past IdentifyTenant.
-    $this->getJson(tenantUrl('acme'))->assertUnauthorized();
+    $this->getJson('/api/dashboard', ['X-Tenant-Slug' => 'acme'])->assertUnauthorized();
 
     expect(app(CurrentContext::class)->tenantId())->toBe($acme->id);
 });

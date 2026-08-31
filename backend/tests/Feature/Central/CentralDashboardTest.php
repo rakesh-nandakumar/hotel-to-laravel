@@ -7,6 +7,7 @@ use App\Models\User;
 use Illuminate\Support\Facades\Hash;
 
 beforeEach(function () {
+    $this->withoutHeader('X-Tenant-Slug');
     actingAsCentral(CentralAdmin::factory()->create());
 });
 
@@ -29,7 +30,7 @@ it('reports platform-wide counts broken down by status and environment', functio
     ]);
     Till::query()->withoutTenantScope()->create(['tenant_id' => $tenant->id, 'name' => 'Main Till']);
 
-    $this->getJson('http://admin.localhost/api/central/dashboard')
+    $this->getJson('/api/central/dashboard')
         ->assertOk()
         ->assertJsonPath('counts.total', 8)
         ->assertJsonPath('counts.by_status.active', 5)
@@ -47,7 +48,7 @@ it('lists the most recently created tenants on the dashboard', function () {
     // Future timestamp beats any same-second tie with the demo tenant.
     Tenant::factory()->create(['name' => 'Newest', 'created_at' => now()->addSecond()]);
 
-    $this->getJson('http://admin.localhost/api/central/dashboard')
+    $this->getJson('/api/central/dashboard')
         ->assertOk()
         ->assertJsonPath('recent_tenants.0.name', 'Newest');
 });

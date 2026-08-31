@@ -1,5 +1,5 @@
 import { test, expect, Locator } from "@playwright/test";
-import { authFile, collectConsoleErrors } from "./fixtures";
+import { authFile, collectConsoleErrors, appUrl } from "./fixtures";
 
 test.use({ storageState: authFile("manager") });
 
@@ -31,7 +31,7 @@ test("creates a property, unit type, and unit; the unit starts Available with on
   const customerName = `E2E Tenant ${stamp}`;
 
   // ── Property ────────────────────────────────────────────────────────────
-  await page.goto("/apartments/properties");
+  await page.goto(appUrl("/apartments/properties"));
   await page.getByRole("button", { name: /new property/i }).click();
   let modal = page.locator(".modal-panel");
   await field(modal, "Name *").fill(propertyName);
@@ -40,7 +40,7 @@ test("creates a property, unit type, and unit; the unit starts Available with on
   await expect(page.getByText(propertyName)).toBeVisible();
 
   // ── Unit type ───────────────────────────────────────────────────────────
-  await page.goto("/apartments/unit-types");
+  await page.goto(appUrl("/apartments/unit-types"));
   await page.getByRole("button", { name: /new unit type/i }).click();
   modal = page.locator(".modal-panel");
   await field(modal, "Name *").fill(unitTypeName);
@@ -50,7 +50,7 @@ test("creates a property, unit type, and unit; the unit starts Available with on
   await expect(page.getByText(unitTypeName)).toBeVisible();
 
   // ── Unit ────────────────────────────────────────────────────────────────
-  await page.goto("/apartments/units");
+  await page.goto(appUrl("/apartments/units"));
   await page.getByRole("button", { name: /new unit/i }).click();
   modal = page.locator(".modal-panel");
   await field(modal, "Unit number *").fill(unitNo);
@@ -81,7 +81,7 @@ test("creates a property, unit type, and unit; the unit starts Available with on
 
   // ── Customer ────────────────────────────────────────────────────────────
   const errors = await collectConsoleErrors(page, async () => {
-    await page.goto("/apartments/customers");
+    await page.goto(appUrl("/apartments/customers"));
     await page.getByRole("button", { name: /new customer/i }).click();
     const custModal = page.locator(".modal-panel");
     await field(custModal, "Full name *").fill(customerName);

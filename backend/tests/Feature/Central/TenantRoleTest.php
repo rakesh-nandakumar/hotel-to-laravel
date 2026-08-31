@@ -12,6 +12,7 @@ use Database\Seeders\PermissionsAndRolesSeeder;
 beforeEach(function () {
     $this->seed(MenuSeeder::class);
     $this->seed(PermissionsAndRolesSeeder::class);
+    $this->withoutHeader('X-Tenant-Slug');
 });
 
 /**
@@ -37,7 +38,7 @@ function licensedTenant(array $catalogKeys = []): Tenant
 it('requires central authentication to reach a tenant roles', function () {
     $tenant = licensedTenant();
 
-    $this->getJson("http://admin.localhost/api/central/tenants/{$tenant->id}/roles")
+    $this->getJson("/api/central/tenants/{$tenant->id}/roles")
         ->assertUnauthorized();
 });
 
@@ -45,7 +46,7 @@ it('lists a tenant baseline roles', function () {
     actingAsCentral(CentralAdmin::factory()->create());
     $tenant = licensedTenant();
 
-    $response = $this->getJson("http://admin.localhost/api/central/tenants/{$tenant->id}/roles")
+    $response = $this->getJson("/api/central/tenants/{$tenant->id}/roles")
         ->assertOk();
 
     $names = collect($response->json('roles'))->pluck('name');
@@ -59,7 +60,7 @@ it('lets the operator create a role with licensed permissions', function () {
     actingAsCentral(CentralAdmin::factory()->create());
     $tenant = licensedTenant([ModuleCatalog::HOTEL_OPERATIONS]);
 
-    $response = $this->postJson("http://admin.localhost/api/central/tenants/{$tenant->id}/roles", [
+    $response = $this->postJson("/api/central/tenants/{$tenant->id}/roles", [
         'name' => 'Night Auditor',
         'description' => 'Overnight front-desk shift',
         'is_active' => true,
@@ -76,7 +77,7 @@ it('refuses to grant a permission whose module the tenant is not licensed for', 
     actingAsCentral(CentralAdmin::factory()->create());
     $tenant = licensedTenant(); // no modules licensed
 
-    $this->postJson("http://admin.localhost/api/central/tenants/{$tenant->id}/roles", [
+    $this->postJson("/api/central/tenants/{$tenant->id}/roles", [
         'name' => 'Sneaky',
         'is_active' => true,
         'permissions' => ['hotel_rooms.access'],
@@ -87,7 +88,7 @@ it('rejects a role name already used in the same tenant', function () {
     actingAsCentral(CentralAdmin::factory()->create());
     $tenant = licensedTenant();
 
-    $this->postJson("http://admin.localhost/api/central/tenants/{$tenant->id}/roles", [
+    $this->postJson("/api/central/tenants/{$tenant->id}/roles", [
         'name' => 'Manager',
         'is_active' => true,
         'permissions' => [],
@@ -98,7 +99,7 @@ it('scopes the role editor matrix to the tenant licences and tags module groups'
     actingAsCentral(CentralAdmin::factory()->create());
     $tenant = licensedTenant([ModuleCatalog::HOTEL_OPERATIONS, ModuleCatalog::RESTAURANT_POS]);
 
-    $response = $this->getJson("http://admin.localhost/api/central/tenants/{$tenant->id}/roles/create")
+    $response = $this->getJson("/api/central/tenants/{$tenant->id}/roles/create")
         ->assertOk();
 
     $sections = $response->json('matrix');
@@ -129,7 +130,7 @@ it('propagates a role update to assigned users immediately', function () {
     actingAsCentral(CentralAdmin::factory()->create());
     $tenant = licensedTenant([ModuleCatalog::HOTEL_OPERATIONS]);
 
-    $created = $this->postJson("http://admin.localhost/api/central/tenants/{$tenant->id}/roles", [
+    $created = $this->postJson("/api/central/tenants/{$tenant->id}/roles", [
         'name' => 'Front Desk',
         'is_active' => true,
         'permissions' => ['hotel_rooms.access'],
@@ -142,7 +143,7 @@ it('propagates a role update to assigned users immediately', function () {
 
     expect($user->cachedPermissionNames())->toContain('hotel_rooms.access');
 
-    $this->putJson("http://admin.localhost/api/central/tenants/{$tenant->id}/roles/{$role->id}", [
+    $this->putJson("/api/central/tenants/{$tenant->id}/roles/{$role->id}", [
         'name' => 'Front Desk',
         'is_active' => true,
         'permissions' => ['hotel_reservations.view'],
@@ -158,7 +159,7 @@ it('refuses to delete a system role', function () {
     $tenant = licensedTenant();
     $manager = Role::query()->withoutTenantScope()->where('tenant_id', $tenant->id)->where('name', 'Manager')->firstOrFail();
 
-    $this->deleteJson("http://admin.localhost/api/central/tenants/{$tenant->id}/roles/{$manager->id}")
+    $this->deleteJson("/api/central/tenants/{$tenant->id}/roles/{$manager->id}")
         ->assertStatus(422);
 });
 
@@ -166,14 +167,14 @@ it('deletes a custom role with no members', function () {
     actingAsCentral(CentralAdmin::factory()->create());
     $tenant = licensedTenant([ModuleCatalog::HOTEL_OPERATIONS]);
 
-    $created = $this->postJson("http://admin.localhost/api/central/tenants/{$tenant->id}/roles", [
+    $created = $this->postJson("/api/central/tenants/{$tenant->id}/roles", [
         'name' => 'Temp Role',
         'is_active' => true,
         'permissions' => ['hotel_rooms.access'],
     ])->assertCreated();
     $roleId = $created->json('role.id');
 
-    $this->deleteJson("http://admin.localhost/api/central/tenants/{$tenant->id}/roles/{$roleId}")
+    $this->deleteJson("/api/central/tenants/{$tenant->id}/roles/{$roleId}")
         ->assertOk();
 
     expect(Role::query()->withoutTenantScope()->find($roleId))->toBeNull();
@@ -183,13 +184,13 @@ it('duplicates a role with its permissions', function () {
     actingAsCentral(CentralAdmin::factory()->create());
     $tenant = licensedTenant([ModuleCatalog::HOTEL_OPERATIONS]);
 
-    $created = $this->postJson("http://admin.localhost/api/central/tenants/{$tenant->id}/roles", [
+    $created = $this->postJson("/api/central/tenants/{$tenant->id}/roles", [
         'name' => 'Front Desk',
         'is_active' => true,
         'permissions' => ['hotel_rooms.access', 'hotel_reservations.view'],
     ])->assertCreated();
 
-    $response = $this->postJson("http://admin.localhost/api/central/tenants/{$tenant->id}/roles/{$created->json('role.id')}/duplicate")
+    $response = $this->postJson("/api/central/tenants/{$tenant->id}/roles/{$created->json('role.id')}/duplicate")
         ->assertCreated();
 
     $copy = Role::query()->withoutTenantScope()->findOrFail($response->json('role.id'));
@@ -204,18 +205,18 @@ it('toggles a role active state', function () {
     actingAsCentral(CentralAdmin::factory()->create());
     $tenant = licensedTenant();
 
-    $created = $this->postJson("http://admin.localhost/api/central/tenants/{$tenant->id}/roles", [
+    $created = $this->postJson("/api/central/tenants/{$tenant->id}/roles", [
         'name' => 'Temp Role',
         'is_active' => true,
         'permissions' => [],
     ])->assertCreated();
     $roleId = $created->json('role.id');
 
-    $this->postJson("http://admin.localhost/api/central/tenants/{$tenant->id}/roles/{$roleId}/toggle-active")
+    $this->postJson("/api/central/tenants/{$tenant->id}/roles/{$roleId}/toggle-active")
         ->assertOk();
     expect(Role::query()->withoutTenantScope()->find($roleId)->is_active)->toBeFalse();
 
-    $this->postJson("http://admin.localhost/api/central/tenants/{$tenant->id}/roles/{$roleId}/toggle-active")
+    $this->postJson("/api/central/tenants/{$tenant->id}/roles/{$roleId}/toggle-active")
         ->assertOk();
     expect(Role::query()->withoutTenantScope()->find($roleId)->is_active)->toBeTrue();
 });
@@ -225,7 +226,7 @@ it('refuses to deactivate the full administrator role', function () {
     $tenant = licensedTenant();
     $fullAdmin = Role::query()->withoutTenantScope()->where('tenant_id', $tenant->id)->where('is_full_admin', true)->firstOrFail();
 
-    $this->postJson("http://admin.localhost/api/central/tenants/{$tenant->id}/roles/{$fullAdmin->id}/toggle-active")
+    $this->postJson("/api/central/tenants/{$tenant->id}/roles/{$fullAdmin->id}/toggle-active")
         ->assertStatus(422);
 });
 
@@ -235,10 +236,10 @@ it('cannot reach another tenant role through this tenant endpoint', function () 
     $tenantB = licensedTenant();
     $roleB = Role::query()->withoutTenantScope()->where('tenant_id', $tenantB->id)->firstOrFail();
 
-    $this->getJson("http://admin.localhost/api/central/tenants/{$tenantA->id}/roles/{$roleB->id}")
+    $this->getJson("/api/central/tenants/{$tenantA->id}/roles/{$roleB->id}")
         ->assertNotFound();
 
-    $this->putJson("http://admin.localhost/api/central/tenants/{$tenantA->id}/roles/{$roleB->id}", [
+    $this->putJson("/api/central/tenants/{$tenantA->id}/roles/{$roleB->id}", [
         'name' => 'Hijacked',
         'is_active' => true,
         'permissions' => [],

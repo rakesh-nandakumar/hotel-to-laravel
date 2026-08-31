@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Wallet, Play, Lock, Printer, Download, Trash2, CheckCircle2 } from "lucide-react";
-import { api, printDocument, post, put, API_ORIGIN } from "../lib/api";
+import { api, printDocument, post, put, API_ORIGIN, apiHeaders } from "../lib/api";
 import { useFetch, usePagedFetch, lkr, toCents, centsToRupees, fmtDate } from "../lib/util";
 import { Badge, Card, Empty, ErrorText, Field, Modal, Tabs, Pagination } from "../components/ui";
 import { useToast } from "../lib/toast";
@@ -192,7 +192,7 @@ function RunModal({ runId, onClose }: { runId: number; onClose: () => void }) {
       .catch((e) => setError((e as Error).message));
 
   const exportCsv = async () => {
-    const res = await fetch(`${API_ORIGIN}/api/payroll/runs/${run.id}/export`, { credentials: "include" });
+    const res = await fetch(`${API_ORIGIN}/api/payroll/runs/${run.id}/export`, { credentials: "include", headers: apiHeaders() });
     if (!res.ok) {
       setError("Could not export CSV");
       return;

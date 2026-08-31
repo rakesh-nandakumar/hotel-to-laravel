@@ -32,14 +32,15 @@ return [
                 Sanctum::currentApplicationUrlWithPort(),
             ];
 
-        // First-party subdomains are the whole point of this app: the central
-        // "master control" panel sits on its own reserved subdomain and every
-        // tenant runs on {slug}.{base}. Sanctum only attaches the session store
-        // (so $request->session() works) for requests whose Origin/Referer
-        // matches a `stateful` domain, so a bare-host entry leaves subdomain
-        // traffic stateless and any session read then throws
-        // "Session store not set on request". Always treat the app host and the
-        // tenant base domain's subdomains as first-party, whatever the TLD.
+        // Path-prefix tenancy: the SPA and the API share ONE host, and the
+        // tenant identity rides the X-Tenant-Slug header, so the bare app host
+        // covers everything. The wildcard entries are transitional — the old
+        // {slug}.{base} page loads of the cutover window still need a stateful
+        // session (otherwise their first API call 401s); they only emit while
+        // TENANCY_BASE_DOMAIN is still set. Sanctum only attaches the session
+        // store (so $request->session() works) for requests whose Origin/Referer
+        // matches a `stateful` domain; a request left stateless that then reads
+        // the session throws "Session store not set on request".
         $hosts = array_filter([
             parse_url((string) env('APP_URL', ''), PHP_URL_HOST),
             trim((string) env('TENANCY_BASE_DOMAIN', '')),

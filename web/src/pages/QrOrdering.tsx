@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { QrCode, Copy, Check } from "lucide-react";
-import { post, put, API_ORIGIN } from "../lib/api";
+import { post, put, API_ORIGIN, apiHeaders } from "../lib/api";
 import { useFetch } from "../lib/util";
 import { Badge, ConfirmDialog, Empty, ErrorText, Modal, Tabs } from "../components/ui";
 import { useAuth } from "../lib/auth";
@@ -132,11 +132,7 @@ function QrDetailModal({ active, onClose, onChanged }: { active: Active; onClose
   return (
     <Modal open onClose={onClose} title={`${label} — QR code`}>
       <div className="flex flex-col items-center gap-3">
-        <img
-          src={`${API_ORIGIN}/api/qr-ordering/${qr.id}/image`}
-          alt={`QR code for ${label}`}
-          className="h-52 w-52 rounded-lg border border-slate-100 bg-white p-2"
-        />
+        <QrImage qrId={qr.id} alt={`QR code for ${label}`} />
         <div className="flex w-full items-center gap-2">
           <input className="input flex-1 !text-xs" readOnly value={qr.url} onFocus={(e) => e.target.select()} />
           <button className="btn-secondary !py-2" onClick={copy} aria-label="Copy link">
@@ -172,4 +168,39 @@ function QrDetailModal({ active, onClose, onChanged }: { active: Active; onClose
       />
     </Modal>
   );
+}
+
+/**
+ * The QR SVG is tenant-scoped, so it can't go in a plain <img> tag — an image
+ * request carries no X-Tenant-Slug header. Fetch it (exactly like api()) and
+ * render the blob instead; the object URL is revoked when the modal closes.
+ */
+function QrImage({ qrId, alt }: { qrId: number; alt: string }) {
+  const [src, setSrc] = useState("");
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    let objectUrl: string | null = null;
+    let cancelled = false;
+
+    fetch(`${API_ORIGIN}/api/qr-ordering/${qrId}/image`, { credentials: "include", headers: apiHeaders() })
+      .then((res) => (res.ok ? res.blob() : Promise.reject(res.status)))
+      .then((blob) => {
+        if (cancelled) return;
+        objectUrl = URL.createObjectURL(blob);
+        setSrc(objectUrl);
+        setLoaded(true);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [qrId]);
+
+  if (!loaded) {
+    return <div className="h-52 w-52 animate-pulse rounded-lg border border-slate-100 bg-slate-50 p-2" />;
+  }
+
+  return <img src={src} alt={alt} className="h-52 w-52 rounded-lg border border-slate-100 bg-white p-2" />;
 }

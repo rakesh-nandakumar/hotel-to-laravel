@@ -73,10 +73,11 @@ function fullAdmin(): User
             ['is_full_admin' => true, 'is_active' => true, 'is_system' => false],
         );
 
-        // Every test user belongs to the same demo tenant IdentifyTenant's local/testing
-        // dev-fallback resolves to (the single tenant in the DB) — see config/tenancy.php
-        // and App\Http\Middleware\IdentifyTenant. A mismatched tenant_id here would get
-        // the user logged straight back out by that middleware's cross-tenant guard.
+        // Every test user belongs to the same demo tenant the suite's default
+        // X-Tenant-Slug header resolves to (the single tenant in the DB) — see
+        // tests/TestCase.php and App\Http\Middleware\IdentifyTenant. A
+        // mismatched tenant_id here would get the user logged straight back
+        // out by that middleware's cross-tenant guard.
         $user = User::factory()->create(['tenant_id' => Tenant::demo()->id]);
         $user->roles()->syncWithoutDetaching([$role->id]);
         $user->flushPermissionCache();

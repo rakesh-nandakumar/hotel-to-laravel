@@ -71,12 +71,18 @@ function Guard({ children, permission, fullAdminOnly }: { children: ReactNode; p
   return <Layout>{children}</Layout>;
 }
 
-export default function App() {
+/**
+ * The tenant-facing SPA tree. basename is the tenant's URL prefix (e.g.
+ * "/wasana") — the boot gate in main.tsx derives it from the path, and every
+ * route/link/navigate works relative to it unchanged. Mounted only when
+ * /api/host-context resolved a tenant.
+ */
+export default function App({ basename }: { basename: string }) {
   return (
     <AuthProvider>
       <BrandingProvider>
       <ToastProvider>
-        <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <BrowserRouter basename={basename} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
           <Routes>
           <Route path="/login" element={<Login />} />
           {/* Public guest-facing pages (no login) */}

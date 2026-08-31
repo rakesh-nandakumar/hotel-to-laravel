@@ -25,17 +25,17 @@ use ZipArchive;
  * terminal, no artisan/composer on the server.
  *
  * This app is multi-tenant (see config/tenancy.php): tenants live at
- * {slug}.{base} and the master-control panel at {central_subdomain}.{base}
- * (default "admin"), where {base} is the request's own host minus its first
- * label — resolution is RELATIVE, so nothing per-domain is baked in, and all
- * of it is resolved at runtime from the Host header by IdentifyTenant. There
- * is nothing per-tenant in this bundle. That means one cPanel "wildcard
- * subdomain" (`*.hms.vellixglobal.com` -> this document root) plus a matching
- * wildcard SSL cert is enough to serve every current AND future tenant from
- * this one zip; validateProductionEnv() below fails the build loudly if the
- * env file would not actually cover every subdomain (a pinned
- * TENANCY_BASE_DOMAIN that doesn't match APP_URL, or a SANCTUM_STATEFUL_DOMAINS
- * list missing the *.{host} wildcard).
+ * /{slug}/... and the master-control panel at /{central_prefix}/... (default
+ * "admin"), on one origin. Tenancy is resolved at runtime from the
+ * X-Tenant-Slug header (falling back to the old Host-header style during the
+ * migration window) by IdentifyTenant. There is nothing per-tenant in this
+ * bundle. That means one cPanel "wildcard subdomain"
+ * (`*.htl.vellixglobal.com` -> this document root) plus a matching wildcard
+ * SSL cert is enough to serve every current AND future tenant from this one
+ * zip; validateProductionEnv() below fails the build loudly if the env file
+ * would not actually cover every host (a pinned TENANCY_BASE_DOMAIN that
+ * doesn't match APP_URL, or a SANCTUM_STATEFUL_DOMAINS list missing the
+ * *.{host} wildcard).
  *
  * Layout the zip produces (its entries land directly in the document root):
  *
@@ -269,7 +269,7 @@ class BuildRelease extends Command
 
         $this->components->task('Writing single-domain index.php', fn () => $this->writePatchedIndex($stage, $coreDir));
 
-        $this->components->task('Writing single-domain .htaccess', fn () => $this->writeDocrootHtaccess($stage, $coreDir));
+        $this->components->task('Writing single-domain .htaccess', fn () => $this->writeDocrootHtaccess($stage, $coreDir, $host));
 
         $this->writeDeployNotes($zipPath, $name, $host, $coreDir, $env['db'], $bundleVendor, basename($envFile));
 
@@ -311,11 +311,12 @@ class BuildRelease extends Command
     /**
      * Parse the local production-env file (via phpdotenv's static parser — a
      * plain read, it never touches the app's own runtime env) and verify the
-     * values that matter for a same-origin, multi-tenant wildcard-subdomain
-     * deploy. APP_URL's host is the bare TENANCY_BASE_DOMAIN (e.g.
-     * hms.vellixglobal.com); every tenant and the central panel are additional
-     * hosts resolved at runtime by IdentifyTenant, so the checks below confirm
-     * the env file actually covers ALL of them, not just the bare host.
+     * values that matter for a same-origin, path-prefix multi-tenant deploy.
+     * APP_URL's host is the single origin (e.g. htl.vellixglobal.com) that
+     * serves the SPA, every /{slug}/ tenant prefix and the /admin central
+     * panel; IdentifyTenant resolves at runtime from X-Tenant-Slug (Host header
+     * fallback only while old subdomain URLs still arrive). The checks below
+     * confirm the env file actually covers that one host.
      *
      * @return array{APP_URL: string, host: string, db: string}
      */
@@ -345,58 +346,52 @@ class BuildRelease extends Command
         $host = parse_url($appUrl, PHP_URL_HOST);
 
         if (! $host || ! str_starts_with($appUrl, 'https://')) {
-            throw new RuntimeException("APP_URL must be an https:// URL with a host in {$envFile}, got \"{$appUrl}\". This is the bare base domain — every tenant subdomain and the central panel sit under it.");
+            throw new RuntimeException("APP_URL must be an https:// URL with a host in {$envFile}, got \"{$appUrl}\". This is the SPA+API host — every tenant prefix and the master control panel are served from it.");
         }
 
-        // TENANCY_BASE_DOMAIN is now OPTIONAL: host resolution is RELATIVE
-        // (see config/tenancy.php), so with it unset every {slug}.{APP_URL-host}
-        // subdomain resolves correctly with no domain literal anywhere. Setting
-        // it pins STRICT mode — and then it must equal the deploy host exactly,
-        // or every request's base mismatches and the whole site 404s. A pinned
-        // value that doesn't match is a loud, caught error, not a silent bug.
+        // TENANCY_BASE_DOMAIN is transitional: with the Host fallback removed
+        // at cutover it is never consulted, and while it IS set (feeding the
+        // transitional host fallback) it must equal the deploy host exactly,
+        // or old subdomain requests' bases mismatch and 404 instead of
+        // redirecting. A pinned value that doesn't match is a loud, caught
+        // error, not a silent bug.
         $baseDomain = trim((string) ($env['TENANCY_BASE_DOMAIN'] ?? ''));
         if ($baseDomain !== '' && $baseDomain !== $host) {
             throw new RuntimeException(
                 "TENANCY_BASE_DOMAIN ({$baseDomain}) does not match the APP_URL host ({$host}) in {$envFile} — "
-                .'APP_URL must be the bare base domain that every tenant subdomain sits under. '
-                ."Set TENANCY_BASE_DOMAIN={$host}, or remove it entirely (relative mode — recommended)."
+                .'APP_URL host is the one origin today, and the transitional Host fallback needs the exact same '
+                ."base. Set TENANCY_BASE_DOMAIN={$host}, or remove it entirely (recommended — the prefix never needs it)."
             );
         }
 
         // Sanctum only starts a cookie session for requests whose Origin/Referer
-        // host is in SANCTUM_STATEFUL_DOMAINS (matched with Str::is, so wildcard
-        // entries work). Every tenant subdomain AND the central-admin subdomain
-        // are separate hosts that each need to be stateful, so a bare host entry
-        // (or the unset default, which only covers APP_URL's host) is not enough
-        // — a *.{host} wildcard entry is required to cover them all.
+        // host is in SANCTUM_STATEFUL_DOMAINS. Tenants and the central panel
+        // share ONE host — the SPA origin — so the bare host must be listed
+        // EXPLICITLY. (An entry like *.api.hms… or a wildcard that merely
+        // covers a split-host API is NOT accepted: that shape is dead under
+        // path-prefix tenancy — a request to the api subdomain resolves as a
+        // tenant named "api" and 404s.) A *.{host} wildcard ADDITIONALLY
+        // present is transitional only (old subdomain page loads) and fine.
         $stateful = trim((string) ($env['SANCTUM_STATEFUL_DOMAINS'] ?? ''));
-        $wildcard = "*.{$host}";
         if ($stateful === '') {
             throw new RuntimeException(
-                "SANCTUM_STATEFUL_DOMAINS is missing in {$envFile} — with tenants on wildcard subdomains, Laravel's "
-                .'default stateful list (just the APP_URL host) does not cover them, and every tenant login 401s '
-                ."(\"Session store not set on request\"). Set: SANCTUM_STATEFUL_DOMAINS={$host},{$wildcard}"
+                "SANCTUM_STATEFUL_DOMAINS is missing in {$envFile} — the first-party SPA's session auth depends on "
+                ."it, and every login 401s (\"Session store not set on request\"). Set: SANCTUM_STATEFUL_DOMAINS={$host}"
             );
         }
         $list = array_map('trim', explode(',', $stateful));
-        if (! in_array($wildcard, $list, true)) {
+        if (! in_array($host, $list, true)) {
             throw new RuntimeException(
-                "SANCTUM_STATEFUL_DOMAINS must include the wildcard \"{$wildcard}\" in {$envFile} to cover every "
-                .'tenant subdomain (and the central-admin subdomain) — a bare host entry only covers that one host. '
-                ."Set: SANCTUM_STATEFUL_DOMAINS={$host},{$wildcard}. Got: {$stateful}"
-            );
-        }
-        if (! Str::is($list, $host)) {
-            throw new RuntimeException(
-                "SANCTUM_STATEFUL_DOMAINS must also cover the bare host ({$host}) in {$envFile} — the central panel "
-                .'and any request straight to the base domain need a stateful session too. '
-                ."Set: SANCTUM_STATEFUL_DOMAINS={$host},{$wildcard}. Got: {$stateful}"
+                "SANCTUM_STATEFUL_DOMAINS must list the SPA host ({$host}) explicitly in {$envFile} — that's the one "
+                .'origin every tenant prefix and the central panel are served from. '
+                ."Set: SANCTUM_STATEFUL_DOMAINS={$host}. Got: {$stateful}"
             );
         }
 
         // The session/XSRF cookie must be readable on the deploy host. A pinned
         // SESSION_DOMAIN has to equal that host or be a parent of it (leading
-        // dot); leaving it blank is fine — the cookie is then scoped to the host.
+        // dot); leaving it blank is fine — one origin, the cookie is scoped to
+        // the bare host and the cross-tenant session guard does the rest.
         $sessionDomain = trim((string) ($env['SESSION_DOMAIN'] ?? ''));
         if ($sessionDomain !== '') {
             $bare = ltrim($sessionDomain, '.');
@@ -404,7 +399,7 @@ class BuildRelease extends Command
                 throw new RuntimeException(
                     "SESSION_DOMAIN ({$sessionDomain}) does not cover the APP_URL host ({$host}) in {$envFile} — "
                     .'the session/XSRF cookie will not be sent back ("CSRF token mismatch"). '
-                    ."Set SESSION_DOMAIN={$host} (or leave it blank — each subdomain gets its own cookie, which is fine here)."
+                    ."Set SESSION_DOMAIN={$host} (or leave it blank — one origin, one cookie, which is fine here)."
                 );
             }
         }
@@ -604,6 +599,7 @@ class BuildRelease extends Command
      *   - the Laravel core folder is hard-denied (its .env sits there),
      *   - the server-side prefixes go to the Laravel front controller,
      *   - real files (SPA assets, sw.js, images) are served as-is,
+     *   - old {slug}.{base} URLs are 301'd to the new prefix (transitional),
      *   - everything else falls back to the SPA shell so client-side (react-
      *     router) deep links resolve instead of Apache 404ing.
      *
@@ -611,7 +607,7 @@ class BuildRelease extends Command
      * route lives under api/ (Fortify's prefix is `api` too), plus Sanctum's
      * csrf-cookie, broadcasting auth, and the /up health check.
      */
-    private function writeDocrootHtaccess(string $docrootStage, string $coreDir): void
+    private function writeDocrootHtaccess(string $docrootStage, string $coreDir, string $host): void
     {
         $htaccess = <<<HTACCESS
         # Single-domain bundle: this document root serves the built React SPA and
@@ -641,13 +637,23 @@ class BuildRelease extends Command
             # Never serve anything out of the Laravel core folder (holds .env).
             RewriteRule ^{$coreDir}(/|\$) - [F,L]
 
-            # Server-side paths -> Laravel front controller.
-            RewriteRule ^(api|sanctum|broadcasting|up)(/|\$) index.php [L]
-
             # Real files/directories (SPA JS/CSS, sw.js, images, favicon) as-is.
             RewriteCond %{REQUEST_FILENAME} -f [OR]
             RewriteCond %{REQUEST_FILENAME} -d
             RewriteRule ^ - [L]
+
+            # TRANSITIONAL (walking down from subdomain tenancy): old
+            # "{slug}.{$host}" page loads get 301'd onto the new prefix so
+            # printed QR codes, impersonation links and bookmarks keep working.
+            # API paths are NOT rewritten — the old SPA build still calls
+            # "{slug}.{$host}/api/..." and the Laravel Host fallback (Phase 1)
+            # resolves those. Delete this block at cutover.
+            RewriteCond %{REQUEST_URI} !^/(api|sanctum|broadcasting|up)(/|\$)
+            RewriteCond %{HTTP_HOST} ^([a-z0-9-]+)\.{$host}\$
+            RewriteRule ^(.*)\$ https://{$host}/%1/\$1 [L,R=301]
+
+            # Server-side paths -> Laravel front controller.
+            RewriteRule ^(api|sanctum|broadcasting|up)(/|\$) index.php [L]
 
             # Anything else is a client-side (React Router) route -> SPA shell.
             RewriteRule ^ index.html [L]
@@ -746,16 +752,16 @@ class BuildRelease extends Command
     private function writeDeployNotes(string $zipPath, string $name, string $host, string $coreDir, string $db, bool $bundleVendor, string $envFileName): void
     {
         $steps = [];
-        $steps[] = "In cPanel > Domains, create a wildcard subdomain \"*.{$host}\" (and, if not already covered by it, \"{$host}\" itself) "
-            .'pointing at ONE document root, with a wildcard SSL cert covering both — every current and future tenant '
-            .'shares this same document root and zip; nothing here is per-tenant.';
+        $steps[] = "In cPanel > Domains, make sure \"{$host}\" (and, while old subdomain URLs still arrive, its wildcard \"*.{$host}\") "
+            .'point at ONE document root with an SSL cert for it — every current and future tenant prefix and the central '
+            .'panel share this same document root and zip; nothing here is per-tenant.';
         $steps[] = 'In cPanel File Manager, open that document root.';
         $steps[] = 'Upload this zip there and Extract it (choose "overwrite" if prompted). '
             ."Its entries land directly in the document root — index.php, index.html, assets/, and the web-denied {$coreDir}/.";
         $steps[] = "Import your MySQL dump into the \"{$db}\" database (phpMyAdmin > Import). "
             .'Only needed the first time, or whenever your data/schema changes — this bundle never runs migrations.';
-        $steps[] = 'Create/verify tenant rows (slug = subdomain label) via the central panel at the reserved central subdomain '
-            .'— every tenant slug automatically resolves to this same document root once its row exists.';
+        $steps[] = 'Create/verify tenant rows (slug = URL prefix) via the central panel at the reserved prefix '
+            .'— every tenant slug automatically resolves to its /{slug}/… prefix on this same host, once its row exists.';
 
         if (! $bundleVendor) {
             $steps[] = "vendor/ was NOT bundled (--without-vendor): run \"cd ~/.../{$coreDir} && composer install --no-dev --classmap-authoritative\". "
@@ -767,7 +773,7 @@ class BuildRelease extends Command
             $lines[] = ($i + 1).'. '.$step;
         }
 
-        $title = strtoupper($name).' — wildcard-subdomain cPanel deploy (SPA + API, one document root for every tenant)';
+        $title = strtoupper($name).' — one-origin path-prefix deploy (SPA + API + every tenant in one document root)';
         $rule = str_repeat('=', strlen($title));
 
         $notes = $title."\n".$rule."\n\n"
@@ -775,13 +781,15 @@ class BuildRelease extends Command
             .implode("\n", $lines)."\n\n"
             ."That's it — no terminal, no artisan, no composer on the server.\n\n"
             ."NOTES\n"
-            ."  - Same origin per tenant: each {slug}.{$host} calls its OWN host's /api and\n"
-            ."    /sanctum/csrf-cookie as relative URLs (VITE_API_URL is empty), so there is no\n"
-            ."    CORS or cross-site cookie, on any subdomain.\n"
-            ."  - Which tenant a request belongs to is resolved purely from the Host header\n"
-            ."    (IdentifyTenant) — new tenants need only a DB row + DNS coverage under the\n"
-            ."    wildcard, never a new deploy.\n"
-            ."  - {$coreDir}/.env is baked from {$envFileName}. TENANCY_BASE_DOMAIN is optional (relative mode); if\n"
+            ."  - One origin for everything: the SPA is reached at /{slug}/… or /admin (its own\n"
+            ."    prefixes), the API at /api (VITE_API_URL is empty), so there is no CORS and no\n"
+            ."    cross-host cookie handling anywhere.\n"
+            ."  - Which tenant a request belongs to is resolved from the X-Tenant-Slug header\n"
+            ."    (IdentifyTenant), which the SPA reads from its URL prefix — new tenants need\n"
+            ."    only a DB row, never a new deploy. The old {slug}.{$host} URLs are 301'd to\n"
+            ."    /{slug}/ in this .htaccess while the transition lasts; delete that block once\n"
+            ."    nothing arrives by subdomain.\n"
+            ."  - {$coreDir}/.env is baked from {$envFileName}. TENANCY_BASE_DOMAIN is transitional only; if\n"
             ."    set, it must equal APP_URL's host ({$host}) — release:build already refused to build otherwise.\n"
             ."  - storage/ is a fresh empty skeleton each build. Sessions & cache live in the DB\n"
             ."    (SESSION_DRIVER=database, CACHE_STORE=database), so nothing important is lost.\n"
@@ -803,7 +811,7 @@ class BuildRelease extends Command
         $this->table(['Metric', 'Value'], [
             ['Zip', $zipPath],
             ['Size', "{$sizeMb} MB"],
-            ['Base domain (wildcard subdomain target)', $host],
+            ['Origin host (SPA + API + all tenants)', $host],
             ['Core folder (web-denied)', $coreDir.'/'],
             ['Database (import dump into)', $db],
             ['Backend core files', number_format($coreFiles)],
@@ -818,7 +826,7 @@ class BuildRelease extends Command
 
         $this->newLine();
         $this->components->bulletList([
-            "Extract the zip into the *.{$host} wildcard-subdomain document root (overwrite).",
+            "Extract the zip into the {$host} document root (overwrite).",
             "Import your SQL dump into \"{$db}\" (first time / on schema change).",
             'No terminal, no artisan — see the DEPLOY-*.txt next to the zip.',
         ]);

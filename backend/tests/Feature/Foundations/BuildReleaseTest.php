@@ -107,11 +107,11 @@ it('writes deploy notes next to the zip, never inside the document root', functi
         ->and(File::exists("{$stage}/{$notes}"))->toBeFalse();
 });
 
-it('rejects a leftover two-subdomain env where stateful domains miss the API host', function () {
+it('rejects a leftover two-subdomain env where stateful domains miss the APP_URL host', function () {
     stageRelease(releaseEnvFile([
         'APP_URL' => 'https://api.hotel.example.com',        // host is api.hotel.example.com
         'TENANCY_BASE_DOMAIN' => 'api.hotel.example.com',    // matches, so this isolates the stateful-domains check
-        'SANCTUM_STATEFUL_DOMAINS' => 'hotel.example.com,*.hotel.example.com', // ...which don't cover it
+        'SANCTUM_STATEFUL_DOMAINS' => 'hotel.example.com,*.hotel.example.com', // ...which don't list it explicitly
     ]))->assertFailed();
 });
 
@@ -123,8 +123,8 @@ it('rejects a TENANCY_BASE_DOMAIN that does not match the APP_URL host', functio
     stageRelease(releaseEnvFile(['TENANCY_BASE_DOMAIN' => 'vellixglobal.com']))->assertFailed();
 });
 
-it('rejects stateful domains missing the wildcard entry for tenant subdomains', function () {
-    stageRelease(releaseEnvFile(['SANCTUM_STATEFUL_DOMAINS' => 'hotel.example.com']))->assertFailed();
+it('accepts stateful domains listing the bare host — the wildcard is no longer required', function () {
+    stageRelease(releaseEnvFile(['SANCTUM_STATEFUL_DOMAINS' => 'hotel.example.com']))->assertSuccessful();
 });
 
 it('rejects a missing SANCTUM_STATEFUL_DOMAINS', function () {

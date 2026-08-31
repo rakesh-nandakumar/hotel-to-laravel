@@ -1,5 +1,5 @@
 import { test, expect, Locator } from "@playwright/test";
-import { authFile, collectConsoleErrors } from "./fixtures";
+import { authFile, collectConsoleErrors, appUrl } from "./fixtures";
 
 test.use({ storageState: authFile("manager") });
 
@@ -23,14 +23,14 @@ test("creates a lease, records a utility reading, renews, and terminates it", as
   const unitNo = `EL-${stamp}`;
   const tenantName = `E2E Tenant ${stamp}`;
 
-  await page.goto("/apartments/unit-types");
+  await page.goto(appUrl("/apartments/unit-types"));
   await page.getByRole("button", { name: /new unit type/i }).click();
   let modal = page.locator(".modal-panel");
   await field(modal, "Name *").fill(unitTypeName);
   await modal.getByRole("button", { name: /^save$/i }).click();
   await expect(modal).toBeHidden();
 
-  await page.goto("/apartments/units");
+  await page.goto(appUrl("/apartments/units"));
   await page.getByRole("button", { name: /new unit/i }).click();
   modal = page.locator(".modal-panel");
   await field(modal, "Unit number *").fill(unitNo);
@@ -39,7 +39,7 @@ test("creates a lease, records a utility reading, renews, and terminates it", as
   await expect(modal).toBeHidden();
 
   const errors = await collectConsoleErrors(page, async () => {
-    await page.goto("/apartments/leases");
+    await page.goto(appUrl("/apartments/leases"));
     await page.getByRole("button", { name: /new lease/i }).click();
     modal = page.locator(".modal-panel");
     await field(modal, "Unit *").selectOption({ label: `${unitNo} — ${unitTypeName}` });
@@ -52,7 +52,7 @@ test("creates a lease, records a utility reading, renews, and terminates it", as
     await expect(page.getByRole("heading", { level: 1 })).toContainText("ACTIVE");
 
     // Unit should now show OCCUPIED on the Units screen.
-    await page.goto("/apartments/units");
+    await page.goto(appUrl("/apartments/units"));
     await expect(page.locator("tr", { hasText: unitNo }).getByText("Occupied", { exact: true })).toBeVisible();
 
     await page.goBack();
@@ -88,7 +88,7 @@ test("creates a lease, records a utility reading, renews, and terminates it", as
     // Termination frees the unit but leaves it Dirty pending a move-out
     // clean — same turnover pattern as a short-stay checkout (see
     // apartment-ops.spec.ts) — it does not jump straight back to Available.
-    await page.goto("/apartments/units");
+    await page.goto(appUrl("/apartments/units"));
     await expect(page.locator("tr", { hasText: unitNo }).getByText("Dirty", { exact: true })).toBeVisible();
     await page.waitForLoadState("networkidle", { timeout: 10_000 });
   });

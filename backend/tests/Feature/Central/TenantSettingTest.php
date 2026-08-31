@@ -5,11 +5,15 @@ use App\Models\Setting;
 use App\Models\Tenant;
 use Database\Seeders\SettingsSeeder;
 
+beforeEach(function () {
+    $this->withoutHeader('X-Tenant-Slug');
+});
+
 it('shows catalog defaults for a tenant with no overrides yet', function () {
     actingAsCentral(CentralAdmin::factory()->create());
     $tenant = Tenant::factory()->create();
 
-    $response = $this->getJson("http://admin.localhost/api/central/tenants/{$tenant->id}/settings")->assertOk();
+    $response = $this->getJson("/api/central/tenants/{$tenant->id}/settings")->assertOk();
 
     $vat = collect($response->json('settings'))->firstWhere('key', 'billing.vat_pct');
     expect($vat)->not->toBeNull()->and($vat['overridden'])->toBeFalse();
@@ -22,7 +26,7 @@ it('lets a central admin update one tenant setting without affecting another', f
     (new SettingsSeeder)->run($tenantA->id);
     (new SettingsSeeder)->run($tenantB->id);
 
-    $this->putJson("http://admin.localhost/api/central/tenants/{$tenantA->id}/settings/billing.vat_pct", ['value' => 12])->assertOk();
+    $this->putJson("/api/central/tenants/{$tenantA->id}/settings/billing.vat_pct", ['value' => 12])->assertOk();
 
     $readFor = fn (int $tenantId) => (float) json_decode(
         Setting::query()->withoutTenantScope()->where('tenant_id', $tenantId)->where('key', 'billing.vat_pct')->value('value')
@@ -37,14 +41,14 @@ it('validates the setting type on write', function () {
     $tenant = Tenant::factory()->create();
     (new SettingsSeeder)->run($tenant->id);
 
-    $this->putJson("http://admin.localhost/api/central/tenants/{$tenant->id}/settings/billing.vat_pct", ['value' => 150])
+    $this->putJson("/api/central/tenants/{$tenant->id}/settings/billing.vat_pct", ['value' => 150])
         ->assertUnprocessable()->assertJsonValidationErrors('value');
 });
 
 it('requires central authentication', function () {
     $tenant = Tenant::factory()->create();
 
-    $this->getJson("http://admin.localhost/api/central/tenants/{$tenant->id}/settings")->assertUnauthorized();
+    $this->getJson("/api/central/tenants/{$tenant->id}/settings")->assertUnauthorized();
 });
 
 it('saves a setting the tenant has no row for yet', function () {
@@ -56,7 +60,7 @@ it('saves a setting the tenant has no row for yet', function () {
 
     expect(Setting::query()->withoutTenantScope()->where('tenant_id', $tenant->id)->count())->toBe(0);
 
-    $this->putJson("http://admin.localhost/api/central/tenants/{$tenant->id}/settings/billing.vat_pct", ['value' => 15])
+    $this->putJson("/api/central/tenants/{$tenant->id}/settings/billing.vat_pct", ['value' => 15])
         ->assertOk();
 
     $row = Setting::query()->withoutTenantScope()
@@ -74,7 +78,7 @@ it('still type-validates a setting it had to create', function () {
     actingAsCentral(CentralAdmin::factory()->create());
     $tenant = Tenant::factory()->create();
 
-    $this->putJson("http://admin.localhost/api/central/tenants/{$tenant->id}/settings/billing.vat_pct", ['value' => 150])
+    $this->putJson("/api/central/tenants/{$tenant->id}/settings/billing.vat_pct", ['value' => 150])
         ->assertUnprocessable()->assertJsonValidationErrors('value');
 
     expect(Setting::query()->withoutTenantScope()->where('tenant_id', $tenant->id)->count())->toBe(0);
@@ -84,7 +88,7 @@ it('refuses to invent a setting key that is not in the catalog', function () {
     actingAsCentral(CentralAdmin::factory()->create());
     $tenant = Tenant::factory()->create();
 
-    $this->putJson("http://admin.localhost/api/central/tenants/{$tenant->id}/settings/not.a.real.key", ['value' => 'x'])
+    $this->putJson("/api/central/tenants/{$tenant->id}/settings/not.a.real.key", ['value' => 'x'])
         ->assertNotFound();
 
     expect(Setting::query()->withoutTenantScope()->where('tenant_id', $tenant->id)->count())->toBe(0);

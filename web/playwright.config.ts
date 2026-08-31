@@ -3,16 +3,17 @@ import { defineConfig, devices } from "@playwright/test";
 const BACKEND_PORT = 8123;
 const FRONTEND_PORT = 5174;
 const BACKEND_URL = `http://127.0.0.1:${BACKEND_PORT}`;
-// The suite runs on the DEMO TENANT's subdomain, exactly like production: the
-// browser loads http://default.localhost:5174, and the Vite proxy (changeOrigin:
-// false) forwards the original Host to Laravel, which resolves the `default`
-// tenant from it. This exercises the real relative subdomain resolution —
-// every page-load also crosses the /api/host-context boot gate first.
-const FRONTEND_URL = `http://default.localhost:${FRONTEND_PORT}`;
-// Readiness probe only: Node's resolver can't resolve `*.localhost` on Windows
-// (the OS DNS client only special-cases the bare name), so the webServer probe
-// hits `localhost` while the tests themselves run in Chromium, which resolves
-// every `*.localhost` to loopback per RFC 6761.
+// The suite runs on the DEMO TENANT's prefix, exactly like production: the
+// browser loads http://localhost:5174/default (every page goto is wrapped by
+// e2e/fixtures.ts's appUrl()), and the SPA reads the slug from its own path,
+// sending it as X-Tenant-Slug on every API call — that's the whole tenancy
+// identity now (the Host fallback is transitional). Each page-load also
+// crosses the /api/host-context boot gate first.
+const FRONTEND_URL = `http://localhost:${FRONTEND_PORT}/default`;
+// Base path is the demo tenant's prefix; a base URL like this keeps
+// page.goto("/default/login") style calls safe and makes any accidental
+// root-relative goto land outside the prefix (and thus on master control —
+// a loud, immediate failure rather than a silent wrong-tenant test).
 const FRONTEND_URL_PROBE = `http://localhost:${FRONTEND_PORT}`;
 
 /**

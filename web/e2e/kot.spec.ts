@@ -1,17 +1,17 @@
 import { test, expect } from "@playwright/test";
-import { authFile } from "./fixtures";
+import { authFile, appUrl } from "./fixtures";
 
 test.use({ storageState: authFile("manager") });
 
 test("a POS order sent to the kitchen appears on the KOT board and can be advanced", async ({ page }) => {
-  await page.goto("/pos");
+  await page.goto(appUrl("/pos"));
   await page.locator("button.card", { hasText: "E2E Seed Dish" }).first().click();
 
   // Walk-in auto-print (printDocument(), web/src/lib/api.ts) prints via a
   // hidden same-origin iframe, not a new tab/page — nothing to wait for here.
   await page.getByRole("button", { name: /send order/i }).click();
 
-  await page.goto("/kot");
+  await page.goto(appUrl("/kot"));
   const ticketCard = page.locator(".rounded-2xl.border-2", { hasText: "E2E Seed Dish" });
   await expect(ticketCard).toBeVisible({ timeout: 10_000 });
 

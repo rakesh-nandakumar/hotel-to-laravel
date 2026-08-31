@@ -12,6 +12,7 @@ use Database\Seeders\PermissionsAndRolesSeeder;
 beforeEach(function () {
     $this->seed(MenuSeeder::class);
     $this->seed(PermissionsAndRolesSeeder::class);
+    $this->withoutHeader('X-Tenant-Slug');
 });
 
 /**
@@ -58,7 +59,7 @@ it('lets a central admin enable a module and the tenant gains access immediately
     [$tenant, $admin] = tenantWithFullAdmin();
 
     actingAsCentral(CentralAdmin::factory()->create());
-    $this->putJson("http://admin.localhost/api/central/tenants/{$tenant->id}/modules/".ModuleCatalog::APARTMENTS, ['enabled' => true])
+    $this->putJson("/api/central/tenants/{$tenant->id}/modules/".ModuleCatalog::APARTMENTS, ['enabled' => true])
         ->assertOk();
 
     CurrentContext::simulateWebRequest(fn () => $this->actingAs($admin)
@@ -105,7 +106,7 @@ it('adds a module to /me enabled_modules once master control licenses it', funct
     [$tenant, $admin] = tenantWithFullAdmin();
 
     actingAsCentral(CentralAdmin::factory()->create());
-    $this->putJson("http://admin.localhost/api/central/tenants/{$tenant->id}/modules/".ModuleCatalog::APARTMENTS, ['enabled' => true])
+    $this->putJson("/api/central/tenants/{$tenant->id}/modules/".ModuleCatalog::APARTMENTS, ['enabled' => true])
         ->assertOk();
 
     CurrentContext::simulateWebRequest(function () use ($tenant, $admin) {

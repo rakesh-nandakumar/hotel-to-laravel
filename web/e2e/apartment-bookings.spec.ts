@@ -1,5 +1,5 @@
 import { test, expect, Locator } from "@playwright/test";
-import { authFile, collectConsoleErrors, ensureTillOpen } from "./fixtures";
+import { authFile, collectConsoleErrors, ensureTillOpen, appUrl } from "./fixtures";
 
 test.use({ storageState: authFile("manager") });
 
@@ -27,7 +27,7 @@ test("books an apartment unit, checks a customer in and out, and settles the led
   const unitNo = `EB-${stamp}`;
   const customerName = `E2E Booking Customer ${stamp}`;
 
-  await page.goto("/apartments/unit-types");
+  await page.goto(appUrl("/apartments/unit-types"));
   await page.getByRole("button", { name: /new unit type/i }).click();
   let modal = page.locator(".modal-panel");
   await field(modal, "Name *").fill(unitTypeName);
@@ -35,7 +35,7 @@ test("books an apartment unit, checks a customer in and out, and settles the led
   await modal.getByRole("button", { name: /^save$/i }).click();
   await expect(modal).toBeHidden();
 
-  await page.goto("/apartments/units");
+  await page.goto(appUrl("/apartments/units"));
   await page.getByRole("button", { name: /new unit/i }).click();
   modal = page.locator(".modal-panel");
   await field(modal, "Unit number *").fill(unitNo);
@@ -43,7 +43,7 @@ test("books an apartment unit, checks a customer in and out, and settles the led
   await modal.getByRole("button", { name: /^save$/i }).click();
   await expect(modal).toBeHidden();
 
-  await page.goto("/apartments/bookings");
+  await page.goto(appUrl("/apartments/bookings"));
   await page.getByRole("button", { name: /new booking/i }).click();
   modal = page.locator(".modal-panel");
   await expect(modal.getByText(unitNo)).toBeVisible({ timeout: 10_000 });
@@ -60,7 +60,7 @@ test("books an apartment unit, checks a customer in and out, and settles the led
   await checkinModal.getByRole("button", { name: /confirm check-in/i }).click();
   await expect(page.getByRole("button", { name: /check out/i })).toBeVisible({ timeout: 10_000 });
 
-  const bookingUrl = page.url();
+  const bookingUrl = new URL(page.url()).pathname;
   await ensureTillOpen(page);
   await page.goto(bookingUrl);
 

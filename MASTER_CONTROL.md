@@ -35,15 +35,18 @@ operator session.
 
 ### DNS and TLS
 
-Point a wildcard record at the server and issue a wildcard certificate:
+Point the one origin host at the server with an SSL cert for it
+(a wildcard `*.vellixglobal.com` cert remains needed **only while old
+subdomain URLs still arrive** during cutover — see *Cutover* below):
 
 ```
-*.vellixglobal.com    A     <server-ip>
-vellixglobal.com      A     <server-ip>
+vellixglobal.com    A     <server-ip>
 ```
 
-Every tenant gets a subdomain off this one record — no DNS change is needed
-when you add a tenant.
+Tenancy is **path-prefix**: every tenant lives at
+`https://vellixglobal.com/{slug}/…` and master control at
+`https://vellixglobal.com/admin`. No DNS change is needed when you add a
+tenant.
 
 ### Backend environment
 
@@ -51,51 +54,52 @@ In `backend/.env`:
 
 ```dotenv
 APP_URL=https://vellixglobal.com
+TENANCY_CENTRAL_PREFIX=admin        # (default; omit if you keep "admin")
 
-TENANCY_CENTRAL_SUBDOMAIN=admin
-
-SANCTUM_STATEFUL_DOMAINS=*.vellixglobal.com,vellixglobal.com
+FRONTEND_URL=https://vellixglobal.com
+SANCTUM_STATEFUL_DOMAINS=vellixglobal.com
 SESSION_SECURE_COOKIE=true
 SESSION_SAME_SITE=lax
 ```
 
-Resolution is **relative** — the first label of each request's Host header is
-the tenant slug (or the central subdomain), everything after it is the base —
-so nothing per-domain is configured or baked into builds, and one wildcard
-record serves every current and future tenant.
+Identity is **header-based**: the SPA reads its slug from its own URL prefix
+(`/wasana/…` → slug `wasana`) and sends it as `X-Tenant-Slug` on every API
+call; `IdentifyTenant` resolves the tenant from it before anything else runs.
+The bare host request (no header) is central. One origin means one cookie
+jar — the same session store holds tenant users and platform operators.
 
-Optional hardening, both off by default:
+Transitional leftovers while downstream consumers (printed QR codes, old
+bookmarks, wildcard DNS) age out — remove at cutover:
 
-- `TENANCY_BASE_DOMAIN` — pin to the fixed base domain for **strict mode**:
-  hosts not ending in it are rejected outright instead of resolved relatively.
-  `php artisan release:build` validates a pin against `APP_URL`.
-- `TENANCY_DEV_FALLBACK=true` — dev only: lets a central host serve a tenant
-  when a slug is forced via `?tenant=` / `X-Tenant-Slug`. Keep it off in
-  production, where hosts resolve strictly from the Host header.
+- `TENANCY_BASE_DOMAIN=vellixglobal.com` — feeds the **Host fallback**: a
+  request with no header still resolves `{slug}.{base}` the old way.
+- `SANCTUM_STATEFUL_DOMAINS=vellixglobal.com,*.vellixglobal.com` — the
+  wildcard covers old subdomain page loads' sessions.
 
-> **Leave `SESSION_DOMAIN` unset.** Setting it to a shared parent
-> (`.vellixglobal.com`) makes one session cookie valid on *every* tenant
-> subdomain, so a user signed into one tenant carries that session onto
-> another's host. `IdentifyTenant` catches the mismatch and forces a logout,
-> but the correct posture is per-host cookies — which is what unset gives you.
+> **Leave `SESSION_DOMAIN` unset.** One origin, one cookie — and
+> `IdentifyTenant`'s cross-tenant guard is what binds a session to the tenant
+> the URL names (a mismatch 401s and logs the session out; it never lets data
+> flow between tenants). Two tenants in one browser = one active tenant
+> session, by design.
 
 ### Frontend environment
 
-The SPA needs **no tenancy environment** — one build serves every host. At
-runtime the bundle asks the backend which shell this host is
-(`/api/host-context`, resolved from the Host header) before mounting anything,
-and for a tenant the same payload IS its branding (name, logo, theme), so the
-login screen renders with no second round-trip (see `web/src/lib/branding.tsx`).
+The SPA needs **no tenancy environment** — one build serves every tenant
+prefix and the panel. At runtime the bundle reads its slug from its own path
+and asks the backend which shell this URL is (`/api/host-context`, with
+`X-Tenant-Slug` set for tenant paths) before mounting anything; for a tenant
+the same payload IS its branding (name, logo, theme), so the login screen
+renders with no second round-trip (see `web/src/lib/tenancy.ts`).
 
 ```bash
 cd web && npm run build
 ```
 
-Serve the same `dist/` for every host, with `/api` and `/sanctum` passed
-through to Laravel on that same origin, and every other request gated by the
-host check in `web/nginx.conf` (see the note at the top of this document).
-Master control is served **only** on the central host — a tenant subdomain can
-never render it.
+Serve `dist/` from the one host, with `/api` and `/sanctum` passed through to
+Laravel on that same origin, and every other request served the SPA shell
+(no host gate needed anymore — the boot gate lives in the SPA). Master
+control is served **only** at `/{TENANCY_CENTRAL_PREFIX}` — a tenant prefix
+can never render it (see `web/nginx.conf`).
 
 ### Create the first platform operator
 
@@ -114,33 +118,27 @@ each additional operator.
 
 ## 2. Local development
 
-Local dev uses **real subdomains**, exactly like production. Browsers resolve
-every `*.localhost` name to 127.0.0.1 with no hosts-file entry, so no DNS setup
-is needed:
+Local dev is **path-prefix over one origin**, exactly like production — no
+subdomains, no hosts file, no DNS:
 
 | | URL |
 | --- | --- |
-| Master control | http://admin.localhost:5173 |
-| A tenant's app | http://{slug}.localhost:5173 |
+| Master control | http://localhost:5173/admin |
+| A tenant's app | http://localhost:5173/{slug}/… |
 
-This relies on three things, all already configured:
+This relies on two things, all already configured:
 
-1. `TENANCY_CENTRAL_SUBDOMAIN=admin` in `backend/.env` (no base domain needed —
-   resolution is relative).
-2. `SANCTUM_STATEFUL_DOMAINS` including `*.localhost:5173`, or login succeeds
-   and every call afterwards 401s.
-3. **`changeOrigin: false`** on the Vite proxy (`web/vite.config.ts`).
-   `changeOrigin: true` rewrites the Host header to the proxy target, and the
-   Host is exactly how `IdentifyTenant` decides which tenant a request belongs
-   to — with it on, every tenant subdomain reaches Laravel as `127.0.0.1` and
-   resolves nothing, so the whole app answers `{"message":"Unknown host."}`.
+1. `TENANCY_CENTRAL_PREFIX=admin` in `backend/.env` (the default).
+2. **`changeOrigin: false`** on the Vite proxy (`web/vite.config.ts`).
+   Tenant requests carry `X-Tenant-Slug`, so they resolve from the header
+   either way — but master control requests carry **no** header and are
+   resolved from the Host. `changeOrigin: true` would rewrite the Host to the
+   proxy target's `127.0.0.1`, an IP literal that resolves nothing, killing
+   the panel (`{"message":"Unknown host."}`).
 
-> If you'd rather not use subdomains at all, set `TENANCY_DEV_FALLBACK=true`
-> and stay on one host: master control on `http://localhost:5173` (the bare
-> base counts as central), and a tenant app on the same host with an explicit
-> `?tenant={slug}` (or an `X-Tenant-Slug` header). That fallback is strictly
-> dev-only — in production every host resolves purely from its own Host
-> header.
+Don't browse the old `{slug}.localhost:5173` style on purpose — it still
+resolves during the cutover window via the Host fallback, but it's the old
+shape.
 
 Seed the demo data (`php artisan migrate:fresh --seed`) and sign in with:
 
@@ -352,7 +350,8 @@ How it works, and why it's safe to leave enabled:
 - Only a SHA-256 hash of it is stored, so a database dump or leaked log can't
   be replayed.
 - The token is **bound to one tenant** and is consumed only on that tenant's
-  own subdomain — it cannot be replayed against another.
+  own URL prefix (`/api/impersonate/{token}` with the tenant's
+  `X-Tenant-Slug`) — it cannot be replayed against another.
 - Every impersonation is written to the audit log with the operator's email,
   the target user, and the tenant.
 
@@ -366,14 +365,64 @@ you click it, just press the button again.
 
 | Symptom | Cause and fix |
 | --- | --- |
-| **`{"message":"Unknown host."}` on every page** | The Host reaching Laravel doesn't match any tenant. Locally this is almost always `changeOrigin: true` on the Vite proxy rewriting it — it must be `false`. Otherwise the host's first label names no tenant (or the tenant is suspended) — check the slug in master control. |
-| Tenant subdomain returns 404 | No tenant with that slug, or the tenant is **suspended**. Check the status in master control. |
-| *"This site isn't available."* on a host that should work | nginx's host gate (`/_host_check` → `/api/host-context`) got a non-2xx and served `unavailable.html` instead of the app. The host owns nothing from the backend's view — check the slug/status, or that you're on `admin.` for the panel. |
-| Master control renders but every call 404s | You're on a tenant subdomain. `EnsureCentralContext` rejects central APIs there by design — use the `admin.` host. |
-| Signed out immediately on a tenant subdomain | A session for a *different* tenant was replayed against this host. Expected: `IdentifyTenant` invalidates it. Sign in again. |
-| Login succeeds then the next call 401s | The host isn't in `SANCTUM_STATEFUL_DOMAINS`. It needs the wildcard `*.vellixglobal.com`. |
+| **Master control renders but every call 404s** | You're on a tenant prefix reached without its slug, or the panel is being hit FROM a tenant-slot request (a header is present). Master control only exists at `/{TENANCY_CENTRAL_PREFIX}` with **no** `X-Tenant-Slug`. `EnsureCentralContext` rejects central APIs under a tenant context by design. |
+| **`{"message":"Unknown host."}` on the panel in dev** | Almost always `changeOrigin: true` on the Vite proxy rewriting the Host — it must be `false` (central requests resolve from the Host; tenant requests carry the header). |
+| Tenant prefix returns 404 | No tenant with that slug, or the tenant is **suspended**. Check the status in master control. |
+| *"This site isn't available."* on a path that should work | `/api/host-context` said this path owns nothing — check the slug/status. |
+| `hms.com/tenants` (or any tenant-looking root path) does nothing | That path belongs to *a tenant named "tenants"*, which is reserved (see `ReservedSlug`) or none — there is no implicit routing from bare paths to tenants. Only `/{actual slug}` works. |
+| Signed out immediately after an impersonation hand-off | Expected: the tenant prefix you landed on doesn't match the session (e.g. the operator's own account). The cross-tenant guard logs the tenant identity out — sign back in on that prefix. |
+| Login succeeds then the next call 401s | The origin isn't in `SANCTUM_STATEFUL_DOMAINS` — it needs the bare SPA host entry. |
 | A tenant can't see a feature they have permission for | Its module isn't licensed. Check the Modules tab — licensing outranks permissions. |
 | Can't sign into master control on a fresh deploy | No operator exists; the demo seeder skips production. Run `php artisan central:create-admin`. |
+
+---
+
+## 8. Cutover (subdomain → prefix tenancy)
+
+The migration ships dual-mode: `IdentifyTenant` resolves the
+`X-Tenant-Slug` header first and the **Host fallback** (old
+`{slug}.{base}` / `admin.{base}` style) second. Both URL styles work
+simultaneously, so the deploy order is: code → frontend → verify → remove.
+
+Cutover steps, in order:
+
+1. Deploy the new backend and SPA build. Old URLs keep working via the host
+   fallback; new URL style (`/{slug}/…`, `/admin`) works immediately.
+2. **Add the 301** (already generated into the release by
+   `release:build`'s `.htaccess` if `TENANCY_BASE_DOMAIN` is set): every
+   `{slug}.{base}` **page load** is redirected to `{base}/{slug}/*`. API
+   paths (`/api`, `/sanctum`, `/broadcasting`) are deliberately *not*
+   redirected — old SPA builds still call `{slug}.{base}/api/…` and the host
+   fallback resolves them. For nginx, the sample block is commented in
+   `web/nginx.conf`.
+3. **Verify** (§7 checklist, applied while both styles are live):
+   - Log into two tenants in one browser: the second logs the first out —
+     logout, never a data leak.
+   - Impersonate from `/admin`, then return to `/admin`: the platform
+     operator's session survives (the cross-tenant guard now logs only the
+     tenant identity out, never the shared session).
+   - Load a printed QR URL (`{slug}.{base}/order/{token}`) → lands on
+     `{base}/{slug}/order/{token}`, still works.
+   - Deep-link `{base}/{slug}/reservations/5` cold (no previous tenant visit):
+     resolves and renders.
+   - `{base}/tenants` 404s rather than resolving anything (no path→tenant
+     prefix inference — slashes stay reserved).
+   - A suspended tenant still returns the indistinguishable 404 at
+     `/api/host-context`.
+   - Check access logs: confirm no page loads are still arriving by
+     subdomain.
+4. **Remove** (one commit, once nothing arrives by subdomain):
+   - `TENANCY_BASE_DOMAIN` and the `*.{host}` `SANCTUM_STATEFUL_DOMAINS`
+     wildcard entry from `backend/.env` (+ the wildcard patterns emitted by
+     `config/cors.php` / `config/sanctum.php` alongside it).
+   - The Host fallback: `TenantHostResolver::resolve()` /
+     `resolveRequest()`'s fallback branch; `IdentifyTenant` /
+     `HostContextController` stop consulting the Host.
+   - The 301 block in the release's `.htaccess` and the wildcard DNS/TLS
+     record.
+
+Two tenants in one browser share one cookie jar from here on; the server-side
+session check is the entire isolation boundary (it fails closed — 401).
 
 ---
 
@@ -382,13 +431,14 @@ you click it, just press the button again.
 | Thing | Where |
 | --- | --- |
 | Tenancy config | `backend/config/tenancy.php` |
-| Host → tenant resolution | `backend/app/Services/TenantHostResolver.php` (+ `backend/app/Http/Middleware/IdentifyTenant.php`) |
+| Slug/header → tenant resolution | `backend/app/Services/TenantHostResolver.php` (+ `backend/app/Http/Middleware/IdentifyTenant.php`) |
 | Central-only guard | `backend/app/Http/Middleware/EnsureCentralContext.php` |
-| SPA boot gate (host-context) | `backend/app/Http/Controllers/HostContextController.php` · `web/src/main.tsx` · `web/nginx.conf` |
+| SPA boot gate (host-context) | `backend/app/Http/Controllers/HostContextController.php` · `web/src/main.tsx` |
+| SPA tenant-prefix mirror | `web/src/lib/tenancy.ts` |
 | Unavailable page | `web/public/unavailable.html` |
-| Reserved subdomains | `backend/app/Rules/ReservedSlug.php` |
+| Reserved prefixes | `backend/app/Rules/ReservedSlug.php` |
 | Module catalog | `backend/app/Support/ModuleCatalog.php` |
 | Module enforcement | `backend/app/Services/TenantModules.php` |
 | Tenant provisioning | `backend/app/Services/TenantProvisioning.php` |
 | Impersonation | `backend/app/Services/Impersonation.php` |
-| SPA shell selection | `web/src/lib/tenancy.ts` |
+| Subdomain 301 during cutover | generated into the release `.htaccess` (`release:build`), sample in `web/nginx.conf` |

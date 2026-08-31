@@ -5,6 +5,8 @@
  * endpoints go through the offline queue instead (see offline.ts).
  */
 
+import { CENTRAL_PREFIX, tenantSlugFromPath } from "./tenancy";
+
 const MUTATING = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 /**
@@ -38,6 +40,29 @@ export function xsrfHeader(): Record<string, string> {
   return { "X-XSRF-TOKEN": getCookie("XSRF-TOKEN") ?? "" };
 }
 
+/**
+ * The headers every tenant-scoped request carries, including the raw fetches
+ * that bypass api(). X-Tenant-Slug names the tenant from this page's own URL
+ * prefix — the identity that IdentifyTenant resolves server-side (see
+ * backend App\Http\Middleware\IdentifyTenant). Loaded from the URL at call
+ * time (not boot time) so impersonation hand-offs and cross-tenant
+ * navigation hit the right tenant immediately.
+ */
+export function apiHeaders(extra?: Record<string, string>): Record<string, string> {
+  const slug = tenantSlugFromPath(window.location.pathname);
+  return {
+    Accept: "application/json",
+    "Content-Type": "application/json",
+    ...(slug ? { "X-Tenant-Slug": slug } : {}),
+    ...extra,
+  };
+}
+
+/** This page's login path — tenant /{slug}/login, or master control /{prefix}/login. */
+function loginPath(): string {
+  return `/${tenantSlugFromPath(window.location.pathname) ?? CENTRAL_PREFIX}/login`;
+}
+
 /** Sanctum SPA CSRF handshake — fetched once, re-fetched after logout invalidates it. */
 let csrfPromise: Promise<void> | null = null;
 export function ensureCsrfCookie(force = false): Promise<void> {
@@ -58,8 +83,7 @@ export async function api<T = unknown>(path: string, opts: { method?: string; bo
     method,
     credentials: "include",
     headers: {
-      Accept: "application/json",
-      "Content-Type": "application/json",
+      ...apiHeaders(),
       ...(MUTATING.has(method) ? { "X-XSRF-TOKEN": getCookie("XSRF-TOKEN") ?? "" } : {}),
     },
     body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
@@ -76,12 +100,14 @@ export async function api<T = unknown>(path: string, opts: { method?: string; bo
     return api<T>(path, { ...opts, _retried: true });
   }
 
-  // A mid-session expiry on a real request hard-redirects to /login. The auth
-  // probe (`/me`) passes silent401 so a logged-out boot is handled client-side
-  // by the router instead — a hard reload would flash login, then 404 on any
-  // host without the SPA fallback rewrite (see vercel.json).
-  if (res.status === 401 && !opts.silent401 && !window.location.pathname.startsWith("/login")) {
-    window.location.href = "/login";
+  // A mid-session expiry on a real request hard-redirects to this page's own
+  // login path — under the tenant prefix or the central prefix; an absolute
+  // "/login" would land outside it and 404 on the router. The auth probe
+  // (`/me`, `/central/me`) passes silent401 so a logged-out boot is handled
+  // client-side by the router instead — a hard reload would flash login, then
+  // 404 on any path without the SPA fallback rewrite (see vercel.json).
+  if (res.status === 401 && !opts.silent401 && !window.location.pathname.startsWith(loginPath())) {
+    window.location.href = loginPath();
     throw new ApiFail(401, "Session expired");
   }
   if (!res.ok) {
@@ -116,7 +142,7 @@ export const post = <T = unknown>(path: string, body?: unknown) => api<T>(path, 
  */
 export async function printDocument(path: string): Promise<void> {
   const url = `${API_ORIGIN}/api${path}${path.includes("?") ? "&" : "?"}output=html`;
-  const res = await fetch(url, { credentials: "include", headers: { Accept: "text/html" } });
+  const res = await fetch(url, { credentials: "include", headers: apiHeaders({ Accept: "text/html" }) });
   if (!res.ok) throw new ApiFail(res.status, "Could not generate the document");
   const html = await res.text();
 
@@ -142,7 +168,7 @@ export async function printDocument(path: string): Promise<void> {
 
 /** Server-generated PDF, saved to disk (report "Download PDF" buttons — printDocument() is the print path). */
 export async function downloadFile(path: string, filename: string): Promise<void> {
-  const res = await fetch(`${API_ORIGIN}/api${path}`, { credentials: "include", headers: { Accept: "application/pdf" } });
+  const res = await fetch(`${API_ORIGIN}/api${path}`, { credentials: "include", headers: apiHeaders({ Accept: "application/pdf" }) });
   if (!res.ok) throw new ApiFail(res.status, "Could not generate the document");
   const blob = await res.blob();
   const blobUrl = URL.createObjectURL(blob);

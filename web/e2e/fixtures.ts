@@ -2,6 +2,19 @@ import { Locator, Page, expect } from "@playwright/test";
 
 export const PASSWORD = "password";
 
+/** The demo tenant every apartment/hotel spec rides — the URL prefix all page loads live under. */
+export const TENANT_SLUG = "default";
+
+/**
+ * The real URL for a client-side path: every page load must sit under the
+ * tenant's prefix (/default/…), which is what names the tenant to the API
+ * (the SPA re-sends it as X-Tenant-Slug) — a root path like /login would
+ * land on the apex host, which is master control, not the tenant app.
+ */
+export function appUrl(path: string): string {
+  return `/${TENANT_SLUG}${path}`;
+}
+
 export const USERS = {
   fullAdmin: { email: "admin@vellix.com", name: "Admin User", role: "Full Administrator" },
   manager: { email: "manager@vellix.lk", name: "Operations Manager", role: "Manager" },
@@ -19,7 +32,7 @@ export function authFile(role: RoleKey): string {
 
 /** Fills and submits the email/password login form — does not wait for navigation. */
 export async function fillLogin(page: Page, email: string, password: string) {
-  await page.goto("/login");
+  await page.goto(appUrl("/login"));
   await page.getByPlaceholder("you@email.com").fill(email);
   await page.getByPlaceholder("Password").fill(password);
   await page.getByRole("button", { name: /sign in/i }).click();
@@ -58,7 +71,7 @@ export function fieldInput(scope: Locator, label: string): Locator {
  * otherwise, and TillSeeder only creates the till row, never a session.
  */
 export async function ensureTillOpen(page: Page): Promise<void> {
-  await page.goto("/till");
+  await page.goto(appUrl("/till"));
   const openBtn = page.getByRole("button", { name: /^open till$/i });
   // "My till" (Till.tsx) renders one of exactly two states once its /till/current
   // fetch resolves: the "Open till" trigger, or this Stat label when a session is

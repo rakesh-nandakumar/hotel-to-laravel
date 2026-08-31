@@ -7,6 +7,7 @@ use App\Models\User;
 use Illuminate\Support\Facades\Hash;
 
 beforeEach(function () {
+    $this->withoutHeader('X-Tenant-Slug');
     actingAsCentral(CentralAdmin::factory()->create());
 });
 
@@ -19,7 +20,7 @@ it('shows a tenant with its owner admin', function () {
         'password' => Hash::make('secret'),
     ]);
 
-    $this->getJson("http://admin.localhost/api/central/tenants/{$tenant->id}")
+    $this->getJson("/api/central/tenants/{$tenant->id}")
         ->assertOk()
         ->assertJsonPath('tenant.name', 'Shown Hotel')
         ->assertJsonPath('owner_admin.email', 'owner@shown.test')
@@ -29,7 +30,7 @@ it('shows a tenant with its owner admin', function () {
 it('suspends an active tenant and records a tenant-scoped audit log', function () {
     $tenant = Tenant::factory()->create();
 
-    $this->postJson("http://admin.localhost/api/central/tenants/{$tenant->id}/suspend")
+    $this->postJson("/api/central/tenants/{$tenant->id}/suspend")
         ->assertOk()
         ->assertJsonPath('tenant.status', 'suspended');
 
@@ -43,14 +44,14 @@ it('suspends an active tenant and records a tenant-scoped audit log', function (
 it('rejects suspending a tenant that is already suspended', function () {
     $tenant = Tenant::factory()->suspended()->create();
 
-    $this->postJson("http://admin.localhost/api/central/tenants/{$tenant->id}/suspend")
+    $this->postJson("/api/central/tenants/{$tenant->id}/suspend")
         ->assertStatus(422);
 });
 
 it('resumes a suspended tenant back to active', function () {
     $tenant = Tenant::factory()->suspended()->create();
 
-    $this->postJson("http://admin.localhost/api/central/tenants/{$tenant->id}/resume")
+    $this->postJson("/api/central/tenants/{$tenant->id}/resume")
         ->assertOk()
         ->assertJsonPath('tenant.status', 'active');
 
@@ -64,14 +65,14 @@ it('resumes a suspended tenant back to active', function () {
 it('rejects resuming a tenant that is not suspended', function () {
     $tenant = Tenant::factory()->create();
 
-    $this->postJson("http://admin.localhost/api/central/tenants/{$tenant->id}/resume")
+    $this->postJson("/api/central/tenants/{$tenant->id}/resume")
         ->assertStatus(422);
 });
 
 it('cancels a tenant through the update endpoint', function () {
     $tenant = Tenant::factory()->create();
 
-    $this->putJson("http://admin.localhost/api/central/tenants/{$tenant->id}", ['status' => 'cancelled'])
+    $this->putJson("/api/central/tenants/{$tenant->id}", ['status' => 'cancelled'])
         ->assertOk();
 
     expect($tenant->fresh()->status)->toBe('cancelled');
@@ -87,7 +88,7 @@ it('resets the owner admin password once and forces a change on next login', fun
         'must_change_password' => false,
     ]);
 
-    $response = $this->postJson("http://admin.localhost/api/central/tenants/{$tenant->id}/reset-admin-password")
+    $response = $this->postJson("/api/central/tenants/{$tenant->id}/reset-admin-password")
         ->assertOk();
 
     $newPassword = $response->json('password');
@@ -111,7 +112,7 @@ it('returns the owner credentials without a recoverable password', function () {
         'password' => Hash::make('secret'),
     ]);
 
-    $this->getJson("http://admin.localhost/api/central/tenants/{$tenant->id}/credentials")
+    $this->getJson("/api/central/tenants/{$tenant->id}/credentials")
         ->assertOk()
         ->assertJsonPath('owner_admin.email', 'owner@creds.test')
         ->assertJsonPath('owner_admin.impersonation_only', true)

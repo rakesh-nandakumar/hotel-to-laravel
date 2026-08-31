@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { authFile, collectConsoleErrors, ensureTillOpen } from "./fixtures";
+import { authFile, collectConsoleErrors, ensureTillOpen, appUrl } from "./fixtures";
 
 test.use({ storageState: authFile("manager") });
 
@@ -16,7 +16,7 @@ test("books a room, checks a guest in and out, and the resulting cleaning task a
   test.setTimeout(60_000);
   const guestName = `E2E Guest ${Date.now()}`;
 
-  await page.goto("/reservations");
+  await page.goto(appUrl("/reservations"));
   await page.getByRole("button", { name: /new booking/i }).click();
 
   const modal = page.locator(".modal-panel");
@@ -40,7 +40,7 @@ test("books a room, checks a guest in and out, and the resulting cleaning task a
   await expect(page.getByRole("button", { name: /check out/i })).toBeVisible({ timeout: 10_000 });
 
   await ensureTillOpen(page);
-  await page.goto(`/reservations`);
+  await page.goto(appUrl(`/reservations`));
   await page.getByText(guestName).click();
 
   // ── Check out (cover the full balance with one cash payment) ───────────
@@ -59,7 +59,7 @@ test("books a room, checks a guest in and out, and the resulting cleaning task a
 
   // ── The checkout auto-creates a housekeeping task for this room ────────
   const errors = await collectConsoleErrors(page, async () => {
-    await page.goto("/housekeeping");
+    await page.goto(appUrl("/housekeeping"));
     await page.waitForLoadState("networkidle");
   });
   expect(errors, `console/page errors on /housekeeping:\n${errors.join("\n")}`).toEqual([]);

@@ -13,6 +13,9 @@ use Illuminate\Support\Facades\Auth;
 beforeEach(function () {
     $this->seed(MenuSeeder::class);
     $this->seed(PermissionsAndRolesSeeder::class);
+    // Master control requests carry NO tenant header — the TestCase's default
+    // X-Tenant-Slug would override this suite's absence.
+    $this->withoutHeader('X-Tenant-Slug');
 });
 
 function provisionedTenant(): array
@@ -28,107 +31,76 @@ function provisionedTenant(): array
 }
 
 /**
- * Tenant resolution is RELATIVE (first label = identity, rest = base), so
- * these tests ride *.localhost: "admin.localhost" is master control, and a
- * factory tenant's own host is "{slug}.localhost". Absolute URLs are required
- * — prepareUrlForRequest() derives HTTP_HOST from the URL and discards Host
- * headers on relative URIs (see CentralHostResolutionTest).
+ * The minted link is {FRONTEND_URL}/{slug}/impersonate/{token} — the tenant is
+ * named by the URL prefix itself, and the SPA that lands there re-sends it as
+ * X-Tenant-Slug on the consume call. FRONTEND_URL in testing is
+ * http://localhost:5173 (the Vite dev origin), so it also covers the port the
+ * old dev-fallback hack bolted on — no dev-only branch anymore.
  */
-function tenantHost(string $slug): string
+function tokenFrom(string $url): string
 {
-    return $slug.'.localhost';
+    return last(explode('/impersonate/', (string) $url));
 }
 
-it('mints an impersonation URL and logs the operator in as the tenant admin', function () {
+it('mints an impersonation URL on the tenant prefix and logs the operator in as the tenant admin', function () {
     [$tenant, $admin] = provisionedTenant();
     actingAsCentral(CentralAdmin::factory()->create());
 
-    $response = $this->postJson('http://admin.localhost/api/central/tenants/'.$tenant->id.'/impersonate')->assertOk();
-    $url = $response->json('url');
+    $url = $this->postJson('/api/central/tenants/'.$tenant->id.'/impersonate')->assertOk()->json('url');
 
-    // Always the tenant's own subdomain, derived from the request's own base —
-    // that Host is what binds the session to this tenant.
-    expect($url)->toContain(tenantHost($tenant->slug))
-        ->and($url)->toContain('/impersonate/');
+    // Always the tenant's own URL prefix under the frontend origin — that
+    // prefix is what binds the resulting session to this tenant.
+    expect($url)->toContain("/{$tenant->slug}/impersonate/");
 
-    $token = last(explode('/impersonate/', (string) $url));
+    $token = tokenFrom($url);
 
-    $this->postJson('http://'.tenantHost($tenant->slug)."/api/impersonate/{$token}")->assertOk();
+    $this->postJson("/api/impersonate/{$token}", [], ['X-Tenant-Slug' => $tenant->slug])->assertOk();
 
     $this->assertAuthenticatedAs($admin);
 });
 
-it('points the impersonation link at the tenant subdomain in production', function () {
+it('points the impersonation link at the frontend origin, whose scheme/port it inherits', function () {
     [$tenant] = provisionedTenant();
     actingAsCentral(CentralAdmin::factory()->create());
 
-    // Over https, so the minted link inherits that scheme rather than the
-    // frontend_url one the dev branch would have used.
-    $url = $this->postJson('https://admin.localhost/api/central/tenants/'.$tenant->id.'/impersonate')
+    // FRONTEND_URL in .env.testing: http://localhost:5173 — the minted link
+    // carries that origin exactly (no separate prod/dev URL shapes anymore).
+    $url = $this->postJson('/api/central/tenants/'.$tenant->id.'/impersonate')
         ->assertOk()
         ->json('url');
 
-    // Real host, request's own scheme, and no dev port bolted on.
-    expect($url)->toStartWith('https://'.tenantHost($tenant->slug).'/impersonate/')
-        ->and($url)->not->toContain(':5173');
+    expect($url)->toStartWith('http://localhost:5173/'.$tenant->slug.'/impersonate/')
+        ->and($url)->toContain('/impersonate/');
 });
 
-it('lands on the tenant subdomain with the SPA port while developing', function () {
-    [$tenant] = provisionedTenant();
-    config()->set('tenancy.dev_fallback', true);
-    actingAsCentral(CentralAdmin::factory()->create());
-
-    // dev_fallback on makes the minted link carry app.frontend_url's scheme
-    // and Vite port — a bare hostname would 404 in a browser without it.
-    $url = $this->postJson('http://admin.localhost/api/central/tenants/'.$tenant->id.'/impersonate')->json('url');
-
-    expect($url)->toStartWith('http://'.tenantHost($tenant->slug).':5173/impersonate/');
-});
-
-it('accepts an explicit ?tenant= hint when consuming', function () {
-    [$tenant, $admin] = provisionedTenant();
-    config()->set('tenancy.dev_fallback', true);
-    actingAsCentral(CentralAdmin::factory()->create());
-
-    $url = $this->postJson('http://admin.localhost/api/central/tenants/'.$tenant->id.'/impersonate')->json('url');
-    $token = last(explode('/impersonate/', (string) $url));
-
-    // Consumed on a host that can't name the tenant (localhost is central);
-    // the query hint is the escape hatch for exactly that (see IdentifyTenant).
-    $this->postJson("http://localhost/api/impersonate/{$token}?tenant={$tenant->slug}")->assertOk();
-
-    $this->assertAuthenticatedAs($admin);
-});
-
-it('consumes a token on the tenant subdomain with no hint at all', function () {
+it('consumes a token on the tenant prefix with the slug header', function () {
     [$tenant, $admin] = provisionedTenant();
     Tenant::factory()->create(); // a second tenant, so nothing can be assumed
     actingAsCentral(CentralAdmin::factory()->create());
 
-    $url = $this->postJson('http://admin.localhost/api/central/tenants/'.$tenant->id.'/impersonate')->json('url');
-    $token = last(explode('/impersonate/', (string) $url));
+    $url = $this->postJson('/api/central/tenants/'.$tenant->id.'/impersonate')->json('url');
+    $token = tokenFrom($url);
 
-    // Exactly what the browser does when it follows the minted link: the Host
-    // is the only thing naming the tenant.
-    $this->postJson('http://'.tenantHost($tenant->slug)."/api/impersonate/{$token}")->assertOk();
+    // Exactly what the browser does when it follows the minted link: the path
+    // prefix is the only thing naming the tenant.
+    $this->postJson("/api/impersonate/{$token}", [], ['X-Tenant-Slug' => $tenant->slug])->assertOk();
 
     $this->assertAuthenticatedAs($admin);
 });
 
-it('keeps resolving the tenant after a hint-based hand-off', function () {
+it('keeps the session scoped to the tenant after the prefix-based hand-off', function () {
     [$tenant, $admin] = provisionedTenant();
     Tenant::factory()->create(); // a second tenant, so nothing can be assumed
-    config()->set('tenancy.dev_fallback', true);
     actingAsCentral(CentralAdmin::factory()->create());
 
-    $url = $this->postJson('http://admin.localhost/api/central/tenants/'.$tenant->id.'/impersonate')->json('url');
-    $token = last(explode('/impersonate/', (string) $url));
+    $url = $this->postJson('/api/central/tenants/'.$tenant->id.'/impersonate')->json('url');
+    $token = tokenFrom($url);
 
-    $this->postJson("http://localhost/api/impersonate/{$token}?tenant={$tenant->slug}")->assertOk();
+    $this->postJson("/api/impersonate/{$token}", [], ['X-Tenant-Slug' => $tenant->slug])->assertOk();
 
-    // Follow-up calls on the tenant's own subdomain carry no hint — the Host
-    // keeps resolving the tenant on its own.
-    $this->getJson('http://'.tenantHost($tenant->slug).'/api/me')->assertOk()->assertJsonPath('user.id', $admin->id);
+    // Follow-up calls on the tenant's own prefix carry the same slug — the
+    // session stays bound to it, and the cross-tenant guard keeps it there.
+    $this->getJson('/api/me', ['X-Tenant-Slug' => $tenant->slug])->assertOk()->assertJsonPath('user.id', $admin->id);
 });
 
 it('rejects a token replayed against a different tenant', function () {
@@ -136,10 +108,10 @@ it('rejects a token replayed against a different tenant', function () {
     [$tenantB] = provisionedTenant();
     actingAsCentral(CentralAdmin::factory()->create());
 
-    $url = $this->postJson('http://admin.localhost/api/central/tenants/'.$tenantA->id.'/impersonate')->json('url');
-    $token = last(explode('/impersonate/', (string) $url));
+    $url = $this->postJson('/api/central/tenants/'.$tenantA->id.'/impersonate')->json('url');
+    $token = tokenFrom($url);
 
-    $this->postJson('http://'.tenantHost($tenantB->slug)."/api/impersonate/{$token}")->assertUnauthorized();
+    $this->postJson("/api/impersonate/{$token}", [], ['X-Tenant-Slug' => $tenantB->slug])->assertUnauthorized();
     $this->assertGuest();
 });
 
@@ -147,13 +119,13 @@ it('rejects a token that has already been used once', function () {
     [$tenant] = provisionedTenant();
     actingAsCentral(CentralAdmin::factory()->create());
 
-    $url = $this->postJson('http://admin.localhost/api/central/tenants/'.$tenant->id.'/impersonate')->json('url');
-    $token = last(explode('/impersonate/', (string) $url));
+    $url = $this->postJson('/api/central/tenants/'.$tenant->id.'/impersonate')->json('url');
+    $token = tokenFrom($url);
 
-    $this->postJson('http://'.tenantHost($tenant->slug)."/api/impersonate/{$token}")->assertOk();
+    $this->postJson("/api/impersonate/{$token}", [], ['X-Tenant-Slug' => $tenant->slug])->assertOk();
     Auth::guard('web')->logout();
 
-    $this->postJson('http://'.tenantHost($tenant->slug)."/api/impersonate/{$token}")->assertUnauthorized();
+    $this->postJson("/api/impersonate/{$token}", [], ['X-Tenant-Slug' => $tenant->slug])->assertUnauthorized();
 });
 
 it('rejects an expired token', function () {
@@ -167,7 +139,7 @@ it('rejects an expired token', function () {
         'expires_at' => now()->subMinute(),
     ]);
 
-    $this->postJson('http://'.tenantHost($tenant->slug).'/api/impersonate/expired-plain-token')->assertUnauthorized();
+    $this->postJson('/api/impersonate/expired-plain-token', [], ['X-Tenant-Slug' => $tenant->slug])->assertUnauthorized();
 });
 
 it('serves tenant requests without recursion when the session user loads against active scopes', function () {
@@ -179,23 +151,19 @@ it('serves tenant requests without recursion when the session user loads against
     CurrentContext::simulateWebRequest(function () use ($tenant, $admin) {
         Auth::guard('web')->login($admin);
 
-        $host = tenantHost($tenant->slug);
-
-        $this->getJson("http://{$host}/api/public/branding")->assertOk()->assertJsonPath('name', 'Mount View Hotel');
-        $this->getJson("http://{$host}/api/me")->assertOk()->assertJsonPath('user.id', $admin->id);
+        $this->getJson('/api/public/branding', ['X-Tenant-Slug' => $tenant->slug])->assertOk()->assertJsonPath('name', 'Mount View Hotel');
+        $this->getJson('/api/me', ['X-Tenant-Slug' => $tenant->slug])->assertOk()->assertJsonPath('user.id', $admin->id);
     });
 });
 
-it('rejects a session from a different tenant on this subdomain', function () {
+it('rejects a session from a different tenant on another tenant prefix', function () {
     [, $adminA] = provisionedTenant();
     [$tenantB] = provisionedTenant();
 
     CurrentContext::simulateWebRequest(function () use ($tenantB, $adminA) {
         Auth::guard('web')->login($adminA);
 
-        $host = tenantHost($tenantB->slug);
-
-        $this->getJson("http://{$host}/api/me")
+        $this->getJson('/api/me', ['X-Tenant-Slug' => $tenantB->slug])
             ->assertUnauthorized()
             ->assertJsonPath('message', 'Session does not match this tenant.');
     });
@@ -203,14 +171,12 @@ it('rejects a session from a different tenant on this subdomain', function () {
     $this->assertGuest();
 });
 
-it('allows a session on its own tenant subdomain', function () {
+it('allows a session on its own tenant prefix', function () {
     [$tenant, $admin] = provisionedTenant();
 
     CurrentContext::simulateWebRequest(function () use ($tenant, $admin) {
         Auth::guard('web')->login($admin);
 
-        $host = tenantHost($tenant->slug);
-
-        $this->getJson("http://{$host}/api/me")->assertOk()->assertJsonPath('user.id', $admin->id);
+        $this->getJson('/api/me', ['X-Tenant-Slug' => $tenant->slug])->assertOk()->assertJsonPath('user.id', $admin->id);
     });
 });

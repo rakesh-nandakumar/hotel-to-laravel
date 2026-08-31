@@ -3,23 +3,31 @@
 namespace App\Services;
 
 use App\Support\HostContext;
+use Illuminate\Http\Request;
 
 /**
- * Resolves a Host header into master-control, tenant or unknown — the single
- * place both IdentifyTenant and anything else that needs to name a host's
- * tenant (e.g. Impersonation's landing URLs) look it up.
+ * Resolves a tenant identity — a slug, or (transitionally) a Host header —
+ * into master-control, tenant or unknown. The single place IdentifyTenant,
+ * HostContextController and anything else that needs to name a tenant look it
+ * up.
  *
- * The rules are RELATIVE: the first DNS label is the identity and everything
- * after it is the base, so the same code self-configures under any wildcard
- * domain ("admin.vellixglobal.com" and "admin.hms.vellixglobal.com" are both
- * central, "acme.anything.tld" is tenant "acme"). No domain literal is baked
- * anywhere.
+ * resolveFromSlug() is the primary (path/header) path: a bare slug is a
+ * tenant name unless it is the central prefix or empty, and it never grants
+ * central — master control is only ever named by the central path, never by
+ * a tenant hint, so a forged header cannot lasso a central request.
+ *
+ * resolve() is the HOST fallback kept for the dual-mode window (old
+ * {slug}.{base} and admin.{base} URL style). Its rules are RELATIVE: the
+ * first DNS label is the identity and everything after it is the base, so the
+ * same code self-configures under any wildcard domain ("admin.vellixglobal.com"
+ * and "admin.hms.vellixglobal.com" are both central, "acme.anything.tld" is
+ * tenant "acme"). No domain literal is baked anywhere.
  *
  *   - an IP literal is never a host that can own tenants → unknown
  *   - a base with fewer than tenancy.min_base_labels labels is the apex
  *     (e.g. "vellixglobal.com" → base "com") → central
  *   - *.localhost counts as a 1-label base, so local dev subdomains resolve
- *   - the first label matching tenancy.central_subdomain → central
+ *   - the first label matching tenancy.central_prefix → central
  *   - when tenancy.base_domain is pinned (strict mode), a base that doesn't
  *     match it → unknown; unset → relative mode, everything else resolves
  *   - otherwise → tenant(first label)
@@ -28,6 +36,40 @@ use App\Support\HostContext;
  */
 class TenantHostResolver
 {
+    /**
+     * The one resolution order every caller uses: X-Tenant-Slug header first,
+     * then the `tenant` query parameter, then the Host header. This is the
+     * single place the identity-source precedence lives — removing the host
+     * fallback at cutover means deleting the fallback line here and nowhere
+     * else.
+     */
+    public function resolveRequest(Request $request): HostContext
+    {
+        $slug = $request->header('X-Tenant-Slug') ?? $request->query('tenant');
+
+        return is_string($slug) && trim($slug) !== ''
+            ? $this->resolveFromSlug($slug)
+            : $this->resolve((string) $request->getHost());
+    }
+
+    /**
+     * Resolve a bare slug (X-Tenant-Slug header or `tenant` query parameter).
+     * Normalised the same way a host is; a slug equal to the central prefix —
+     * or empty/garbage — is unknown so the request fails closed instead of
+     * drifting into an unscoped or falsely-central context.
+     */
+    public function resolveFromSlug(string $slug): HostContext
+    {
+        $slug = strtolower(trim($slug));
+        $slug = rtrim($slug, '.');
+
+        if ($slug === '' || $slug === strtolower((string) config('tenancy.central_prefix'))) {
+            return HostContext::unknown();
+        }
+
+        return HostContext::tenant($slug);
+    }
+
     public function resolve(string $host): HostContext
     {
         $host = $this->normalise($host);
@@ -44,7 +86,7 @@ class TenantHostResolver
             return HostContext::central();
         }
 
-        if ($firstLabel === strtolower((string) config('tenancy.central_subdomain'))) {
+        if ($firstLabel === strtolower((string) config('tenancy.central_prefix'))) {
             return HostContext::central();
         }
 

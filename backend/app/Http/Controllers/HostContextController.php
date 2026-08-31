@@ -12,20 +12,20 @@ use Illuminate\Http\Request;
 
 /**
  * The SPA's boot gate: tells the frontend, before anything else mounts,
- * whether this host is master control or a tenant — and if a tenant, its
+ * whether this URL is master control or a tenant — and if a tenant, its
  * full public branding (name, logo, theme colours) so the login screen can
  * render without a second round-trip.
  *
- * nginx proxies every page load through this endpoint (auth_request /_host_check);
- * a 404 here means the site is served the plain unavailable page instead of
- * the app bundle. Same resolution rules as IdentifyTenant — a host that
- * resolves a tenant here must resolve the identical tenant there.
+ * Same resolution rules as IdentifyTenant — a request that names a tenant
+ * here must resolve the identical tenant there. The SPA reads its own slug
+ * from its URL prefix and repeats it in the X-Tenant-Slug header; without
+ * one (central panel, old URL style) the Host header resolves instead.
  */
 class HostContextController extends Controller
 {
     public function __invoke(Request $request, TenantHostResolver $resolver): JsonResponse
     {
-        $context = $resolver->resolve((string) $request->getHost());
+        $context = $resolver->resolveRequest($request);
 
         if ($context->isCentral()) {
             return response()->json(['mode' => 'central']);

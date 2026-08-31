@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, post } from "../../lib/api";
-import { tenantHost } from "../../lib/tenancy";
+import { tenantUrl } from "../../lib/tenancy";
 import { slugify } from "../../lib/util";
 import { Card, Badge, Modal, Field, ErrorText, SimpleTable, statusColor } from "../../components/ui";
 import { Plus } from "lucide-react";
@@ -44,7 +44,7 @@ export default function CentralTenants() {
               { key: "name", label: "Business", render: (t) => (
                 <Link to={`/tenants/${t.id}`} className="font-semibold text-brand-600 hover:underline">{t.name}</Link>
               ) },
-              { key: "slug", label: "Subdomain", render: (t) => <span className="text-slate-500">{tenantHost(t.slug)}</span> },
+              { key: "slug", label: "URL", render: (t) => <span className="text-slate-500">{tenantUrl(t.slug)}</span> },
               { key: "status", label: "Status", render: (t) => <Badge color={statusColor(t.status)}>{t.status}</Badge> },
               { key: "environment", label: "Env", render: (t) => <Badge color={t.environment === "test" ? "purple" : "slate"}>{t.environment}</Badge> },
               { key: "users_count", label: "Users", align: "right" },
@@ -90,7 +90,7 @@ function CreateTenantModal({ open, onClose, onCreated }: { open: boolean; onClos
     setError("");
   };
 
-  // As the business name is typed, pre-fill the subdomain, admin email and
+  // As the business name is typed, pre-fill the URL prefix, admin email and
   // admin name — but only while the operator hasn't overridden each field.
   const onNameChange = (value: string) => {
     setName(value);
@@ -122,7 +122,7 @@ function CreateTenantModal({ open, onClose, onCreated }: { open: boolean; onClos
         <Field label="Business name">
           <input className="input" value={name} onChange={(e) => onNameChange(e.target.value)} required autoFocus />
         </Field>
-        <Field label="Subdomain" hint="Lowercase letters, numbers and dashes only — e.g. 'acme' for acme.yourdomain.com.">
+        <Field label="URL prefix" hint="Lowercase letters, numbers and dashes only — the tenant app lives at yourdomain.com/acme.">
           <input
             className="input"
             value={slug}

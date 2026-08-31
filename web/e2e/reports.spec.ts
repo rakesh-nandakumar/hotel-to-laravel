@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { authFile, collectConsoleErrors } from "./fixtures";
+import { authFile, collectConsoleErrors, appUrl } from "./fixtures";
 
 test.use({ storageState: authFile("manager") });
 
@@ -29,7 +29,7 @@ const APARTMENT_REPORTS = [
  */
 test("Hotel Reports hub: lists every report the Manager can see, hides Payroll Cost and POS Sales (both moved/restricted), and every card opens without a console error", async ({ page }) => {
   test.setTimeout(90_000);
-  await page.goto("/reports");
+  await page.goto(appUrl("/reports"));
   await expect(page.getByRole("heading", { name: /^reports$/i })).toBeVisible();
   // Payroll Cost is Owner-only; POS Sales moved to the Restaurant hub — neither should appear here.
   await expect(page.getByText("Payroll Cost", { exact: true })).toHaveCount(0);
@@ -37,7 +37,7 @@ test("Hotel Reports hub: lists every report the Manager can see, hides Payroll C
 
   const errors = await collectConsoleErrors(page, async () => {
     for (const key of HOTEL_REPORTS) {
-      await page.goto(`/reports/${key}`);
+      await page.goto(appUrl(`/reports/${key}`));
       await expect(page.getByRole("button", { name: /all reports/i })).toBeVisible({ timeout: 10_000 });
       await expect(page.locator("main")).not.toBeEmpty();
     }
@@ -47,13 +47,13 @@ test("Hotel Reports hub: lists every report the Manager can see, hides Payroll C
 
 test("Restaurant Reports hub: standalone from Hotel, lists every report, and every card opens without a console error", async ({ page }) => {
   test.setTimeout(90_000);
-  await page.goto("/restaurant/reports");
+  await page.goto(appUrl("/restaurant/reports"));
   await expect(page.getByRole("heading", { name: /restaurant reports/i })).toBeVisible();
   await expect(page.getByText("POS Sales", { exact: true })).toBeVisible();
 
   const errors = await collectConsoleErrors(page, async () => {
     for (const key of RESTAURANT_REPORTS) {
-      await page.goto(`/restaurant/reports/${key}`);
+      await page.goto(appUrl(`/restaurant/reports/${key}`));
       await expect(page.getByRole("button", { name: /all reports/i })).toBeVisible({ timeout: 10_000 });
       await expect(page.locator("main")).not.toBeEmpty();
     }
@@ -63,14 +63,14 @@ test("Restaurant Reports hub: standalone from Hotel, lists every report, and eve
 
 test("Apartments Reports hub: the old single-dashboard page is now one card among the full catalog, and every card opens without a console error", async ({ page }) => {
   test.setTimeout(60_000);
-  await page.goto("/apartments/reports");
+  await page.goto(appUrl("/apartments/reports"));
   await expect(page.getByRole("heading", { name: /apartments reports/i })).toBeVisible();
   await expect(page.getByText("Operations Dashboard", { exact: true })).toBeVisible();
   await expect(page.getByText("Rent Roll & Arrears Aging", { exact: true })).toBeVisible();
 
   const errors = await collectConsoleErrors(page, async () => {
     for (const key of APARTMENT_REPORTS) {
-      await page.goto(`/apartments/reports/${key}`);
+      await page.goto(appUrl(`/apartments/reports/${key}`));
       await expect(page.getByRole("button", { name: /all reports/i })).toBeVisible({ timeout: 10_000 });
       await expect(page.locator("main")).not.toBeEmpty();
     }
@@ -79,7 +79,7 @@ test("Apartments Reports hub: the old single-dashboard page is now one card amon
 });
 
 test("Daily Operations report still exports a CSV from the new hub layout", async ({ page }) => {
-  await page.goto("/reports/daily");
+  await page.goto(appUrl("/reports/daily"));
   await expect(page.getByRole("button", { name: /export csv/i })).toBeVisible({ timeout: 10_000 });
 
   const [download] = await Promise.all([

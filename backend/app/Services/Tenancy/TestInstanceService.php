@@ -50,9 +50,8 @@ class TestInstanceService
 
         if (Tenant::query()->withTrashed()->where('slug', $slug)->exists()) {
             throw new RuntimeException(sprintf(
-                'The subdomain "%s.%s" is already taken. Remove the conflicting tenant first.',
+                'The URL prefix "/%s" is already taken. Remove the conflicting tenant first.',
                 $slug,
-                config('tenancy.base_domain'),
             ));
         }
 

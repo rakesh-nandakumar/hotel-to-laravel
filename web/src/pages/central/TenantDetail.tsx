@@ -128,6 +128,7 @@ function OverviewTab({
   const [resetPassword, setResetPassword] = useState<{ password: string; email: string } | null>(null);
   const [resetBusy, setResetBusy] = useState(false);
   const [resetError, setResetError] = useState("");
+  const [newPassword, setNewPassword] = useState("password");
 
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -162,7 +163,9 @@ function OverviewTab({
     setResetBusy(true);
     setResetError("");
     try {
-      const r = await post<{ password: string; admin: { email: string } }>(`/central/tenants/${tenant.id}/reset-admin-password`);
+      const r = await post<{ password: string; admin: { email: string } }>(`/central/tenants/${tenant.id}/reset-admin-password`, {
+        password: newPassword || "password",
+      });
       setResetPassword({ password: r.password, email: r.admin.email });
     } catch (err) {
       setResetError((err as Error).message);
@@ -198,10 +201,10 @@ function OverviewTab({
             <p className="font-semibold text-slate-800">{owner.name}</p>
             <p className="text-slate-500">{owner.email}</p>
             <p className="text-xs text-slate-400">
-              Credentials are never handed out — the only way in is Impersonate. A reset mints a new
-              never-communicated password and forces a change on next sign-in.
+              Credentials are never handed out — the only way in is Impersonate. A reset sets the
+              password below and forces a change on next sign-in.
             </p>
-            <div className="flex flex-wrap gap-2 pt-1">
+            <div className="flex flex-wrap items-center gap-2 pt-1">
               {tenant.status === "suspended" ? (
                 <button className="btn-secondary" onClick={() => lifecycle("resume")} disabled={lifecycleBusy}>
                   {lifecycleBusy ? "Working…" : "Resume"}
@@ -211,6 +214,13 @@ function OverviewTab({
                   Suspend
                 </button>
               )}
+              <input
+                className="input w-40"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="password"
+                aria-label="New admin password"
+              />
               <button className="btn-secondary" onClick={doResetPassword} disabled={resetBusy}>
                 <KeyRound size={14} /> {resetBusy ? "Resetting…" : "Reset admin password"}
               </button>

@@ -1,5 +1,5 @@
 import { test, expect, Locator } from "@playwright/test";
-import { authFile, collectConsoleErrors, ensureTillOpen } from "./fixtures";
+import { authFile, collectConsoleErrors, ensureTillOpen, appUrl } from "./fixtures";
 
 test.use({ storageState: authFile("manager") });
 
@@ -23,14 +23,14 @@ test("takes a unit through inquiry, reservation, agreement, full payment, and co
   const unitNo = `ES-${stamp}`;
   const buyerName = `E2E Buyer ${stamp}`;
 
-  await page.goto("/apartments/unit-types");
+  await page.goto(appUrl("/apartments/unit-types"));
   await page.getByRole("button", { name: /new unit type/i }).click();
   let modal = page.locator(".modal-panel");
   await field(modal, "Name *").fill(unitTypeName);
   await modal.getByRole("button", { name: /^save$/i }).click();
   await expect(modal).toBeHidden();
 
-  await page.goto("/apartments/units");
+  await page.goto(appUrl("/apartments/units"));
   await page.getByRole("button", { name: /new unit/i }).click();
   modal = page.locator(".modal-panel");
   await field(modal, "Unit number *").fill(unitNo);
@@ -43,7 +43,7 @@ test("takes a unit through inquiry, reservation, agreement, full payment, and co
   await ensureTillOpen(page);
 
   const errors = await collectConsoleErrors(page, async () => {
-    await page.goto("/apartments/sales");
+    await page.goto(appUrl("/apartments/sales"));
     await page.getByRole("button", { name: /new sale inquiry/i }).click();
     modal = page.locator(".modal-panel");
     await field(modal, "Unit for sale *").selectOption({ label: `${unitNo} — ${unitTypeName}` });
@@ -61,7 +61,7 @@ test("takes a unit through inquiry, reservation, agreement, full payment, and co
     await expect(page.getByRole("heading", { level: 1 })).toContainText("RESERVED");
 
     // Unit should now be excluded from rental availability / shown Reserved on the Units board.
-    await page.goto("/apartments/units");
+    await page.goto(appUrl("/apartments/units"));
     await expect(page.locator("tr", { hasText: unitNo }).getByText("Reserved", { exact: true })).toBeVisible();
     await page.goBack();
 
@@ -81,7 +81,7 @@ test("takes a unit through inquiry, reservation, agreement, full payment, and co
     await page.getByRole("button", { name: /complete sale/i }).click();
     await expect(page.getByRole("heading", { level: 1 })).toContainText("COMPLETED", { timeout: 10_000 });
 
-    await page.goto("/apartments/units");
+    await page.goto(appUrl("/apartments/units"));
     await expect(page.locator("tr", { hasText: unitNo }).getByText("Sold", { exact: true })).toBeVisible();
     await page.waitForLoadState("networkidle", { timeout: 10_000 });
   });

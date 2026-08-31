@@ -1,5 +1,5 @@
 import { test, expect, Locator } from "@playwright/test";
-import { authFile, collectConsoleErrors, ensureTillOpen } from "./fixtures";
+import { authFile, collectConsoleErrors, ensureTillOpen, appUrl } from "./fixtures";
 
 test.use({ storageState: authFile("manager") });
 
@@ -25,7 +25,7 @@ test("checks a booking out to Dirty, completes the housekeeping checklist, and r
   const guestName = `E2E Ops Guest ${stamp}`;
   const maintUnitNo = `EM-${stamp}`;
 
-  await page.goto("/apartments/unit-types");
+  await page.goto(appUrl("/apartments/unit-types"));
   await page.getByRole("button", { name: /new unit type/i }).click();
   let modal = page.locator(".modal-panel");
   await field(modal, "Name *").fill(unitTypeName);
@@ -34,7 +34,7 @@ test("checks a booking out to Dirty, completes the housekeeping checklist, and r
   await modal.getByRole("button", { name: /^save$/i }).click();
   await expect(modal).toBeHidden();
 
-  await page.goto("/apartments/units");
+  await page.goto(appUrl("/apartments/units"));
   await page.getByRole("button", { name: /new unit/i }).click();
   modal = page.locator(".modal-panel");
   await field(modal, "Unit number *").fill(unitNo);
@@ -53,7 +53,7 @@ test("checks a booking out to Dirty, completes the housekeeping checklist, and r
 
   const errors = await collectConsoleErrors(page, async () => {
     // Book, check in, check out.
-    await page.goto("/apartments/bookings");
+    await page.goto(appUrl("/apartments/bookings"));
     await page.getByRole("button", { name: /new booking/i }).click();
     modal = page.locator(".modal-panel");
     await expect(modal.getByText(unitNo)).toBeVisible({ timeout: 10_000 });
@@ -80,11 +80,11 @@ test("checks a booking out to Dirty, completes the housekeeping checklist, and r
     await expect(checkoutModal.getByText("Checked out ✓")).toBeVisible({ timeout: 10_000 });
     await checkoutModal.getByRole("button", { name: "Done" }).click();
 
-    await page.goto("/apartments/units");
+    await page.goto(appUrl("/apartments/units"));
     await expect(page.locator("tr", { hasText: unitNo }).getByText("Dirty", { exact: true })).toBeVisible({ timeout: 20_000 });
 
     // Complete the housekeeping checklist.
-    await page.goto("/apartments/housekeeping");
+    await page.goto(appUrl("/apartments/housekeeping"));
     await page.getByText(unitNo, { exact: true }).click({ timeout: 20_000 });
     const hkModal = page.locator(".modal-panel");
     await expect(hkModal.getByText("cleaning checklist")).toBeVisible();
@@ -98,11 +98,11 @@ test("checks a booking out to Dirty, completes the housekeeping checklist, and r
     await submitBtn.click();
     await expect(hkModal).toBeHidden({ timeout: 10_000 });
 
-    await page.goto("/apartments/units");
+    await page.goto(appUrl("/apartments/units"));
     await expect(page.locator("tr", { hasText: unitNo }).getByText("Available", { exact: true })).toBeVisible({ timeout: 20_000 });
 
     // Maintenance: log then resolve an issue on the other unit.
-    await page.goto("/apartments/maintenance");
+    await page.goto(appUrl("/apartments/maintenance"));
     await page.getByRole("button", { name: /log issue/i }).click();
     const maintModal = page.locator(".modal-panel");
     const unitSelect = field(maintModal, "Unit");
@@ -125,7 +125,7 @@ test("checks a booking out to Dirty, completes the housekeeping checklist, and r
     await resolveModal.getByRole("button", { name: /mark resolved/i }).click();
     await expect(resolveModal).toBeHidden({ timeout: 10_000 });
 
-    await page.goto("/apartments/reports");
+    await page.goto(appUrl("/apartments/reports"));
     await expect(page.getByRole("heading", { level: 1 })).toContainText("Reports");
     await page.waitForLoadState("networkidle", { timeout: 10_000 });
   });

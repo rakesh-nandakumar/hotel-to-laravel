@@ -1,5 +1,5 @@
 import { test, expect, Locator } from "@playwright/test";
-import { authFile, collectConsoleErrors } from "./fixtures";
+import { authFile, collectConsoleErrors, appUrl } from "./fixtures";
 
 test.use({ storageState: authFile("manager") });
 
@@ -24,7 +24,7 @@ test("occupies a table on dine-in, frees it on settle, and dispatches a delivery
   const dishName = `E2E Restaurant Dish ${stamp}`;
 
   // seed-demo-data.setup.ts's menu seed is disabled — create our own item.
-  await page.goto("/menu");
+  await page.goto(appUrl("/menu"));
   await page.getByRole("button", { name: /categories/i }).click();
   const catModal = page.locator(".modal-panel");
   await catModal.getByPlaceholder(/new category name/i).fill(categoryName);
@@ -43,7 +43,7 @@ test("occupies a table on dine-in, frees it on settle, and dispatches a delivery
   await itemModal.getByRole("button", { name: /^save item$/i }).click();
   await expect(itemModal).toBeHidden();
 
-  await page.goto("/tables");
+  await page.goto(appUrl("/tables"));
   await page.getByRole("button", { name: /new table/i }).click();
   const tableModal = page.locator(".modal-panel");
   await field(tableModal, "Table number *").fill(tableNo);
@@ -53,7 +53,7 @@ test("occupies a table on dine-in, frees it on settle, and dispatches a delivery
 
   const errors = await collectConsoleErrors(page, async () => {
     // Dine-in order against the new table.
-    await page.goto("/pos");
+    await page.goto(appUrl("/pos"));
     await page.getByRole("button", { name: /^dine-in$/i }).click();
     const tableSelect = page.locator("select").filter({ hasText: "No table (label only)" });
     const tableOption = tableSelect.locator("option", { hasText: tableNo });
@@ -72,11 +72,11 @@ test("occupies a table on dine-in, frees it on settle, and dispatches a delivery
     await page.getByRole("button", { name: /send order/i }).click();
     await expect(page.getByRole("button", { name: /^open orders/i })).toBeVisible({ timeout: 10_000 }).catch(() => {});
 
-    await page.goto("/tables");
+    await page.goto(appUrl("/tables"));
     await expect(page.locator("div", { hasText: tableNo }).getByText("OCCUPIED", { exact: true }).first()).toBeVisible({ timeout: 15_000 });
 
     // Settle it from Open Orders.
-    await page.goto("/pos");
+    await page.goto(appUrl("/pos"));
     await page.getByRole("button", { name: /open orders/i }).click();
     await page.locator("button.card", { hasText: `TABLE ${tableNo}` }).first().click();
     const orderModal = page.locator(".modal-panel");
@@ -92,11 +92,11 @@ test("occupies a table on dine-in, frees it on settle, and dispatches a delivery
     await payModal.getByRole("button", { name: /^confirm/i }).click();
     await expect(page.getByText("Take payment — split across methods")).toBeHidden({ timeout: 10_000 });
 
-    await page.goto("/tables");
+    await page.goto(appUrl("/tables"));
     await expect(page.locator("div", { hasText: tableNo }).getByText("CLEANING", { exact: true }).first()).toBeVisible({ timeout: 15_000 });
 
     // Delivery order: address/phone required, then dispatch through the status stepper.
-    await page.goto("/pos");
+    await page.goto(appUrl("/pos"));
     await page.getByRole("button", { name: /^delivery$/i }).click();
     await page.getByPlaceholder("Delivery address *").fill("123 Galle Road, Colombo");
     await page.getByPlaceholder("Delivery phone *").fill("0771234567");

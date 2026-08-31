@@ -13,11 +13,14 @@ use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 /**
- * Resolves which tenant this request belongs to from the Host header and
- * records it on CurrentContext before anything else runs (registered ahead
- * of the auth guard). The bare base domain and the reserved central
- * subdomain are "master control" — no tenant is resolved there, and
- * central-guard routes take over.
+ * Resolves which tenant this request belongs to and records it on
+ * CurrentContext before anything else runs (registered ahead of the auth
+ * guard). Identity comes from the X-Tenant-Slug header (or `tenant` query
+ * parameter) first — the SPA reads its own slug from its URL prefix at boot
+ * and sends it on every call — and falls back to the Host header while the
+ * old {slug}.{base} URL style is still in play. The bare base domain and the
+ * reserved central prefix are "master control" — no tenant is resolved there,
+ * and central-guard routes take over.
  *
  * Fails closed: every rejection — unknown host, unknown slug, suspended or
  * expired tenant — is the same 404, so no probe can tell tenants apart or
@@ -25,12 +28,6 @@ use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
  */
 class IdentifyTenant
 {
-    /**
-     * Session key holding the dev-fallback tenant slug. Only ever written
-     * when tenancy.dev_fallback is explicitly enabled.
-     */
-    private const DEV_TENANT_SESSION_KEY = 'dev_tenant_slug';
-
     public function __construct(
         private readonly CurrentContext $context,
         private readonly TenantHostResolver $resolver,
@@ -53,14 +50,11 @@ class IdentifyTenant
         // forward (see CurrentContext::resetTenant()'s doc block).
         $this->context->resetTenant();
 
-        $hostContext = $this->resolver->resolve((string) $request->getHost());
+        $hostContext = $this->resolver->resolveRequest($request);
 
-        // Central context — no tenant resolved — unless the opt-in dev
-        // fallback names one (central hosts like localhost double as the
-        // fallback's last resort in local development).
         $tenant = $hostContext->isTenant()
             ? $this->findBySlug($hostContext->slug())
-            : $this->devFallback($request);
+            : null;
 
         if ($hostContext->isCentral() && ! $tenant) {
             $this->context->markCentral();
@@ -84,10 +78,10 @@ class IdentifyTenant
         // identity (see CurrentContext::timezone()).
         $this->applyTenantTimezone();
 
-        // A session whose own tenant disagrees with the resolved subdomain is
+        // A session whose own tenant disagrees with the resolved tenant is
         // rejected outright — that would otherwise be a live cross-tenant
         // session hijack (a stale cookie replayed against another tenant's
-        // subdomain). The guard's user is looked up scoped to the resolved
+        // prefix). The guard's user is looked up scoped to the resolved
         // tenant, so a foreign session loads as null and is caught here.
         // Skipped entirely when the request carries no session (non-stateful
         // clients): there is no session to replay.
@@ -97,8 +91,13 @@ class IdentifyTenant
             if ($sessionUserId !== null) {
                 $user = $guard->user();
                 if (! $user || $user->tenant_id !== $tenant->id) {
+                    // Log the tenant identity out only. One origin now hosts
+                    // both panels, so both guards' state lives in the same
+                    // session store — a full invalidate() would also destroy
+                    // a central admin's logged-in session (e.g. after an
+                    // impersonation hand-off), dropping the operator from
+                    // /admin mid-flow.
                     $guard->logout();
-                    $request->session()->invalidate();
 
                     abort(401, 'Session does not match this tenant.');
                 }
@@ -116,50 +115,6 @@ class IdentifyTenant
     private function findBySlug(string $slug): ?Tenant
     {
         return Tenant::query()->where('slug', $slug)->first();
-    }
-
-    /**
-     * Local/dev/test convenience only — see config/tenancy.php. Only consulted
-     * when dev_fallback is explicitly enabled AND the host is genuinely local
-     * (localhost / *.localhost / loopback IPs) — real hosts never reach it.
-     */
-    private function devFallback(Request $request): ?Tenant
-    {
-        if (! config('tenancy.dev_fallback') || ! $this->isLocalHost((string) $request->getHost())) {
-            return null;
-        }
-
-        $explicit = $request->header('X-Tenant-Slug') ?? $request->query('tenant');
-        if ($explicit) {
-            $tenant = $this->findBySlug((string) $explicit);
-
-            // Sticky for the rest of the session: an impersonation hand-off
-            // names its tenant once, in the landing URL, but every request the
-            // app makes afterwards is an ordinary same-host call with no hint
-            // on it.
-            if ($tenant && $request->hasSession()) {
-                $request->session()->put(self::DEV_TENANT_SESSION_KEY, $tenant->slug);
-            }
-
-            return $tenant;
-        }
-
-        if ($request->hasSession() && ($remembered = $request->session()->get(self::DEV_TENANT_SESSION_KEY))) {
-            return $this->findBySlug((string) $remembered);
-        }
-
-        return null;
-    }
-
-    private function isLocalHost(string $host): bool
-    {
-        $host = strtolower(trim($host));
-
-        return $host === 'localhost'
-            || str_ends_with($host, '.localhost')
-            || $host === '127.0.0.1'
-            || $host === '[::1]'
-            || $host === '::1';
     }
 
     private function applyTenantTimezone(): void

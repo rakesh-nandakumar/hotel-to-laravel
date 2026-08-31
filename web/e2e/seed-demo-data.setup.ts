@@ -1,5 +1,5 @@
 import { test as setup, expect } from "@playwright/test";
-import { authFile } from "./fixtures";
+import { authFile, appUrl } from "./fixtures";
 
 setup.use({ storageState: authFile("fullAdmin") });
 
@@ -31,7 +31,7 @@ function field(scope: import("@playwright/test").Locator, label: string) {
  * the UI sidesteps that entirely and is simpler to keep correct.
  */
 setup("seed a demo menu category + item for POS/KOT tests", async ({ page }) => {
-  await page.goto("/menu");
+  await page.goto(appUrl("/menu"));
 
   await page.getByRole("button", { name: /categories/i }).click();
   const catModal = page.locator(".modal-panel");

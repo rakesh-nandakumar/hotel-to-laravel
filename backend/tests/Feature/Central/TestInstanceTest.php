@@ -7,6 +7,7 @@ use App\Models\Tenant;
 use Illuminate\Support\Facades\DB;
 
 beforeEach(function () {
+    $this->withoutHeader('X-Tenant-Slug');
     actingAsCentral(CentralAdmin::factory()->create());
 });
 
@@ -414,7 +415,7 @@ it('creates a test instance with fully remapped business data', function () {
     $live = Tenant::factory()->create(['slug' => 'demo-live']);
     $ids = seedLiveTenant($live);
 
-    $this->postJson("http://admin.localhost/api/central/tenants/{$live->id}/test-instance")
+    $this->postJson("/api/central/tenants/{$live->id}/test-instance")
         ->dump()
         ->assertCreated()
         ->assertJsonPath('instance.slug', 'demo-live-test')
@@ -452,24 +453,24 @@ it('creates a test instance with fully remapped business data', function () {
 it('rejects a second test instance and one off a test instance', function () {
     $live = Tenant::factory()->create(['slug' => 'second']);
 
-    $this->postJson("http://admin.localhost/api/central/tenants/{$live->id}/test-instance")
+    $this->postJson("/api/central/tenants/{$live->id}/test-instance")
         ->assertCreated();
 
-    $this->postJson("http://admin.localhost/api/central/tenants/{$live->id}/test-instance")
+    $this->postJson("/api/central/tenants/{$live->id}/test-instance")
         ->assertStatus(422);
 
     $other = Tenant::factory()->create(['slug' => 'other']);
     Tenant::factory()->create(['slug' => 'other-test', 'environment' => 'test', 'parent_tenant_id' => $other->id]);
 
-    $this->postJson("http://admin.localhost/api/central/tenants/{$other->id}/test-instance")
+    $this->postJson("/api/central/tenants/{$other->id}/test-instance")
         ->assertStatus(422);
 });
 
-it('rejects a test instance when the -test subdomain is taken', function () {
+it('rejects a test instance when the -test URL prefix is taken', function () {
     $live = Tenant::factory()->create(['slug' => 'taken-live']);
     Tenant::factory()->create(['slug' => 'taken-live-test']);
 
-    $this->postJson("http://admin.localhost/api/central/tenants/{$live->id}/test-instance")
+    $this->postJson("/api/central/tenants/{$live->id}/test-instance")
         ->assertStatus(422);
 });
 
@@ -477,7 +478,7 @@ it('syncs a test instance from live, atomically replacing its data', function ()
     $live = Tenant::factory()->create(['slug' => 'syncer']);
     seedLiveTenant($live);
 
-    $this->postJson("http://admin.localhost/api/central/tenants/{$live->id}/test-instance")->assertCreated();
+    $this->postJson("/api/central/tenants/{$live->id}/test-instance")->assertCreated();
     $test = Tenant::query()->where('slug', 'syncer-test')->first();
 
     $oldTestRoomId = DB::table('rooms')->where('tenant_id', $test->id)->value('id');
@@ -493,7 +494,7 @@ it('syncs a test instance from live, atomically replacing its data', function ()
     ]);
     DB::table('orders')->where('tenant_id', $live->id)->update(['total' => 9999]);
 
-    $response = $this->postJson("http://admin.localhost/api/central/tenants/{$live->id}/test-instance/sync")
+    $response = $this->postJson("/api/central/tenants/{$live->id}/test-instance/sync")
         ->assertOk()
         ->assertJsonPath('instance.last_synced_at', $test->refresh()->last_synced_at?->toISOString());
 
@@ -516,10 +517,10 @@ it('destroys a test instance without touching the live tenant', function () {
     $live = Tenant::factory()->create(['slug' => 'doomed']);
     seedLiveTenant($live);
 
-    $this->postJson("http://admin.localhost/api/central/tenants/{$live->id}/test-instance")->assertCreated();
+    $this->postJson("/api/central/tenants/{$live->id}/test-instance")->assertCreated();
     $test = Tenant::query()->where('slug', 'doomed-test')->first();
 
-    $this->deleteJson("http://admin.localhost/api/central/tenants/{$live->id}/test-instance")
+    $this->deleteJson("/api/central/tenants/{$live->id}/test-instance")
         ->assertOk();
 
     expect(Tenant::query()->withTrashed()->find($test->id))->toBeNull();
@@ -529,16 +530,16 @@ it('destroys a test instance without touching the live tenant', function () {
 
     // The live tenant is untouched and can spawn a fresh instance again.
     expect(DB::table('users')->where('tenant_id', $live->id)->count())->toBe(2);
-    $this->postJson("http://admin.localhost/api/central/tenants/{$live->id}/test-instance")->assertCreated();
+    $this->postJson("/api/central/tenants/{$live->id}/test-instance")->assertCreated();
 });
 
 it('lists all test instances with their live parent', function () {
     $live = Tenant::factory()->create(['slug' => 'listed']);
     seedLiveTenant($live);
 
-    $this->postJson("http://admin.localhost/api/central/tenants/{$live->id}/test-instance")->assertCreated();
+    $this->postJson("/api/central/tenants/{$live->id}/test-instance")->assertCreated();
 
-    $this->getJson('http://admin.localhost/api/central/test-instances')
+    $this->getJson('/api/central/test-instances')
         ->assertOk()
         ->assertJsonCount(1, 'instances')
         ->assertJsonPath('instances.0.environment', 'test')
@@ -549,9 +550,9 @@ it('shows a tenants test instance in tenant detail', function () {
     $live = Tenant::factory()->create(['slug' => 'showable']);
     seedLiveTenant($live);
 
-    $this->postJson("http://admin.localhost/api/central/tenants/{$live->id}/test-instance")->assertCreated();
+    $this->postJson("/api/central/tenants/{$live->id}/test-instance")->assertCreated();
 
-    $this->getJson("http://admin.localhost/api/central/tenants/{$live->id}/test-instance")
+    $this->getJson("/api/central/tenants/{$live->id}/test-instance")
         ->assertOk()
         ->assertJsonPath('instance.slug', 'showable-test');
 });

@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { authFile, fieldInput } from "./fixtures";
+import { authFile, fieldInput, appUrl } from "./fixtures";
 
 test.use({ storageState: authFile("manager") });
 
@@ -11,7 +11,7 @@ test("uploads a menu item photo and it shows on the POS grid", async ({ page }) 
   const itemName = `E2E Dish ${Date.now()}`;
 
   // "E2E Seed Category" is created once for the whole suite by seed-demo-data.setup.ts.
-  await page.goto("/menu");
+  await page.goto(appUrl("/menu"));
   await page.getByRole("button", { name: /new item/i }).click();
   const itemModal = page.locator(".modal-panel");
   await expect(itemModal.getByText(/new menu item/i)).toBeVisible();
@@ -28,7 +28,7 @@ test("uploads a menu item photo and it shows on the POS grid", async ({ page }) 
   await expect(itemModal).toBeHidden();
   await expect(page.getByText(itemName)).toBeVisible();
 
-  await page.goto("/pos");
+  await page.goto(appUrl("/pos"));
   const posCard = page.locator("button.card", { hasText: itemName });
   await expect(posCard).toBeVisible({ timeout: 10_000 });
   await expect(posCard.locator("img")).toHaveAttribute("src", /^data:image\/png/);

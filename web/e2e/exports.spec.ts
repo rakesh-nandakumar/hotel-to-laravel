@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { authFile } from "./fixtures";
+import { authFile, appUrl } from "./fixtures";
 
 test.use({ storageState: authFile("fullAdmin") });
 
@@ -7,7 +7,7 @@ test.describe("Exports", () => {
   test("daily report CSV export downloads a file", async ({ page }) => {
     // "/reports" is the report-picker grid — the Daily view (and its export
     // buttons) only renders at "/reports/daily".
-    await page.goto("/reports/daily");
+    await page.goto(appUrl("/reports/daily"));
     const [download] = await Promise.all([
       page.waitForEvent("download"),
       page.getByRole("button", { name: /export csv/i }).click(),
@@ -22,7 +22,7 @@ test.describe("Exports", () => {
     // next to this one, using printDocument()'s hidden-iframe approach.)
     // "/reports" is the report-picker grid — the Daily view (and its export
     // buttons) only renders at "/reports/daily".
-    await page.goto("/reports/daily");
+    await page.goto(appUrl("/reports/daily"));
     const [download] = await Promise.all([
       page.waitForEvent("download"),
       page.getByRole("button", { name: /download pdf/i }).click(),
@@ -31,7 +31,7 @@ test.describe("Exports", () => {
   });
 
   test("attendance CSV export downloads a file", async ({ page }) => {
-    await page.goto("/attendance");
+    await page.goto(appUrl("/attendance"));
     const [download] = await Promise.all([
       page.waitForEvent("download"),
       page.getByRole("button", { name: /^csv$/i }).click(),
@@ -40,7 +40,7 @@ test.describe("Exports", () => {
   });
 
   test("audit log CSV export downloads a file", async ({ page }) => {
-    await page.goto("/audit-log");
+    await page.goto(appUrl("/audit-log"));
     const [download] = await Promise.all([
       page.waitForEvent("download"),
       page.getByRole("button", { name: /export csv/i }).click(),

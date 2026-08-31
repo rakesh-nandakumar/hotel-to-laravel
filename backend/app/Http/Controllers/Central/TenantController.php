@@ -15,8 +15,8 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules\Password;
 
 /**
  * Tenant provisioning/management — the core of the "master control" panel.
@@ -146,15 +146,20 @@ class TenantController extends Controller
 
     /**
      * Regenerates the tenant owner's password (never-communicated by design —
-     * impersonation is the access path, see TenantProvisioning). The one-time
-     * password is returned here and nowhere else.
+     * impersonation is the access path, see TenantProvisioning). Defaults to
+     * "password" so operators can hand over a known one; the caller may
+     * override it. The password is returned here and nowhere else.
      */
     public function resetAdminPassword(Request $request, Tenant $tenant): JsonResponse
     {
         $admin = $this->ownerAdmin($tenant);
         abort_if($admin === null, 422, 'This tenant has no administrator user yet.');
 
-        $password = Str::random(14);
+        $data = $request->validate([
+            'password' => ['sometimes', 'string', Password::min(8)],
+        ]);
+
+        $password = $data['password'] ?? 'password';
 
         app(CurrentContext::class)->runForTenant($tenant->id, function () use ($admin, $password): void {
             $admin->update(['password' => $password, 'must_change_password' => true]);

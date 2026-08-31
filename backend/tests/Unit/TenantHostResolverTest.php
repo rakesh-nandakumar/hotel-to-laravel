@@ -3,10 +3,17 @@
 use App\Services\TenantHostResolver;
 use App\Support\HostContext;
 
+/**
+ * resolveFromSlug() is the primary identity (X-Tenant-Slug header / `tenant`
+ * query parameter) — most of this suite covers it. resolve() is the HOST
+ * fallback kept for the dual-mode window in which old {slug}.{base} URLs are
+ * still 301'd; its rules are tested below and deleted together with it at
+ * cutover.
+ */
 beforeEach(function () {
     // Relative mode by default — no pinned base domain.
     config()->set('tenancy.base_domain', null);
-    config()->set('tenancy.central_subdomain', 'admin');
+    config()->set('tenancy.central_prefix', 'admin');
     config()->set('tenancy.min_base_labels', 2);
 });
 
@@ -14,6 +21,28 @@ function resolveHost(string $host): HostContext
 {
     return app(TenantHostResolver::class)->resolve($host);
 }
+
+function resolveSlug(string $slug): HostContext
+{
+    return app(TenantHostResolver::class)->resolveFromSlug($slug);
+}
+
+it('resolves a bare slug to its tenant, normalised', function () {
+    expect(resolveSlug('wasana')->isTenant())->toBeTrue()
+        ->and(resolveSlug('wasana')->slug())->toBe('wasana')
+        ->and(resolveSlug('  Acme.  ')->slug())->toBe('acme')
+        ->and(resolveSlug('acme.')->slug())->toBe('acme');
+});
+
+it('never grants central from a slug — it fails closed instead', function () {
+    expect(resolveSlug(config('tenancy.central_prefix'))->isUnknown())->toBeTrue()
+        ->and(resolveSlug('admin')->isUnknown())->toBeTrue();
+});
+
+it('rejects an empty slug as unknown', function () {
+    expect(resolveSlug('')->isUnknown())->toBeTrue()
+        ->and(resolveSlug('   ')->isUnknown())->toBeTrue();
+});
 
 it('treats the bare base domain (apex) as central', function () {
     expect(resolveHost('vellixglobal.com')->isCentral())->toBeTrue()

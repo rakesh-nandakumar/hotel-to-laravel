@@ -24,12 +24,17 @@ abstract class TestCase extends BaseTestCase
         // loud on every scoped query (see TenantScope). Mirror production's
         // resolved-context behaviour: bind the demo tenant so console setup —
         // factories, helpers, seeders — stamps and reads rows exactly like a
-        // real request to {slug}.localhost would. Tests that need a different
-        // tenant override it with CurrentContext::setTenant() /
-        // runForTenant(); cross-tenant sweeps opt out with runWithoutTenant().
-        // Skipped for pure unit tests, which have no database.
+        // real request to /{slug}/… would, and give every request the same
+        // tenant's X-Tenant-Slug header (see IdentifyTenant) the way a browser
+        // at /default/… does, instead of relying on the host fallback and the
+        // demo subdomain. Tests that deliberately exercise host resolution,
+        // master control or another tenant clear it with
+        // $this->withoutHeader('X-Tenant-Slug'). Skipped for pure unit tests,
+        // which have no database.
         if (Schema::hasTable('tenants')) {
-            app(CurrentContext::class)->setTenant(Tenant::demo()->id);
+            $demo = Tenant::demo();
+            app(CurrentContext::class)->setTenant($demo->id);
+            $this->withHeader('X-Tenant-Slug', $demo->slug);
         }
     }
 }

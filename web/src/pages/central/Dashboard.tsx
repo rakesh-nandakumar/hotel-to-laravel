@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../../lib/api";
-import { tenantHost } from "../../lib/tenancy";
+import { tenantUrl } from "../../lib/tenancy";
 import { Card, Badge, SimpleTable, Stat, statusColor } from "../../components/ui";
 
 type Dashboard = {
@@ -60,7 +60,7 @@ export default function CentralDashboard() {
                 </Link>
               ),
             },
-            { key: "slug", label: "Subdomain", render: (t) => <span className="text-slate-500">{tenantHost(t.slug)}</span> },
+            { key: "slug", label: "URL", render: (t) => <span className="text-slate-500">{tenantUrl(t.slug)}</span> },
             { key: "status", label: "Status", render: (t) => <Badge color={statusColor(t.status)}>{t.status}</Badge> },
             { key: "environment", label: "Env", render: (t) => <Badge color={t.environment === "test" ? "purple" : "slate"}>{t.environment}</Badge> },
             { key: "users_count", label: "Users", align: "right" },

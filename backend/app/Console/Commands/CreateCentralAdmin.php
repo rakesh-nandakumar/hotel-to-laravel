@@ -60,7 +60,7 @@ class CreateCentralAdmin extends Command
         $this->components->info("Platform operator [{$admin->email}] created.");
 
         $base = config('tenancy.base_domain') ?: (string) parse_url(config('app.url'), PHP_URL_HOST);
-        $centralHost = config('tenancy.central_subdomain').'.'.$base;
+        $centralHost = config('tenancy.central_prefix').'.'.$base;
         $this->components->bulletList(["Sign in at https://{$centralHost}/login"]);
 
         return self::SUCCESS;

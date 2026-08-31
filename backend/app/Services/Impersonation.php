@@ -41,7 +41,13 @@ class Impersonation
             'user_id' => $user->id,
             'central_admin_id' => $centralAdmin->id,
             'token_hash' => hash('sha256', $plainToken),
-            'expires_at' => now()->addSeconds(self::TTL_SECONDS),
+            // UTC, not now(): IdentifyTenant sets the process default timezone
+            // to the CONSUMING request's tenant (see applyTenantTimezone()),
+            // which can differ from the CENTRAL (UTC) context this is minted
+            // in. Comparing two now()s taken under different default timezones
+            // against the same naive DB column made every token in a
+            // non-UTC tenant look expired on arrival.
+            'expires_at' => now('UTC')->addSeconds(self::TTL_SECONDS),
         ]);
 
         return ['url' => $this->landingUrl($tenant, $plainToken), 'user' => $user];
@@ -49,34 +55,19 @@ class Impersonation
 
     /**
      * Where the operator's browser is sent to redeem the token: always the
-     * tenant's own subdomain, which is what binds the resulting session to the
-     * right tenant (IdentifyTenant resolves it from that Host, and the token
-     * is refused anywhere else).
+     * tenant's own URL prefix — {frontend_url}/{slug}/impersonate/{token} —
+     * which is what binds the resulting session to the right tenant (the SPA
+     * reads its slug from that prefix and re-sends it as X-Tenant-Slug, and
+     * the token is refused anywhere else).
      *
-     * The subdomain is built RELATIVELY — {slug}.{base of the request's own
-     * host} — so a token minted on admin.vellixglobal.com lands on
-     * {slug}.vellixglobal.com, one minted on admin.localhost on
-     * {slug}.localhost, with no domain literal consulted anywhere.
-     *
-     * Locally the only difference from production is the port: with the dev
-     * fallback enabled the SPA is on Vite's, which a bare hostname doesn't
-     * carry, so it's bolted on here.
+     * FRONTEND_URL is the single SPA origin (dev: Vite on localhost:5173,
+     * prod: https://htl.vellixglobal.com), so the same code mints a link that
+     * works identically in development and production — no dev-only port or
+     * ?tenant= hand-off anymore.
      */
     private function landingUrl(Tenant $tenant, string $plainToken): string
     {
-        $host = $tenant->slug.'.'.app(TenantHostResolver::class)->baseOf((string) request()->getHost());
-        $scheme = request()?->getScheme() ?? 'https';
-
-        if (config('tenancy.dev_fallback')) {
-            $frontend = parse_url((string) config('app.frontend_url')) ?: [];
-            $scheme = $frontend['scheme'] ?? $scheme;
-
-            if (isset($frontend['port'])) {
-                $host .= ':'.$frontend['port'];
-            }
-        }
-
-        return "{$scheme}://{$host}/impersonate/{$plainToken}";
+        return rtrim((string) config('app.frontend_url'), '/')."/{$tenant->slug}/impersonate/{$plainToken}";
     }
 
     /**
@@ -90,14 +81,14 @@ class Impersonation
             ->where('token_hash', hash('sha256', $plainToken))
             ->where('tenant_id', $resolvedTenantId)
             ->whereNull('used_at')
-            ->where('expires_at', '>', now())
+            ->where('expires_at', '>', now('UTC'))
             ->first();
 
         if (! $token) {
             return null;
         }
 
-        $token->update(['used_at' => now()]);
+        $token->update(['used_at' => now('UTC')]);
 
         return User::query()->withoutTenantScope()->find($token->user_id);
     }

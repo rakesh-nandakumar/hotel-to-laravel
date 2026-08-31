@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { authFile, collectConsoleErrors } from "./fixtures";
+import { authFile, collectConsoleErrors, appUrl } from "./fixtures";
 
 test.use({ storageState: authFile("fullAdmin") });
 
@@ -51,7 +51,7 @@ const ROUTES: [string, string | RegExp][] = [
 for (const [path, heading] of ROUTES) {
   test(`${path} renders without crashing`, async ({ page }) => {
     const errors = await collectConsoleErrors(page, async () => {
-      await page.goto(path);
+      await page.goto(appUrl(path));
       await expect(page.getByRole("heading", { level: 1 })).toContainText(heading, { timeout: 10_000 });
       // Let any deferred fetches/effects settle so a delayed crash still counts.
       await page.waitForLoadState("networkidle");

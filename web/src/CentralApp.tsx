@@ -18,15 +18,15 @@ function Guard({ children }: { children: ReactNode }) {
 
 /**
  * The "master control" SPA tree — a wholly separate app from the tenant-facing
- * App.tsx (see lib/centralAuth.tsx). Mounted only on the central host (the
- * apex or {central_subdomain}.{base}), decided by the /api/host-context boot
- * gate in main.tsx — the panel owns the whole origin, so its routes sit at "/".
+ * App.tsx (see lib/centralAuth.tsx). basename is the reserved central prefix
+ * ("/admin"); the boot gate in main.tsx picks it, and every route/link/
+ * navigate lives under it. Mounted when /api/host-context resolved central.
  */
-export default function CentralApp() {
+export default function CentralApp({ basename }: { basename: string }) {
   return (
     <CentralAuthProvider>
       <ToastProvider>
-        <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <BrowserRouter basename={basename} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
           <Routes>
             <Route path="/login" element={<CentralLogin />} />
             <Route path="/" element={<Guard><CentralDashboard /></Guard>} />

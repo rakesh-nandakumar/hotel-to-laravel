@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { History, Search, ChevronDown, Globe, Info, Download } from "lucide-react";
 import { useFetch, fmtDateTime } from "../lib/util";
 import { Badge, Card, Empty, ErrorText, Field, Pagination } from "../components/ui";
-import { API_ORIGIN } from "../lib/api";
+import { API_ORIGIN, apiHeaders } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import clsx from "clsx";
 
@@ -82,7 +82,7 @@ export default function AuditLog() {
 
   const exportCsv = async () => {
     setExportError("");
-    const res = await fetch(`${API_ORIGIN}/api/audit-logs/export?${query}`, { credentials: "include", headers: { Accept: "text/csv" } });
+    const res = await fetch(`${API_ORIGIN}/api/audit-logs/export?${query}`, { credentials: "include", headers: apiHeaders({ Accept: "text/csv" }) });
     if (!res.ok) {
       setExportError("Could not export CSV");
       return;

@@ -51,6 +51,12 @@ use Database\Seeders\PermissionsAndRolesSeeder;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
 
+beforeEach(function () {
+    // The API-adjacent assertions here ride absolute tenant URLs — the
+    // TestCase's default X-Tenant-Slug header would override them.
+    $this->withoutHeader('X-Tenant-Slug');
+});
+
 /**
  * Regression suite for the tenant-isolation work on the business-domain
  * tables (guests, customers, reservations, orders, menu items, …). Until the
@@ -296,16 +302,19 @@ it('a tenant user only sees their own users and guests through the API', functio
     TenantModule::create(['tenant_id' => $tenantA->id, 'module_key' => ModuleCatalog::HOTEL_OPERATIONS, 'is_enabled' => true]);
 
     CurrentContext::simulateWebRequest(function () {
-        $this->postJson('http://acme.localhost/api/login', [
+        // Tenancy identity rides the prefix header now (the SPA at /acme/…
+        // reads it from its own path) — the requests below wrap it like
+        // every tenant request does.
+        $this->postJson('/api/login', [
             'email' => 'a@acme.test',
             'password' => 'password',
-        ])->assertOk();
+        ], ['X-Tenant-Slug' => 'acme'])->assertOk();
 
-        $users = $this->getJson('http://acme.localhost/api/user-management/users')->assertOk()->json('users');
+        $users = $this->getJson('/api/user-management/users', ['X-Tenant-Slug' => 'acme'])->assertOk()->json('users');
         expect($users['total'])->toBe(1);
         expect(array_column($users['data'], 'email'))->toBe(['a@acme.test']);
 
-        $guests = $this->getJson('http://acme.localhost/api/guests')->assertOk()->json('guests');
+        $guests = $this->getJson('/api/guests', ['X-Tenant-Slug' => 'acme'])->assertOk()->json('guests');
         expect(array_column($guests, 'name'))->toBe(['Guest of Acme']);
     });
 
