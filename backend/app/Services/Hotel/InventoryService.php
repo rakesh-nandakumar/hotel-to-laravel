@@ -355,11 +355,9 @@ class InventoryService
              * Inventory status and manual sold-out status are separate.
              */
             $affected = RecipeItem::query()
+                ->whereIn('ingredient_id', $ingredientIds)
                 ->whereHas('menuItem', function ($q) {
                     $q->where('active', true);
-                })
-                ->whereHas('recipe', function ($q) use ($ingredientIds) {
-                    $q->whereIn('ingredient_id', $ingredientIds);
                 })
                 ->with([
                     'ingredient:id,stock_qty,active',
