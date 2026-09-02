@@ -41,34 +41,54 @@ class MenuItemController extends Controller
                         'recipe.ingredient',
                         'stockIngredient',
                     ]),
-                'products' => fn ($q) => $q->products()->active()->where('stock_qty', '>', 0)
-                    ->withSum('expiredBatches as expired_qty', 'qty')
-                    ->orderBy('name'),
+                // Load all active products — usable stock / expiry is computed below
+                // via InventoryService (stock_qty alone can still be > 0 when all batches expired).
+                'products' => fn ($q) => $q->products()->active()->orderBy('name'),
             ])
             ->get();
 
-        // Batched (not per-item) live recheck — hides anything whose recipe or
-        // direct-stock ingredient has since expired or gone inactive, even
-        // before the (hourly) sold_out sweep catches up.
-        $blocked = $this->inventory->unavailableMenuItemIds($categories->flatMap(fn (MenuCategory $c) => $c->items));
-
         // Fold item-scoped + category-scoped add-ons into one `addons` list per
-        // item, drop blocked items, and never surface expired product quantity.
-        $categories->each(function (MenuCategory $category) use ($blocked) {
-            $available = $category->items->reject(fn (MenuItem $item) => $blocked->contains($item->id))->values();
-            $available->each(function (MenuItem $item) {
+        // item, attach runtime availability for items and products, and never
+        // rely on raw stock_qty alone for product availability.
+        $categories->each(function (MenuCategory $category) {
+            $category->items->each(function (MenuItem $item) {
+                // canMake needs recipe / stockIngredient — compute before unsetting them.
+                $availability = $this->inventory->canMake($item);
+
+                $item->setAttribute(
+                    'available',
+                    $item->active && ! $item->sold_out && $availability['ok']
+                );
+
+                if ($item->active && ! $item->sold_out && ! $availability['ok']) {
+                    $item->setAttribute(
+                        'availability_reason',
+                        collect($availability['missing'])->contains(
+                            fn ($message) => str_contains(strtolower($message), 'expired')
+                        )
+                            ? 'ingredient_expired'
+                            : 'out_of_stock'
+                    );
+                } else {
+                    $item->setAttribute('availability_reason', null);
+                }
+
                 $item->setAttribute('addons', $item->linkedAddOns->concat($item->categoryAddOns)->unique('id')->values());
                 $item->unsetRelation('linkedAddOns')->unsetRelation('categoryAddOns')->unsetRelation('recipe')->unsetRelation('stockIngredient');
             });
-            $category->setRelation('items', $available);
 
-            $category->setRelation(
-                'products',
-                $category->products
-                    ->each(fn (Ingredient $p) => $p->setAttribute('stock_qty', max(0, $p->stock_qty - (float) $p->expired_qty)))
-                    ->filter(fn (Ingredient $p) => $p->stock_qty > 0)
-                    ->values()
-            );
+            $category->products->each(function (Ingredient $product) {
+                $usableStock = $this->inventory->usableStock($product);
+
+                $product->setAttribute('available', $usableStock > 0);
+
+                $product->setAttribute(
+                    'availability_reason',
+                    $usableStock > 0
+                        ? null
+                        : ($product->stock_qty > 0 ? 'expired' : 'out_of_stock')
+                );
+            });
         });
 
         return response()->json(['categories' => $categories]);
@@ -91,23 +111,36 @@ class MenuItemController extends Controller
             $query->search($term);
         }
 
+        // No cache — `available` is live inventory state and must not be served stale.
         if ($request->has('page')) {
-            $cacheKey = 'menu_items.index.'.md5($request->fullUrl());
-            $payload = $this->rememberMenuItems($cacheKey, 300, function () use ($query, $request) {
-                return [
-                    'menu_items' => $query->paginate($request->integer('page_size', 25))->withQueryString(),
-                    'stats' => [
-                        'on_menu' => MenuItem::query()->where('active', true)->count(),
-                        'sold_out' => MenuItem::query()->where('active', true)->where('sold_out', true)->count(),
-                        'archived' => MenuItem::query()->where('active', false)->count(),
-                    ],
-                ];
-            });
+            $paginator = $query
+                ->paginate($request->integer('page_size', 25))
+                ->withQueryString();
 
-            return response()->json($payload);
+            $paginator->setCollection(
+                $this->withAvailability($paginator->getCollection())
+            );
+
+            return response()->json([
+                'menu_items' => $paginator,
+                'stats' => [
+                    'on_menu' => MenuItem::query()->where('active', true)->count(),
+                    'sold_out' => MenuItem::query()
+                        ->where('active', true)
+                        ->where('sold_out', true)
+                        ->count(),
+                    'archived' => MenuItem::query()
+                        ->where('active', false)
+                        ->count(),
+                ],
+            ]);
         }
 
-        return response()->json(['menu_items' => $query->get()]);
+        $items = $query->get();
+
+        return response()->json([
+            'menu_items' => $this->withAvailability($items),
+        ]);
     }
 
     public function store(StoreMenuItemRequest $request): JsonResponse
@@ -233,7 +266,7 @@ class MenuItemController extends Controller
             ])
             ->where('active', true)
             ->where('sold_out', false)
-            ->select('id', 'name', 'price', 'item_no', 'description', 'image', 'menu_category_id', 'stock_ingredient_id')
+            ->select('id', 'name', 'price', 'item_no', 'description', 'image', 'menu_category_id', 'stock_ingredient_id', 'active', 'sold_out')
             ->orderBy('item_no')
             ->orderBy('name');
 
@@ -249,13 +282,13 @@ class MenuItemController extends Controller
             });
         }
 
-        $candidates = $query->limit($limit)->get();
-        // Live recheck (see full()) — never list an item whose recipe/direct
-        // stock ingredient has expired or gone inactive since the last sweep.
-        $blocked = $this->inventory->unavailableMenuItemIds($candidates);
-
-        $items = $candidates->reject(fn (MenuItem $item) => $blocked->contains($item->id))->values()->map(function (MenuItem $item) {
-            $addOns = $item->linkedAddOns->concat($item->categoryAddOns)->unique('id')->values();
+        $items = $this->withAvailability(
+            $query->limit($limit)->get()
+        )->map(function (MenuItem $item) {
+            $addOns = $item->linkedAddOns
+                ->concat($item->categoryAddOns)
+                ->unique('id')
+                ->values();
 
             return [
                 'id' => $item->id,
@@ -266,6 +299,10 @@ class MenuItemController extends Controller
                 'image' => $item->image,
                 'menu_category_id' => $item->menu_category_id,
                 'stock_ingredient_id' => $item->stock_ingredient_id,
+
+                'available' => $item->available,
+                'availability_reason' => $item->availability_reason,
+
                 'modifier_groups' => $item->modifierGroups->map(fn ($g) => [
                     'id' => $g->id,
                     'name' => $g->name,
@@ -277,6 +314,7 @@ class MenuItemController extends Controller
                         'price_delta' => $m->price_delta,
                     ])->values(),
                 ])->values(),
+
                 'addons' => $addOns->map(fn ($a) => [
                     'id' => $a->id,
                     'name' => $a->name,
@@ -292,25 +330,110 @@ class MenuItemController extends Controller
     {
         $soldOut = $request->boolean('sold_out');
 
+        /*
+         * Only when STAFF is trying to turn SOLD OUT OFF
+         * do we verify inventory.
+         */
         if (! $soldOut) {
             $check = $this->inventory->canMake($menuItem);
+
             if (! $check['ok']) {
                 throw ValidationException::withMessages([
-                    'sold_out' => 'Cannot mark available — insufficient raw materials: '.implode('; ', $check['missing']).'. Restock first.',
+                    'sold_out' => 'Cannot mark available — insufficient raw materials: '
+                        .implode('; ', $check['missing'])
+                        .'. Restock first.',
                 ]);
             }
         }
 
-        $menuItem->update(['sold_out' => $soldOut]);
+        /*
+         * This is the legitimate manual sold_out update.
+         */
+        $menuItem->update([
+            'sold_out' => $soldOut,
+        ]);
 
-        AuditLog::record('menu_item.sold_out_toggled', $menuItem, ['sold_out' => $soldOut, 'name' => $menuItem->name]);
-        broadcast(new RealtimeUpdate(RealtimeEvent::MENU, [
-            'sold_out' => $soldOut ? [$menuItem->name] : [],
-            'available' => $soldOut ? [] : [$menuItem->name],
-        ]));
+        AuditLog::record(
+            'menu_item.sold_out_toggled',
+            $menuItem,
+            [
+                'sold_out' => $soldOut,
+                'name' => $menuItem->name,
+            ]
+        );
+
+        broadcast(new RealtimeUpdate(
+            RealtimeEvent::MENU,
+            [
+                'sold_out' => $soldOut
+                    ? [$menuItem->name]
+                    : [],
+                'available' => $soldOut
+                    ? []
+                    : [$menuItem->name],
+            ]
+        ));
+
         $this->flushMenuItemsCache();
 
-        return response()->json(['message' => 'Item availability updated.', 'menu_item' => $menuItem]);
+        return response()->json([
+            'message' => 'Item availability updated.',
+            'menu_item' => $menuItem,
+        ]);
+    }
+
+    /**
+     * Add runtime inventory availability to menu items.
+     *
+     * `sold_out` remains the manual/operational sold-out flag.
+     * `available` is calculated from actual usable inventory,
+     * including batch expiry.
+     */
+    private function withAvailability($items)
+    {
+        return $items->map(function (MenuItem $item) {
+            $item->loadMissing([
+                'recipe.ingredient',
+                'stockIngredient',
+            ]);
+
+            $availability = $this->inventory->canMake($item);
+
+            $item->setAttribute(
+                'available',
+                $item->active
+                    && ! $item->sold_out
+                    && $availability['ok']
+            );
+
+            if (
+                $item->active
+                && ! $item->sold_out
+                && ! $availability['ok']
+            ) {
+                $reason = collect($availability['missing'])->contains(
+                    fn ($message) =>
+                        str_contains(
+                            strtolower($message),
+                            'expired'
+                        )
+                )
+                    ? 'ingredient_expired'
+                    : 'out_of_stock';
+
+                $item->setAttribute(
+                    'availability_reason',
+                    $reason
+                );
+            } else {
+                $item->setAttribute(
+                    'availability_reason',
+                    null
+                );
+            }
+
+            return $item;
+        });
     }
 
     /**

@@ -18,10 +18,34 @@ type AddOn = {
   links: AddOnLink[];
 };
 type Item = {
-  id: number; item_no?: number | null; name: string; price: number; sold_out: boolean; active: boolean; description: string;
-  image?: string | null; stock_ingredient_id?: number | null; stock_ingredient?: { id: number; name: string; unit: string } | null;
-  category: { id: number; name: string };
-  recipe: { ingredient_id: number; qty: number; ingredient: { name: string; unit: string } }[];
+  id: number;
+  item_no?: number | null;
+  name: string;
+  price: number;
+  sold_out: boolean;
+  active: boolean;
+  available?: boolean;
+  availability_reason?: "out_of_stock" | "ingredient_expired" | string | null;
+  description: string;
+  image?: string | null;
+  stock_ingredient_id?: number | null;
+  stock_ingredient?: {
+    id: number;
+    name: string;
+    unit: string;
+  } | null;
+  category: {
+    id: number;
+    name: string;
+  };
+  recipe: {
+    ingredient_id: number;
+    qty: number;
+    ingredient: {
+      name: string;
+      unit: string;
+    };
+  }[];
   modifier_groups: ModifierGroup[];
 };
 
@@ -158,15 +182,32 @@ export default function MenuAdmin() {
             </div>
             <span className="text-sm font-extrabold text-brand-700">{lkr(i.price)}</span>
             {i.active ? (
-              canSoldOut ? (
+              i.sold_out ? (
+                canSoldOut ? (
+                  <button
+                    className="rounded-full bg-red-100 px-2.5 py-1 text-xs font-bold text-red-700 transition hover:bg-red-200"
+                    onClick={() => toggleSoldOut(i)}
+                  >
+                    SOLD OUT
+                  </button>
+                ) : (
+                  <Badge color="red">SOLD OUT</Badge>
+                )
+              ) : i.available === false ? (
+                <Badge color="amber">
+                  {i.availability_reason === "ingredient_expired"
+                    ? "Ingredient expired"
+                    : "Out of stock"}
+                </Badge>
+              ) : canSoldOut ? (
                 <button
-                  className={clsx("rounded-full px-2.5 py-1 text-xs font-bold transition", i.sold_out ? "bg-red-100 text-red-700 hover:bg-red-200" : "bg-emerald-100 text-emerald-700 hover:bg-emerald-200")}
+                  className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-bold text-emerald-700 transition hover:bg-emerald-200"
                   onClick={() => toggleSoldOut(i)}
                 >
-                  {i.sold_out ? "SOLD OUT" : "Available"}
+                  Available
                 </button>
               ) : (
-                <Badge color={i.sold_out ? "red" : "green"}>{i.sold_out ? "SOLD OUT" : "Available"}</Badge>
+                <Badge color="green">Available</Badge>
               )
             ) : (
               canEdit && (
@@ -313,6 +354,20 @@ function ItemEditor({ item, cats, ingredients, onClose }: { item: Item | null; c
 
   const save = async () => {
     setError("");
+
+    const invalidRecipe = recipe.some((r) => {
+      if (!r.ingredientId) return false;
+
+      const qty = Number(r.qty);
+
+      return !r.qty.trim() || !Number.isFinite(qty) || qty <= 0;
+    });
+
+    if (invalidRecipe) {
+      setError("Each selected ingredient requires a quantity greater than 0.");
+      return;
+    }
+
     const body = {
       name: f.name.trim(),
       menu_category_id: Number(f.categoryId),
@@ -373,11 +428,62 @@ function ItemEditor({ item, cats, ingredients, onClose }: { item: Item | null; c
         <div className="space-y-1.5">
           {recipe.map((r, i) => (
             <div key={i} className="flex gap-2">
-              <select className="input" value={r.ingredientId} onChange={(e) => setRecipe(recipe.map((x, j) => (j === i ? { ...x, ingredientId: e.target.value } : x)))}>
+              <select
+                className="input"
+                value={r.ingredientId}
+                onChange={(e) => setRecipe(recipe.map((x, j) => (j === i ? { ...x, ingredientId: e.target.value } : x)))}
+              >
                 <option value="">Ingredient…</option>
-                {ingredients.map((ing) => <option key={ing.id} value={ing.id}>{ing.name} ({ing.unit})</option>)}
+                {ingredients
+                  .filter(
+                    (ing) =>
+                      !recipe.some(
+                        (existing, j) =>
+                          j !== i &&
+                          existing.ingredientId === String(ing.id)
+                      )
+                  )
+                  .map((ing) => (
+                    <option key={ing.id} value={ing.id}>
+                      {ing.name} ({ing.unit})
+                    </option>
+                  ))}
               </select>
-              <input className="input !w-28" placeholder="Qty" value={r.qty} onChange={(e) => setRecipe(recipe.map((x, j) => (j === i ? { ...x, qty: e.target.value } : x)))} />
+
+              <div className="flex flex-col">
+                <input
+                  className={`input !w-28 ${
+                    r.ingredientId &&
+                    (
+                      !r.qty.trim() ||
+                      !Number.isFinite(Number(r.qty)) ||
+                      Number(r.qty) <= 0
+                    )
+                      ? "border-red-500 focus:border-red-500 focus:ring-red-500"
+                      : ""
+                  }`}
+                  placeholder="Qty"
+                  value={r.qty}
+                  onChange={(e) =>
+                    setRecipe(
+                      recipe.map((x, j) =>
+                        j === i ? { ...x, qty: e.target.value } : x
+                      )
+                    )
+                  }
+                />
+                {r.ingredientId &&
+                  (
+                    !r.qty.trim() ||
+                    !Number.isFinite(Number(r.qty)) ||
+                    Number(r.qty) <= 0
+                  ) && (
+                  <span className="mt-1 text-xs text-red-500">
+                    Qty must be greater than 0
+                  </span>
+                )}
+              </div>
+
               <button className="btn-ghost !px-2" onClick={() => setRecipe(recipe.filter((_, j) => j !== i))}>✕</button>
             </div>
           ))}

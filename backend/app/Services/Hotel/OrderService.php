@@ -104,11 +104,13 @@ class OrderService
 
             if (isset($line['product_id'])) {
                 $product = $products->get($line['product_id']);
-                if (! $product || ! $product->active) {
-                    throw ValidationException::withMessages(['items' => 'Product not found.']);
-                }
-                if ($product->sellableQty() <= 0) {
-                    throw ValidationException::withMessages(['items' => "\"{$product->name}\" is out of stock."]);
+                $usableStock = $product
+                    ? $this->inventory->usableStock($product)
+                    : 0;
+                if (! $product || ! $product->active || $usableStock <= 0) {
+                    throw ValidationException::withMessages([
+                        'items' => '"'.($product->name ?? 'product').'" is unavailable.',
+                    ]);
                 }
                 if (empty($product->selling_price)) {
                     throw ValidationException::withMessages(['items' => "\"{$product->name}\" has no selling price set. Set a selling price on the product before ordering."]);
@@ -123,6 +125,14 @@ class OrderService
             }
             if ($menuItem->sold_out) {
                 throw ValidationException::withMessages(['items' => "\"{$menuItem->name}\" is marked sold out."]);
+            }
+
+            $availability = $this->inventory->canMake($menuItem, (int) $line['qty']);
+            if (! $availability['ok']) {
+                throw ValidationException::withMessages([
+                    'items' => '"'.$menuItem->name.'" is unavailable: '
+                        .implode(', ', $availability['missing']),
+                ]);
             }
         }
 
@@ -233,16 +243,40 @@ class OrderService
 
             if (isset($line['product_id'])) {
                 $product = $products->get($line['product_id']);
-                if (! $product || ! $product->active || $product->sellableQty() <= 0) {
-                    throw ValidationException::withMessages(['items' => '"'.($product->name ?? 'product').'" is unavailable.']);
+
+                if (! $product || ! $product->active) {
+                    throw ValidationException::withMessages([
+                        'items' => '"'.($product->name ?? 'product').'" is unavailable.',
+                    ]);
+                }
+
+                if ($this->inventory->usableStock($product) <= 0) {
+                    throw ValidationException::withMessages([
+                        'items' => "\"{$product->name}\" is unavailable.",
+                    ]);
                 }
 
                 continue;
             }
 
             $menuItem = $menuItems->get($line['menu_item_id']);
-            if (! $menuItem || $menuItem->sold_out) {
-                throw ValidationException::withMessages(['items' => '"'.($menuItem->name ?? 'item').'" is unavailable.']);
+
+            if (! $menuItem || ! $menuItem->active || $menuItem->sold_out) {
+                throw ValidationException::withMessages([
+                    'items' => '"'.($menuItem->name ?? 'item').'" is unavailable.',
+                ]);
+            }
+
+            $availability = $this->inventory->canMake(
+                $menuItem,
+                (int) $line['qty']
+            );
+
+            if (! $availability['ok']) {
+                throw ValidationException::withMessages([
+                    'items' => "\"{$menuItem->name}\" is unavailable: "
+                        .implode(', ', $availability['missing']),
+                ]);
             }
         }
 
@@ -880,12 +914,16 @@ class OrderService
     }
 
     /**
-     * @param  Collection<int, MenuItem>  $menuItems
-     * @param  Collection<int, AddOn>  $addOns
-     * @param  Collection<int, Ingredient>  $products
+     * Inventory failure must NOT automatically mark a menu item SOLD OUT.
+     *
+     * `sold_out` is a manual staff/chef override only.
      */
-    private function markSoldOutAfterFailure(InsufficientStockException $e, $menuItems, $addOns, $products): never
-    {
+    private function markSoldOutAfterFailure(
+        InsufficientStockException $e,
+        $menuItems,
+        $addOns,
+        $products
+    ): never {
         if ($e->addOnId || $e->productId) {
             throw ValidationException::withMessages([
                 'items' => $e->getMessage().' can\'t be made right now.',
@@ -893,11 +931,9 @@ class OrderService
         }
 
         $name = $menuItems->get($e->menuItemId)?->name ?? 'Item';
-        MenuItem::query()->where('id', $e->menuItemId)->update(['sold_out' => true]);
-        broadcast(new RealtimeUpdate(RealtimeEvent::MENU, ['sold_out' => [$name]]));
 
         throw ValidationException::withMessages([
-            'items' => $e->getMessage().' — "'.$name.'" is now marked SOLD OUT.',
+            'items' => $e->getMessage().' — "'.$name.'" can\'t be made right now.',
         ]);
     }
 }

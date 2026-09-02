@@ -35,22 +35,90 @@ class InventoryService
     {
         $recipe = $menuItem->recipe()->with('ingredient')->get();
 
+        // Recipe-less menu item with direct stock ingredient.
         if ($recipe->isEmpty() && $menuItem->stock_ingredient_id && $menuItem->stockIngredient) {
             $ingredient = $menuItem->stockIngredient;
-            $available = $ingredient->sellableQty();
+            $usableStock = $this->usableStock($ingredient);
 
-            return $available < $portions
-                ? ['ok' => false, 'missing' => ["{$ingredient->name} (needs {$portions}{$ingredient->unit}, has {$available}{$ingredient->unit})"]]
-                : ['ok' => true, 'missing' => []];
+            if ($usableStock < $portions) {
+                if ($usableStock > 0) {
+                    $reason = "{$ingredient->name} has only {$usableStock}{$ingredient->unit} usable stock";
+                } elseif ($ingredient->stock_qty > 0) {
+                    $reason = "{$ingredient->name} is expired";
+                } else {
+                    $reason = "{$ingredient->name} is out of stock";
+                }
+
+                return [
+                    'ok' => false,
+                    'missing' => [$reason],
+                ];
+            }
+
+            return ['ok' => true, 'missing' => []];
         }
 
         $missing = $recipe
-            ->filter(fn ($r) => $r->ingredient->sellableQty() < $r->qty * $portions)
-            ->map(fn ($r) => "{$r->ingredient->name} (needs ".($r->qty * $portions)."{$r->ingredient->unit}, has {$r->ingredient->sellableQty()}{$r->ingredient->unit})")
+            ->filter(function ($recipeItem) use ($portions) {
+                $usableStock = $this->usableStock($recipeItem->ingredient);
+
+                return $usableStock < ($recipeItem->qty * $portions);
+            })
+            ->map(function ($recipeItem) use ($portions) {
+                $ingredient = $recipeItem->ingredient;
+                $needed = $recipeItem->qty * $portions;
+                $usableStock = $this->usableStock($ingredient);
+
+                if ($usableStock <= 0) {
+                    if ($ingredient->stock_qty > 0) {
+                        return "{$ingredient->name} is expired";
+                    }
+
+                    return "{$ingredient->name} is out of stock";
+                }
+
+                return "{$ingredient->name} (needs {$needed}{$ingredient->unit}, has {$usableStock}{$ingredient->unit} usable)";
+            })
             ->values()
             ->all();
 
-        return ['ok' => $missing === [], 'missing' => $missing];
+        return [
+            'ok' => $missing === [],
+            'missing' => $missing,
+        ];
+    }
+
+    /**
+     * Return stock that is actually usable for sale.
+     *
+     * - Unbatched stock (stock_qty not covered by any batch) is treated as usable
+     *   because it has no expiry information.
+     * - Batch-tracked stock only counts positive, non-expired batches.
+     */
+    public function usableStock(Ingredient $ingredient): float
+    {
+        $today = now()->startOfDay();
+
+        $stockQty = max(0, (float) $ingredient->stock_qty);
+
+        // Total quantity currently represented by batches.
+        $batchQty = (float) $ingredient->batches()->sum('qty');
+
+        // Any stock_qty not represented by a batch is unbatched stock.
+        // Unbatched stock has no expiry information, so it remains usable.
+        $unbatchedQty = max(0, $stockQty - $batchQty);
+
+        // Batch-tracked usable stock: positive, non-expired batches only.
+        $usableBatchQty = (float) $ingredient->batches()
+            ->where('qty', '>', 0)
+            ->where(function ($query) use ($today) {
+                $query
+                    ->whereNull('expiry_date')
+                    ->orWhereDate('expiry_date', '>=', $today);
+            })
+            ->sum('qty');
+
+        return $unbatchedQty + $usableBatchQty;
     }
 
     /**
@@ -240,68 +308,125 @@ class InventoryService
     }
 
     /**
-     * After deductions: auto-mark as sold out any active item sharing these
-     * ingredients that can no longer make a single portion — recipe-based
-     * items, unit-stocked (direct-ingredient) items, and products.
+     * Report menu items that became unavailable because of inventory.
      *
-     * Products have no `sold_out` column to flip — availability is purely
-     * `stock_qty > 0`, computed at read time — so an out-of-stock product is
-     * only reported (for the realtime broadcast), never persisted here.
+     * IMPORTANT:
+     * This method NEVER changes MenuItem::sold_out.
+     *
+     * `sold_out` is a manual staff/chef override.
+     * Inventory availability is calculated live using usableStock().
      *
      * @param  list<int>  $menuItemIds
      * @param  list<int>  $addOnIds
      * @param  list<int>  $productIds
-     * @return list<string> names newly unavailable
+     * @return list<string> names that are currently unavailable
      */
-    public function autoSoldOutSweep(array $menuItemIds, array $addOnIds = [], array $productIds = []): array
-    {
-        $ingredientIds = RecipeItem::query()->whereIn('menu_item_id', $menuItemIds)->pluck('ingredient_id');
-        if ($addOnIds !== []) {
-            $ingredientIds = $ingredientIds->merge(AddOn::query()->whereIn('id', $addOnIds)->whereNotNull('stock_ingredient_id')->pluck('stock_ingredient_id'));
-        }
-        $ingredientIds = $ingredientIds->unique()->values();
+    public function autoSoldOutSweep(
+        array $menuItemIds,
+        array $addOnIds = [],
+        array $productIds = []
+    ): array {
+        $ingredientIds = RecipeItem::query()
+            ->whereIn('menu_item_id', $menuItemIds)
+            ->pluck('ingredient_id');
 
-        $short = [];
+        if ($addOnIds !== []) {
+            $ingredientIds = $ingredientIds
+                ->merge(
+                    AddOn::query()
+                        ->whereIn('id', $addOnIds)
+                        ->whereNotNull('stock_ingredient_id')
+                        ->pluck('stock_ingredient_id')
+                );
+        }
+
+        $ingredientIds = $ingredientIds
+            ->unique()
+            ->values();
+
+        $unavailable = [];
 
         if ($ingredientIds->isNotEmpty()) {
+
+            /*
+             * Recipe menu items.
+             *
+             * We intentionally DO NOT filter by sold_out here.
+             * Inventory status and manual sold-out status are separate.
+             */
             $affected = RecipeItem::query()
-                ->whereHas('menuItem', fn ($q) => $q->where('active', true)->where('sold_out', false)
-                    ->whereHas('recipe', fn ($q2) => $q2->whereIn('ingredient_id', $ingredientIds)))
-                ->with(['ingredient:id,stock_qty,active', 'menuItem:id,name'])
+                ->whereHas('menuItem', function ($q) {
+                    $q->where('active', true);
+                })
+                ->whereHas('recipe', function ($q) use ($ingredientIds) {
+                    $q->whereIn('ingredient_id', $ingredientIds);
+                })
+                ->with([
+                    'ingredient:id,stock_qty,active',
+                    'menuItem:id,name,sold_out',
+                ])
                 ->get();
 
-            // Unit-stocked menu items (no recipe) — can't fulfil a single unit any more.
+            /*
+             * Direct-stock menu items.
+             */
             $direct = MenuItem::query()
-                ->where('active', true)->where('sold_out', false)
+                ->where('active', true)
                 ->whereIn('stock_ingredient_id', $ingredientIds)
-                ->with('stockIngredient:id,stock_qty,active')
+                ->with([
+                    'stockIngredient:id,stock_qty,active',
+                ])
                 ->get();
 
             foreach ($affected as $recipeItem) {
-                if ($recipeItem->ingredient->sellableQty() < $recipeItem->qty) {
-                    $short[$recipeItem->menu_item_id] = $recipeItem->menuItem->name;
+                if (! $recipeItem->ingredient) {
+                    continue;
+                }
+
+                $usableStock = $this->usableStock($recipeItem->ingredient);
+
+                if ($usableStock < $recipeItem->qty) {
+                    $unavailable[$recipeItem->menu_item_id] =
+                        $recipeItem->menuItem->name;
                 }
             }
+
             foreach ($direct as $item) {
-                if ($item->stockIngredient && $item->stockIngredient->sellableQty() < 1) {
-                    $short[$item->id] = $item->name;
+                if (! $item->stockIngredient) {
+                    continue;
+                }
+
+                if ($this->usableStock($item->stockIngredient) < 1) {
+                    $unavailable[$item->id] = $item->name;
                 }
             }
         }
 
-        $names = array_values($short);
-        if ($short !== []) {
-            MenuItem::query()->whereIn('id', array_keys($short))->update(['sold_out' => true]);
-        }
-
+        /*
+         * Products do not have a MenuItem::sold_out flag.
+         * Their availability is purely based on usable stock.
+         */
         if ($productIds !== []) {
-            $outOfStock = Ingredient::query()->whereIn('id', $productIds)->where('active', true)->get()
-                ->filter(fn (Ingredient $p) => $p->sellableQty() <= 0)
-                ->pluck('name');
-            $names = [...$names, ...$outOfStock->all()];
+            $products = Ingredient::query()
+                ->whereIn('id', $productIds)
+                ->where('active', true)
+                ->get();
+
+            foreach ($products as $product) {
+                if ($this->usableStock($product) <= 0) {
+                    $unavailable[] = $product->name;
+                }
+            }
         }
 
-        return array_values($names);
+        /*
+         * CRITICAL:
+         *
+         * DO NOT update menu_items.sold_out here.
+         *
+         * Inventory shortage/expiry is runtime availability only.
+         */
+        return array_values(array_unique($unavailable));
     }
 
     /**
@@ -329,12 +454,10 @@ class InventoryService
             $this->writeOffBatch($batch, 'Automatic write-off — passed expiry date '.$batch->expiry_date->toDateString().'.');
         }
 
-        // Best-effort freshness for the cached sold_out/availability badges —
-        // recipe-based items and products only (see autoSoldOutSweep()'s own
-        // doc comment for the pre-existing gap on recipe-less, direct-stock
-        // items). The live checks in unavailableMenuItemIds()/sellableQty()
+        // Best-effort freshness for the cached availability badges.
+        // The live checks in unavailableMenuItemIds()/sellableQty()/canMake()
         // are what actually guarantee correctness for listings and sales;
-        // this just keeps the persisted flags from lagging unnecessarily.
+        // this just keeps the realtime broadcast informed.
         $menuItemIds = RecipeItem::query()->whereIn('ingredient_id', $ingredientIds)->pluck('menu_item_id')->unique()->values()->all();
         $productIds = Ingredient::query()->whereIn('id', $ingredientIds)->products()->pluck('id')->all();
         $newlyUnavailable = $this->autoSoldOutSweep($menuItemIds, [], $productIds);
@@ -347,8 +470,7 @@ class InventoryService
      * constant number of queries regardless of how many items are passed —
      * safe to call from a listing endpoint (POS grid, search), not just
      * per-order. Deliberately ignores the persisted `sold_out` flag, which
-     * is only a cache kept roughly fresh by autoSoldOutSweep()/the hourly
-     * auto-write-off sweep; this recomputes from live stock/expiry so a
+     * is only a manual override; this recomputes from live stock/expiry so a
      * batch that expired since the last sweep can never still be listed as
      * orderable.
      *
@@ -411,7 +533,9 @@ class InventoryService
         ?OrderItem $orderItem = null,
     ): array {
         if ($direction === 1) {
-            $available = $ingredient->sellableQty();
+            // Use usable (non-expired) stock so an expired batch can never
+            // be sold even if stock_qty still shows a positive total.
+            $available = $this->usableStock($ingredient);
             if ($available < $change) {
                 $label = $menuItem?->name ?? $addOn?->name ?? $product?->name ?? 'Item';
 
@@ -432,7 +556,7 @@ class InventoryService
 
         if ($direction === 1) {
             // A sale must never draw down an already-expired batch, even
-            // though sellableQty() above already excluded expired qty from
+            // though usableStock() above already excluded expired qty from
             // the sufficiency check — this is the belt-and-braces guard at
             // the point stock is actually physically consumed.
             $draws = $this->drainBatchesFefo($ingredient->id, $change, excludeExpired: true);

@@ -16,12 +16,34 @@ import clsx from "clsx";
 type Modifier = { id: number; name: string; price_delta: number };
 type ModifierGroup = { id: number; name: string; is_required: boolean; max_select: number; modifiers: Modifier[] };
 type AddOn = { id: number; name: string; price: number };
+
 type MenuItem = {
-  id: number; item_no?: number | null; name: string; price: number; sold_out: boolean; description: string; image?: string | null;
-  modifier_groups?: ModifierGroup[]; addons?: AddOn[];
+  id: number;
+  item_no?: number | null;
+  name: string;
+  price: number;
+  /** @deprecated Prefer `available` + `availability_reason` */
+  sold_out?: boolean;
+  available?: boolean;
+  availability_reason?: string | null;
+  description: string;
+  image?: string | null;
+  modifier_groups?: ModifierGroup[];
+  addons?: AddOn[];
 };
+
 /** Directly-sellable, non-recipe stock item (bottled drink, packaged snack) — never routes to the kitchen. */
-type Product = { id: number; name: string; selling_price: number; stock_qty: number; image?: string | null; unit?: string | null };
+type Product = {
+  id: number;
+  name: string;
+  selling_price: number;
+  stock_qty: number;
+  image?: string | null;
+  unit?: string | null;
+  available?: boolean;
+  availability_reason?: string | null;
+};
+
 type MenuCat = { id: number; name: string; is_minibar: boolean; items: MenuItem[]; products: Product[] };
 type BoardRoom = { id: number; number: string; status: { code: string }; occupant: { code: string; guest: { name: string } } | null };
 type DiningTable = { id: number; table_no: string; capacity: number; status: { code: string }; area: { name: string } | null };
@@ -57,8 +79,30 @@ type CartLine = {
 
 /** Unified POS-grid tile — a menu item or a directly-sellable product. */
 type GridEntry =
-  | { key: string; kind: "item"; id: number; name: string; price: number; itemNo: number | null; image?: string | null; soldOut: boolean; item: MenuItem }
-  | { key: string; kind: "product"; id: number; name: string; price: number; itemNo: null; image?: string | null; soldOut: boolean; product: Product };
+  | {
+      key: string;
+      kind: "item";
+      id: number;
+      name: string;
+      price: number;
+      itemNo: number | null;
+      image?: string | null;
+      available: boolean;
+      availabilityReason: string | null;
+      item: MenuItem;
+    }
+  | {
+      key: string;
+      kind: "product";
+      id: number;
+      name: string;
+      price: number;
+      itemNo: null;
+      image?: string | null;
+      available: boolean;
+      availabilityReason: string | null;
+      product: Product;
+    };
 
 /** Small routing indicator — kitchen ticket vs front-of-house pickup. */
 function RouteIcon({ sendToKot, className }: { sendToKot: boolean; className?: string }) {
@@ -67,6 +111,29 @@ function RouteIcon({ sendToKot, className }: { sendToKot: boolean; className?: s
   ) : (
     <HandPlatter size={12} className={className} />
   );
+}
+
+/** Human-readable label for an availability reason. */
+function availabilityLabel(reason: string | null | undefined): string {
+  if (!reason) return "UNAVAILABLE";
+  switch (reason) {
+    case "out_of_stock":
+      return "OUT OF STOCK";
+    case "expired":
+      return "EXPIRED";
+    case "ingredient_expired":
+      return "INGREDIENT EXPIRED";
+    case "sold_out":
+      return "SOLD OUT";
+    default:
+      return reason.replace(/_/g, " ").toUpperCase();
+  }
+}
+
+/** Badge color based on reason — amber for expiry-related, red for stock. */
+function availabilityBadgeColor(reason: string | null | undefined): "red" | "amber" {
+  if (reason === "ingredient_expired" || reason === "expired") return "amber";
+  return "red";
 }
 
 const PAY_METHODS = ["cash", "card", "lankaqr", "bank_transfer"] as const;
@@ -228,6 +295,32 @@ function NewOrder({ categories, rooms, tables, usdRate, scPct, vatPct, onDone }:
     return cartQtyMap.get(`item:${entry.id}`) || 0;
   }, [cartQtyMap]);
 
+  // Normalise availability from backend (with safe fallbacks while backend is being rolled out)
+  const resolveAvailability = (p: { available?: boolean; availability_reason?: string | null; sold_out?: boolean; stock_qty?: number }) => {
+    // Prefer the new fields
+    if (typeof p.available === "boolean") {
+      return {
+        available: p.available,
+        reason: p.availability_reason ?? null,
+      };
+    }
+    // Fallback for menu items that still only send sold_out
+    if (typeof p.sold_out === "boolean") {
+      return {
+        available: !p.sold_out,
+        reason: p.sold_out ? "sold_out" : null,
+      };
+    }
+    // Fallback for products that still only send stock_qty
+    if (typeof p.stock_qty === "number") {
+      return {
+        available: p.stock_qty > 0,
+        reason: p.stock_qty <= 0 ? "out_of_stock" : null,
+      };
+    }
+    return { available: true, reason: null };
+  };
+
   // Fetch items/products for selected category or search
   const fetchGridEntries = useCallback(async () => {
     setSearchLoading(true);
@@ -246,14 +339,36 @@ function NewOrder({ categories, rooms, tables, usdRate, scPct, vatPct, onDone }:
       const products = productsRes.products ?? [];
 
       const entries: GridEntry[] = [
-        ...items.map((i): GridEntry => ({
-          key: `item:${i.id}`, kind: "item", id: i.id, name: i.name, price: i.price,
-          itemNo: i.item_no ?? null, image: i.image, soldOut: i.sold_out, item: i
-        })),
-        ...products.map((p): GridEntry => ({
-          key: `product:${p.id}`, kind: "product", id: p.id, name: p.name, price: p.selling_price,
-          itemNo: null, image: p.image, soldOut: p.stock_qty <= 0, product: p
-        })),
+        ...items.map((i): GridEntry => {
+          const { available, reason } = resolveAvailability(i);
+          return {
+            key: `item:${i.id}`,
+            kind: "item",
+            id: i.id,
+            name: i.name,
+            price: i.price,
+            itemNo: i.item_no ?? null,
+            image: i.image,
+            available,
+            availabilityReason: reason,
+            item: i,
+          };
+        }),
+        ...products.map((p): GridEntry => {
+          const { available, reason } = resolveAvailability(p);
+          return {
+            key: `product:${p.id}`,
+            kind: "product",
+            id: p.id,
+            name: p.name,
+            price: p.selling_price,
+            itemNo: null,
+            image: p.image,
+            available,
+            availabilityReason: reason,
+            product: p,
+          };
+        }),
       ];
       setGridEntries(entries);
     } catch (e) {
@@ -298,9 +413,12 @@ function NewOrder({ categories, rooms, tables, usdRate, scPct, vatPct, onDone }:
       api<{ items: MenuItem[] }>(`/menu/search?q=${numericCode}&limit=1`)
         .then((res) => {
           const item = res.items?.[0];
-          if (item && !item.sold_out) {
-            tryAdd(item);
-            return;
+          if (item) {
+            const { available } = resolveAvailability(item);
+            if (available) {
+              tryAdd(item);
+              return;
+            }
           }
           // Try product search
           return api<{ products: Product[] }>(`/products/search?q=${numericCode}&limit=1`);
@@ -308,7 +426,8 @@ function NewOrder({ categories, rooms, tables, usdRate, scPct, vatPct, onDone }:
         .then((res) => {
           if (res?.products?.[0]) {
             const product = res.products[0];
-            if (product.stock_qty > 0) addProduct(product);
+            const { available } = resolveAvailability(product);
+            if (available) addProduct(product);
           }
         })
         .catch(() => {});
@@ -389,22 +508,32 @@ function NewOrder({ categories, rooms, tables, usdRate, scPct, vatPct, onDone }:
     const no = parseInt(quickNo);
     if (!no) return;
     // Try local grid entries first
-    let item = gridEntries.filter((e): e is { key: string; kind: "item"; id: number; name: string; price: number; itemNo: number | null; image?: string | null; soldOut: boolean; item: MenuItem } => e.kind === "item").find((e) => e.itemNo === no)?.item;
-    if (!item) {
+    let entry = gridEntries
+      .filter((e): e is Extract<GridEntry, { kind: "item" }> => e.kind === "item")
+      .find((e) => e.itemNo === no);
+
+    if (!entry) {
       // Fallback to API search
       api<{ items: MenuItem[] }>(`/menu/search?q=${no}&limit=1`)
         .then((res) => {
-          item = res.items?.[0];
-          if (item && !item.sold_out) tryAdd(item);
-          else if (!item) setError(`No menu item #${no}`);
-          else setError(`#${no} ${item.name} is sold out`);
+          const item = res.items?.[0];
+          if (!item) {
+            setError(`No menu item #${no}`);
+            return;
+          }
+          const { available, reason } = resolveAvailability(item);
+          if (!available) {
+            setError(`#${no} ${item.name} is unavailable${reason ? ` (${availabilityLabel(reason)})` : ""}`);
+            return;
+          }
+          tryAdd(item);
         })
         .catch(() => setError(`Failed to lookup #${no}`));
-    } else if (item.sold_out) {
-      setError(`#${no} ${item.name} is sold out`);
+    } else if (!entry.available) {
+      setError(`#${no} ${entry.name} is unavailable${entry.availabilityReason ? ` (${availabilityLabel(entry.availabilityReason)})` : ""}`);
     } else {
       setError("");
-      tryAdd(item);
+      tryAdd(entry.item);
     }
     setQuickNo("");
   };
@@ -466,11 +595,11 @@ function NewOrder({ categories, rooms, tables, usdRate, scPct, vatPct, onDone }:
         <div className="flex flex-wrap items-center gap-1.5">
           <div className="relative">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input 
-              className="input !w-52 !py-1.5 !pl-8" 
-              placeholder="Search / #no…" 
-              value={searchQuery} 
-              onChange={(e) => setSearchQuery(e.target.value)} 
+            <input
+              className="input !w-52 !py-1.5 !pl-8"
+              placeholder="Search / #no…"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
             />
           </div>
           <button
@@ -498,14 +627,15 @@ function NewOrder({ categories, rooms, tables, usdRate, scPct, vatPct, onDone }:
             <>
               {gridEntries.map((entry) => {
                 const inCart = getCartQty(entry);
+                const isUnavailable = !entry.available;
                 return (
                   <button
                     key={entry.key}
-                    disabled={entry.soldOut}
+                    disabled={isUnavailable}
                     onClick={() => (entry.kind === "product" ? addProduct(entry.product) : tryAdd(entry.item))}
                     className={clsx(
                       "card relative p-3 text-left transition",
-                      entry.soldOut ? "opacity-40" : "hover:-translate-y-0.5 hover:shadow-md active:scale-[.98]",
+                      isUnavailable ? "opacity-40" : "hover:-translate-y-0.5 hover:shadow-md active:scale-[.98]",
                       inCart && "ring-2 ring-brand-500"
                     )}
                   >
@@ -516,7 +646,13 @@ function NewOrder({ categories, rooms, tables, usdRate, scPct, vatPct, onDone }:
                     </div>
                     <div className="mt-1 text-sm font-bold leading-tight">{entry.name}</div>
                     <div className="mt-1 text-sm font-semibold text-brand-600">{lkr(entry.price)}</div>
-                    {entry.soldOut && <Badge color="red">{entry.kind === "product" ? "OUT OF STOCK" : "SOLD OUT"}</Badge>}
+                    {isUnavailable && (
+                      <div className="mt-1.5">
+                        <Badge color={availabilityBadgeColor(entry.availabilityReason)}>
+                          {availabilityLabel(entry.availabilityReason)}
+                        </Badge>
+                      </div>
+                    )}
                   </button>
                 );
               })}
@@ -562,10 +698,10 @@ function NewOrder({ categories, rooms, tables, usdRate, scPct, vatPct, onDone }:
           <div className="mb-3 space-y-2">
             <div className="relative">
               <User size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input 
-                className="input !pl-8" 
-                placeholder="Customer name (search guests…)" 
-                value={guestSearch} 
+              <input
+                className="input !pl-8"
+                placeholder="Customer name (search guests…)"
+                value={guestSearch}
                 onChange={(e) => { setGuestSearch(e.target.value); setShowGuestDropdown(true); }}
                 onFocus={() => setShowGuestDropdown(true)}
                 onBlur={() => setTimeout(() => setShowGuestDropdown(false), 200)}
