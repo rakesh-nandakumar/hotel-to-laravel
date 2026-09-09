@@ -18,6 +18,10 @@ class CloseTillRequest extends FormRequest
     {
         return [
             'closing_cash' => ['required', 'integer', 'min:0'],
+            // Required only when closing_cash differs from the session's
+            // expected balance — enforced in TillService::closeTill(), which
+            // is the only place that knows that comparison value.
+            'reason' => ['nullable', 'string', 'max:500'],
             'notes' => ['nullable', 'string', 'max:1000'],
         ];
     }

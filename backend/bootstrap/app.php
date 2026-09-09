@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\DeployController;
 use App\Http\Middleware\CheckActiveUser;
 use App\Http\Middleware\CheckPermission;
 use App\Http\Middleware\EnsureCentralContext;
@@ -12,6 +13,7 @@ use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Validation\ValidationException;
 use Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
@@ -22,6 +24,15 @@ return Application::configure(basePath: dirname(__DIR__))
         apiPrefix: 'api',
         commands: __DIR__.'/../routes/console.php',
         health: '/up',
+        // Bare aliases (no /api prefix, no /api middleware group) for hosts
+        // that want a plain https://{host}/migrate URL — see DeployController.
+        // Also needs an nginx proxy rule (web/nginx.conf), since everything
+        // outside /api/, /sanctum/, /broadcasting/ otherwise falls through to
+        // the SPA's index.html before it ever reaches Laravel.
+        then: function () {
+            Route::get('migrate', [DeployController::class, 'migrate'])->name('deploy.migrate.bare');
+            Route::get('seed', [DeployController::class, 'seed'])->name('deploy.seed.bare');
+        },
     )
     // Registered separately (rather than via withRouting's `channels:` param)
     // so /broadcasting/auth requires the same Sanctum session auth as every

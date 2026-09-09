@@ -19,6 +19,10 @@ class OpenTillRequest extends FormRequest
         return [
             'till_id' => ['required', 'integer', 'exists:tills,id'],
             'opening_balance' => ['required', 'integer', 'min:0'],
+            // Required only when opening_balance differs from the till's last
+            // closing balance — enforced in TillService::openTill(), which is
+            // the only place that knows that comparison value.
+            'reason' => ['nullable', 'string', 'max:500'],
         ];
     }
 }

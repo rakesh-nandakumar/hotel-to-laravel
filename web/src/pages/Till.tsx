@@ -1,13 +1,11 @@
 import { useEffect, useState } from "react";
-import { Plus } from "lucide-react";
-import { post, put } from "../lib/api";
-import { useFetch, usePagedFetch, lkr, toCents, fmtDateTime } from "../lib/util";
+import { post } from "../lib/api";
+import { useFetch, usePagedFetch, lkr, toCents, centsToRupees, fmtDateTime } from "../lib/util";
 import { Badge, Card, Empty, ErrorText, Field, Modal, Pagination, Stat } from "../components/ui";
 import { useToast } from "../lib/toast";
 import { useAuth } from "../lib/auth";
 
-type TillOption = { id: number; name: string };
-type TillManageOption = { id: number; name: string; is_active: boolean };
+type TillOption = { id: number; name: string; last_closing_cash: number | null };
 type CurrentSession = {
   id: number; till: { id: number; name: string }; opened_at: string;
   opening_cash: number; expected_balance: number;
@@ -25,21 +23,10 @@ type SessionHistory = {
 
 export default function Till() {
   const { can } = useAuth();
-  const canManage = can("till.manage");
   const { data: currentData, reload: reloadCurrent } = useFetch<{ session: CurrentSession }>("/till/current");
   const current = currentData?.session ?? null;
   const { data: tillsData, reload: reloadTillOptions } = useFetch<{ tills: TillOption[] }>("/till/tills");
   const tillOptions = tillsData?.tills ?? [];
-  const { data: manageTillsData, reload: reloadManageTills } = useFetch<{ tills: TillManageOption[] }>(
-    canManage ? "/till/tills?include_inactive=1" : null
-  );
-  const manageTills = manageTillsData?.tills ?? [];
-  const [newTillOpen, setNewTillOpen] = useState(false);
-
-  const reloadTills = () => {
-    reloadTillOptions();
-    reloadManageTills();
-  };
 
   const [mPage, setMPage] = useState(1);
   const [mPageSize, setMPageSize] = useState(25);
@@ -95,9 +82,8 @@ export default function Till() {
             )}
           </div>
         ) : tillOptions.length === 0 ? (
-          <div className="flex flex-wrap items-center gap-3 text-sm">
-            <span>No tills exist yet — {canManage ? "create one below to get started." : "ask a manager to create one before you can take cash payments."}</span>
-            {canManage && <button className="btn-primary" onClick={() => setNewTillOpen(true)}><Plus size={16} /> New till</button>}
+          <div className="flex items-center gap-3 text-sm">
+            <span>No tills exist yet — ask a platform admin to set one up before you can take cash payments.</span>
           </div>
         ) : (
           <div className="flex items-center gap-3 text-sm">
@@ -106,18 +92,6 @@ export default function Till() {
           </div>
         )}
       </Card>
-
-      {canManage && (
-        <Card
-          title="Manage tills"
-          actions={<button className="btn-secondary !py-1 text-xs" onClick={() => setNewTillOpen(true)}><Plus size={13} /> New till</button>}
-        >
-          <div className="space-y-2">
-            {manageTills.map((t) => <TillRow key={t.id} till={t} onDone={reloadTills} />)}
-          </div>
-          {manageTills.length === 0 && <Empty text="No tills yet — create one to get started" />}
-        </Card>
-      )}
 
       {current && (
         <Card title="Cash movement ledger — this session">
@@ -205,7 +179,6 @@ export default function Till() {
           onClose={() => { setMovementModal(null); refreshAll(); }}
         />
       )}
-      {newTillOpen && <NewTillModal onClose={() => { setNewTillOpen(false); reloadTills(); }} />}
     </div>
   );
 }
@@ -219,27 +192,51 @@ function OpenTill({ tills, onClose }: { tills: TillOption[]; onClose: () => void
   useEffect(() => {
     if (tillId === "" && tills[0]) setTillId(tills[0].id);
   }, [tills]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const selected = tills.find((t) => t.id === tillId) ?? null;
+  const lastClosing = selected?.last_closing_cash ?? null;
+
+  // Pre-fill with the till's last closing balance — that's the normal
+  // opening amount. Re-run whenever the selected till changes, but only
+  // while the operator hasn't typed anything of their own yet.
   const [amount, setAmount] = useState("");
+  const [touched, setTouched] = useState(false);
+  useEffect(() => {
+    if (!touched) setAmount(lastClosing !== null ? centsToRupees(lastClosing) : "");
+  }, [tillId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const [reason, setReason] = useState("");
   const [error, setError] = useState("");
+
+  const hasVariance = lastClosing !== null && toCents(amount) !== lastClosing;
+
   return (
     <Modal open onClose={onClose} title="Open till — count opening cash">
       <Field label="Till">
-        <select className="input" value={tillId} onChange={(e) => setTillId(Number(e.target.value))}>
+        <select className="input" value={tillId} onChange={(e) => { setTillId(Number(e.target.value)); setTouched(false); }}>
           {tills.length === 0 && <option value="">No tills available</option>}
           {tills.map((t) => (
             <option key={t.id} value={t.id}>{t.name}</option>
           ))}
         </select>
       </Field>
+      {lastClosing !== null && (
+        <div className="mb-3 rounded-lg bg-slate-50 px-3 py-2 text-sm">Last closing balance: <b>{lkr(lastClosing)}</b></div>
+      )}
       <Field label="Opening cash in drawer (LKR)">
-        <input className="input" value={amount} onChange={(e) => setAmount(e.target.value)} autoFocus />
+        <input className="input" value={amount} onChange={(e) => { setAmount(e.target.value); setTouched(true); }} autoFocus />
       </Field>
+      {hasVariance && (
+        <Field label="Reason for the difference from last closing (required)">
+          <input className="input" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Found extra float, adding it back" />
+        </Field>
+      )}
       <ErrorText error={error} />
       <button
         className="btn-primary mt-3 w-full"
-        disabled={tillId === ""}
+        disabled={tillId === "" || (hasVariance && !reason.trim())}
         onClick={() =>
-          post("/till/open", { till_id: tillId, opening_balance: toCents(amount) })
+          post("/till/open", { till_id: tillId, opening_balance: toCents(amount), reason: reason || undefined })
             .then(() => {
               toast.success("Till opened", `Opening balance ${lkr(toCents(amount))}`);
               onClose();
@@ -253,67 +250,14 @@ function OpenTill({ tills, onClose }: { tills: TillOption[]; onClose: () => void
   );
 }
 
-function TillRow({ till, onDone }: { till: TillManageOption; onDone: () => void }) {
-  const [name, setName] = useState(till.name);
-  const [error, setError] = useState("");
-  return (
-    <div>
-      <div className="flex items-center gap-2">
-        <input
-          className="input !w-48"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          onBlur={() => {
-            const trimmed = name.trim();
-            if (!trimmed || trimmed === till.name) return setName(till.name);
-            put(`/till/tills/${till.id}`, { name: trimmed, is_active: till.is_active }).then(onDone).catch((e) => setError(e.message));
-          }}
-        />
-        <button
-          className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${till.is_active ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-400"}`}
-          onClick={() => put(`/till/tills/${till.id}`, { name: till.name, is_active: !till.is_active }).then(onDone).catch((e) => setError(e.message))}
-        >
-          {till.is_active ? "ACTIVE" : "INACTIVE"}
-        </button>
-      </div>
-      <ErrorText error={error} />
-    </div>
-  );
-}
-
-function NewTillModal({ onClose }: { onClose: () => void }) {
-  const toast = useToast();
-  const [name, setName] = useState("");
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
-  const save = () => {
-    setBusy(true);
-    setError("");
-    post("/till/tills", { name: name.trim() })
-      .then(() => {
-        toast.success("Till created", name.trim());
-        onClose();
-      })
-      .catch((e) => setError(e.message))
-      .finally(() => setBusy(false));
-  };
-  return (
-    <Modal open onClose={onClose} title="New till">
-      <Field label="Till name *"><input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Front Desk Till" autoFocus /></Field>
-      <ErrorText error={error} />
-      <button className="btn-primary mt-3 w-full" disabled={busy || !name.trim()} onClick={save}>
-        {busy ? "Creating…" : "Create till"}
-      </button>
-    </Modal>
-  );
-}
-
 function CloseTill({ sessionId, expected, onClose }: { sessionId: number; expected: number; onClose: () => void }) {
   const toast = useToast();
   const [amount, setAmount] = useState("");
+  const [reason, setReason] = useState("");
   const [notes, setNotes] = useState("");
   const [error, setError] = useState("");
   const variance = toCents(amount) - expected;
+  const hasVariance = amount !== "" && variance !== 0;
   return (
     <Modal open onClose={onClose} title="Close till — reconciliation">
       <div className="mb-3 rounded-lg bg-slate-50 px-3 py-2 text-sm">Expected cash: <b>{lkr(expected)}</b></div>
@@ -325,14 +269,20 @@ function CloseTill({ sessionId, expected, onClose }: { sessionId: number; expect
           Variance: {variance > 0 ? "+" : ""}{lkr(variance)}
         </div>
       )}
-      <Field label="Notes (explain any variance)">
+      {hasVariance && (
+        <Field label="Reason for the variance (required)">
+          <input className="input" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Cash short — under investigation" />
+        </Field>
+      )}
+      <Field label="Notes (optional)">
         <input className="input" value={notes} onChange={(e) => setNotes(e.target.value)} />
       </Field>
       <ErrorText error={error} />
       <button
         className="btn-primary mt-3 w-full"
+        disabled={amount === "" || (hasVariance && !reason.trim())}
         onClick={() =>
-          post(`/till/${sessionId}/close`, { closing_cash: toCents(amount), notes: notes || undefined })
+          post(`/till/${sessionId}/close`, { closing_cash: toCents(amount), reason: reason || undefined, notes: notes || undefined })
             .then(() => {
               if (variance === 0) toast.success("Till closed — balanced", "No variance");
               else toast.warning("Till closed — variance found", `${variance > 0 ? "+" : ""}${lkr(variance)}`);

@@ -25,7 +25,14 @@ use Illuminate\Validation\ValidationException;
  */
 class TillService
 {
-    public function openTill(int $tillId, int $staffId, int $openingBalance): TillSession
+    /**
+     * The opening balance normally carries over as-is from the till's last
+     * closing count. A different opening_balance is a claimed variance
+     * (theft, an uncounted top-up, ...) and must come with a reason —
+     * enforced here rather than in OpenTillRequest because the comparison
+     * value (the last closing count) isn't known until this query runs.
+     */
+    public function openTill(int $tillId, int $staffId, int $openingBalance, ?string $reason = null): TillSession
     {
         $till = Till::query()->findOrFail($tillId);
         if (! $till->is_active) {
@@ -36,7 +43,14 @@ class TillService
             throw ValidationException::withMessages(['till' => 'You already have an open till session — close it first.']);
         }
 
-        return DB::transaction(function () use ($till, $staffId, $openingBalance) {
+        $lastClosing = $this->lastClosingBalance($till->id);
+        $hasVariance = $lastClosing !== null && $openingBalance !== $lastClosing;
+
+        if ($hasVariance && trim((string) $reason) === '') {
+            throw ValidationException::withMessages(['reason' => 'A reason is required when the opening balance differs from the last closing balance.']);
+        }
+
+        return DB::transaction(function () use ($till, $staffId, $openingBalance, $hasVariance, $reason) {
             $session = TillSession::create([
                 'till_id' => $till->id,
                 'status_id' => Lookup::id(LookupType::TILL_SESSION_STATUS, TillSessionStatus::OPEN),
@@ -44,7 +58,10 @@ class TillService
                 'opening_cash' => $openingBalance,
             ]);
 
-            $this->recordMovement($session, TillMovementType::OPENING_BALANCE, $openingBalance, $staffId, reason: 'Till opened');
+            $this->recordMovement(
+                $session, TillMovementType::OPENING_BALANCE, $openingBalance, $staffId,
+                reason: $hasVariance ? $reason : 'Till opened',
+            );
 
             AuditLog::record('till.opened', $session, ['till' => $till->name, 'opening_balance' => $openingBalance]);
 
@@ -56,9 +73,11 @@ class TillService
      * Close with counted cash → automatic reconciliation. Any gap between what
      * the ledger expects and what was actually counted is recorded as its own
      * CLOSING_ADJUSTMENT movement, so the ledger's own running total always
-     * matches the counted drawer at the moment of close.
+     * matches the counted drawer at the moment of close. A variance must
+     * always come with the closer's own reason — never a canned label — so
+     * it means something in a reconciliation dispute later.
      */
-    public function closeTill(TillSession $session, int $countedAmount, ?string $notes, User $actor): TillSession
+    public function closeTill(TillSession $session, int $countedAmount, ?string $reason, ?string $notes, User $actor): TillSession
     {
         if ($session->closed_at) {
             throw ValidationException::withMessages(['till' => 'Till session is not open.']);
@@ -67,15 +86,16 @@ class TillService
             abort(403, 'Not your till session.');
         }
 
-        return DB::transaction(function () use ($session, $countedAmount, $notes, $actor) {
-            $expected = $this->expectedBalance($session);
-            $variance = $countedAmount - $expected;
+        $expected = $this->expectedBalance($session);
+        $variance = $countedAmount - $expected;
 
+        if ($variance !== 0 && trim((string) $reason) === '') {
+            throw ValidationException::withMessages(['reason' => 'A reason is required when the counted cash differs from the expected balance.']);
+        }
+
+        return DB::transaction(function () use ($session, $countedAmount, $expected, $variance, $reason, $notes, $actor) {
             if ($variance !== 0) {
-                $this->recordMovement(
-                    $session, TillMovementType::CLOSING_ADJUSTMENT, $variance, $actor->id,
-                    reason: $variance > 0 ? 'Cash over at close' : 'Cash short at close',
-                );
+                $this->recordMovement($session, TillMovementType::CLOSING_ADJUSTMENT, $variance, $actor->id, reason: $reason);
             }
 
             $session->update([
@@ -153,6 +173,38 @@ class TillService
     public function currentSessionForStaff(int $staffId): ?TillSession
     {
         return TillSession::query()->where('opened_by', $staffId)->open()->first();
+    }
+
+    /** The counted cash from this till's most recent closed session — the reference the next open compares against. Null if it's never been closed. */
+    public function lastClosingBalance(int $tillId): ?int
+    {
+        $value = TillSession::query()
+            ->where('till_id', $tillId)
+            ->whereNotNull('closed_at')
+            ->latest('closed_at')
+            ->value('closing_cash');
+
+        return $value === null ? null : (int) $value;
+    }
+
+    /**
+     * Batched form of lastClosingBalance() for a till listing — one query
+     * instead of one per till.
+     *
+     * @param  list<int>  $tillIds
+     * @return array<int, int> till_id => last closing_cash, omitted for a till never closed
+     */
+    public function lastClosingBalances(array $tillIds): array
+    {
+        return TillSession::query()
+            ->whereIn('till_id', $tillIds)
+            ->whereNotNull('closed_at')
+            ->orderByDesc('closed_at')
+            ->get(['till_id', 'closing_cash'])
+            ->unique('till_id')
+            ->pluck('closing_cash', 'till_id')
+            ->map(fn ($value) => (int) $value)
+            ->all();
     }
 
     /**

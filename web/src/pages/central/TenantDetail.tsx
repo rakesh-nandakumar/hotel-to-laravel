@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { api, post, put } from "../../lib/api";
 import {
-  Card, Badge, Field, ErrorText, Tabs, statusColor, SimpleTable, Pagination, ConfirmDialog,
+  Card, Badge, Field, ErrorText, Tabs, statusColor, SimpleTable, Pagination, ConfirmDialog, Modal,
 } from "../../components/ui";
 import { ThemeCustomizer, ThemeColors } from "../../components/ThemeCustomizer";
 import { applyTheme } from "../../lib/theme";
@@ -268,36 +268,97 @@ function OverviewTab({
 type TillRow = { id: number; name: string; is_active: boolean };
 
 /**
- * Read-only visibility into the tenant's tills — creation/management stays
- * tenant-side (their own Till page, gated by till.manage). Branches were
- * removed from the data model entirely, so this is a flat list, not grouped.
+ * Till definitions are configured only here, from master control — the
+ * tenant's own Till page just opens/closes sessions against whatever exists
+ * below, it can't create or edit a till itself.
  */
 function TillsCard({ tenantId }: { tenantId: number }) {
   const [tills, setTills] = useState<TillRow[] | null>(null);
   const [error, setError] = useState("");
+  const [newTillOpen, setNewTillOpen] = useState(false);
 
-  useEffect(() => {
-    setTills(null);
+  const reload = () =>
     api<{ tills: TillRow[] }>(`/central/tenants/${tenantId}/tills`)
       .then((d) => setTills(d.tills))
       .catch((e) => setError(e.message));
+
+  useEffect(() => {
+    setTills(null);
+    reload();
   }, [tenantId]);
 
   return (
-    <Card title="Tills">
+    <Card
+      title="Tills"
+      actions={<button className="btn-secondary !py-1 text-xs" onClick={() => setNewTillOpen(true)}><Plus size={13} /> New till</button>}
+    >
       <ErrorText error={error} />
       {tills === null ? (
         <p className="text-sm text-slate-400">Loading…</p>
       ) : tills.length === 0 ? (
-        <p className="text-sm text-slate-400">No tills created yet — the tenant creates these from their own Till page.</p>
+        <p className="text-sm text-slate-400">No tills yet — create one so the tenant can start taking cash payments.</p>
       ) : (
-        <div className="flex flex-wrap gap-2">
+        <div className="space-y-2">
           {tills.map((t) => (
-            <Badge key={t.id} color={t.is_active ? "green" : "slate"}>{t.name}{!t.is_active && " (inactive)"}</Badge>
+            <TillManageRow key={t.id} tenantId={tenantId} till={t} onDone={reload} />
           ))}
         </div>
       )}
+      {newTillOpen && (
+        <NewCentralTillModal tenantId={tenantId} onClose={() => { setNewTillOpen(false); reload(); }} />
+      )}
     </Card>
+  );
+}
+
+function TillManageRow({ tenantId, till, onDone }: { tenantId: number; till: TillRow; onDone: () => void }) {
+  const [name, setName] = useState(till.name);
+  const [error, setError] = useState("");
+  return (
+    <div>
+      <div className="flex items-center gap-2">
+        <input
+          className="input !w-48"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onBlur={() => {
+            const trimmed = name.trim();
+            if (!trimmed || trimmed === till.name) return setName(till.name);
+            put(`/central/tenants/${tenantId}/tills/${till.id}`, { name: trimmed, is_active: till.is_active }).then(onDone).catch((e) => setError(e.message));
+          }}
+        />
+        <button
+          className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${till.is_active ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-400"}`}
+          onClick={() => put(`/central/tenants/${tenantId}/tills/${till.id}`, { name: till.name, is_active: !till.is_active }).then(onDone).catch((e) => setError(e.message))}
+        >
+          {till.is_active ? "ACTIVE" : "INACTIVE"}
+        </button>
+      </div>
+      <ErrorText error={error} />
+    </div>
+  );
+}
+
+function NewCentralTillModal({ tenantId, onClose }: { tenantId: number; onClose: () => void }) {
+  const [name, setName] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const save = () => {
+    setBusy(true);
+    setError("");
+    post(`/central/tenants/${tenantId}/tills`, { name: name.trim() })
+      .then(onClose)
+      .catch((e) => setError(e.message))
+      .finally(() => setBusy(false));
+  };
+  return (
+    <Modal open onClose={onClose} title="New till">
+      <Field label="Till name *"><input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Front Desk Till" autoFocus /></Field>
+      <ErrorText error={error} />
+      <button className="btn-primary mt-3 w-full" disabled={busy || !name.trim()} onClick={save}>
+        {busy ? "Creating…" : "Create till"}
+      </button>
+    </Modal>
   );
 }
 

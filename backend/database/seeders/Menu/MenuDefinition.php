@@ -203,7 +203,7 @@ class MenuDefinition
                 'icon' => 'clock',
                 'route_name' => 'till.current',
                 'module_key' => 'till',
-                'actions' => ['access', 'open', 'close', 'close_any', 'cash_in', 'cash_out', 'manage'],
+                'actions' => ['access', 'open', 'close', 'close_any', 'cash_in', 'cash_out'],
             ],
             [
                 'name' => 'Attendance',

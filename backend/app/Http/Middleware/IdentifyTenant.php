@@ -37,11 +37,12 @@ class IdentifyTenant
     {
         // Deploy utility (see routes/api.php): must work from a bare/unrecognized
         // host with no tenant context at all — that's the point of it, a
-        // fallback for hosts where `php artisan migrate` can't be run over
-        // SSH. Migrations are schema-only and tenant-agnostic, so tenant
-        // resolution is skipped entirely for this one route rather than
-        // requiring the host to already resolve as central or a known tenant.
-        if ($request->is('api/deploy/migrate')) {
+        // fallback for hosts where `php artisan migrate` / `db:seed` can't be
+        // run over SSH. Every seeder that needs a tenant binds it explicitly
+        // itself (see e.g. TillSeeder), so tenant resolution is skipped
+        // entirely for these two routes rather than requiring the host to
+        // already resolve as central or a known tenant.
+        if ($request->is('api/deploy/migrate') || $request->is('api/deploy/seed')) {
             return $next($request);
         }
 

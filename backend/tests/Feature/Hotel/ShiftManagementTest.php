@@ -91,10 +91,26 @@ it('reports a variance when counted cash does not match expected', function () {
         'till_id' => Till::query()->value('id'), 'opening_balance' => 500000,
     ])->json('session');
 
-    $response = $this->actingAs($manager)->postJson("/api/till/{$session['id']}/close", ['closing_cash' => 480000])->assertOk();
+    $response = $this->actingAs($manager)->postJson("/api/till/{$session['id']}/close", [
+        'closing_cash' => 480000, 'reason' => 'Cash short — under investigation',
+    ])->assertOk();
 
     expect($response->json('session.expected_cash'))->toBe(500000)
         ->and($response->json('session.variance'))->toBe(-20000);
+});
+
+it('requires a reason to close with a variance, but not to close balanced', function () {
+    $manager = staffWithRole('Manager');
+    $session = $this->actingAs($manager)->postJson('/api/till/open', [
+        'till_id' => Till::query()->value('id'), 'opening_balance' => 500000,
+    ])->json('session');
+
+    $this->actingAs($manager)->postJson("/api/till/{$session['id']}/close", ['closing_cash' => 480000])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('reason');
+
+    $this->actingAs($manager)->postJson("/api/till/{$session['id']}/close", ['closing_cash' => 500000])
+        ->assertOk();
 });
 
 it('rejects closing an already-closed till session', function () {
@@ -145,31 +161,36 @@ it('blocks a cash payment when the cashier has no open till session, but leaves 
     ])->assertOk();
 });
 
-it('creates a till which then appears in the till list for opening', function () {
+it('never exposes till creation or editing on the tenant side — that stays master-control-only', function () {
     $manager = staffWithRole('Manager');
 
-    $created = $this->actingAs($manager)->postJson('/api/till/tills', ['name' => 'Restaurant Till'])
-        ->assertCreated();
+    $this->actingAs($manager)->postJson('/api/till/tills', ['name' => 'Restaurant Till'])->assertMethodNotAllowed();
 
-    $index = $this->actingAs($manager)->getJson('/api/till/tills')->assertOk();
-    expect(collect($index->json('tills'))->pluck('name'))->toContain('Restaurant Till');
-
-    $this->actingAs($manager)->postJson('/api/till/open', [
-        'till_id' => $created->json('till.id'), 'opening_balance' => 100000,
-    ])->assertCreated();
+    $tillId = Till::query()->value('id');
+    $this->actingAs($manager)->putJson("/api/till/tills/{$tillId}", ['name' => 'Renamed', 'is_active' => true])->assertNotFound();
 });
 
-it('lists a deactivated till only when include_inactive is requested', function () {
+it('carries the opening balance over from the till\'s last closing, and requires a reason to open with a different amount', function () {
     $manager = staffWithRole('Manager');
-    $till = $this->actingAs($manager)->postJson('/api/till/tills', ['name' => 'Pool Bar Till'])
-        ->assertCreated()->json('till');
+    $tillId = Till::query()->value('id');
 
-    $this->actingAs($manager)->putJson("/api/till/tills/{$till['id']}", ['name' => $till['name'], 'is_active' => false])
-        ->assertOk();
+    $session = $this->actingAs($manager)->postJson('/api/till/open', [
+        'till_id' => $tillId, 'opening_balance' => 500000,
+    ])->json('session');
+    $this->actingAs($manager)->postJson("/api/till/{$session['id']}/close", ['closing_cash' => 480000, 'reason' => 'Short at close'])->assertOk();
 
-    $activeOnly = $this->actingAs($manager)->getJson('/api/till/tills')->assertOk();
-    expect(collect($activeOnly->json('tills'))->pluck('id'))->not->toContain($till['id']);
+    // Same amount as last closing — no reason needed.
+    $reopened = $this->actingAs($manager)->postJson('/api/till/open', [
+        'till_id' => $tillId, 'opening_balance' => 480000,
+    ])->assertCreated()->json('session');
+    $this->actingAs($manager)->postJson("/api/till/{$reopened['id']}/close", ['closing_cash' => 480000])->assertOk();
 
-    $withInactive = $this->actingAs($manager)->getJson('/api/till/tills?include_inactive=1')->assertOk();
-    expect(collect($withInactive->json('tills'))->pluck('id'))->toContain($till['id']);
+    // A different opening amount than the last closing balance needs a reason.
+    $this->actingAs($manager)->postJson('/api/till/open', [
+        'till_id' => $tillId, 'opening_balance' => 500000,
+    ])->assertUnprocessable()->assertJsonValidationErrors('reason');
+
+    $this->actingAs($manager)->postJson('/api/till/open', [
+        'till_id' => $tillId, 'opening_balance' => 500000, 'reason' => 'Found extra float, adding it back',
+    ])->assertCreated();
 });
