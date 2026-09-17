@@ -107,6 +107,7 @@ class SettingsSeeder extends Seeder
             // ── Notifications ────────────────────────────────────────────────
             ['key' => 'notifications.pre_arrival_days', 'value' => 1, 'type' => SettingType::NUMBER, 'category' => 'notifications', 'label' => 'Pre-arrival Reminder (days before check-in)'],
             ['key' => 'notifications.channels', 'value' => ['email', 'whatsapp', 'sms'], 'type' => SettingType::JSON, 'category' => 'notifications', 'label' => 'Enabled Guest Notification Channels'],
+            ['key' => 'notifications.whatsapp_group_link', 'value' => '', 'type' => SettingType::URL, 'category' => 'notifications', 'label' => 'WhatsApp Group Link', 'hint' => 'Invite link of the staff WhatsApp group (https://chat.whatsapp.com/…) that confirmed bookings are shared to. Adds a WhatsApp button to every confirmed reservation; leave blank to hide it.'],
 
             // ── Payroll (Sri Lanka statutory defaults) ──────────────────────
             ['key' => 'payroll.epf_employee_pct', 'value' => 8, 'type' => SettingType::PERCENT, 'category' => 'payroll', 'label' => 'EPF — Employee %'],

@@ -26,11 +26,14 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
         // Bare aliases (no /api prefix, no /api middleware group) for hosts
         // that want a plain https://{host}/migrate URL — see DeployController.
-        // Also needs an nginx proxy rule (web/nginx.conf), since everything
-        // outside /api/, /sanctum/, /broadcasting/ otherwise falls through to
-        // the SPA's index.html before it ever reaches Laravel.
+        // These also need a server-side rule that sends the path to Laravel:
+        // the release bundle's .htaccess (BuildRelease) and web/nginx.conf both
+        // list migrate|seed, since everything outside /api/, /sanctum/,
+        // /broadcasting/, /up otherwise falls through to the SPA's index.html
+        // before it ever reaches Laravel.
         then: function () {
             Route::get('migrate', [DeployController::class, 'migrate'])->name('deploy.migrate.bare');
+            Route::get('migrate/status', [DeployController::class, 'status'])->name('deploy.migrate.status.bare');
             Route::get('seed', [DeployController::class, 'seed'])->name('deploy.seed.bare');
         },
     )

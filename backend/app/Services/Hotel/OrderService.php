@@ -477,7 +477,7 @@ class OrderService
             $this->billing->recordPayment([
                 'order_id' => $order->id, 'method' => PaymentMethod::CASH,
                 'amount' => $overpaid, 'kind' => PaymentKind::REFUND,
-                'reason' => 'Change returned to guest', 'staff_id' => $staffId,
+                'reason' => Payment::CHANGE_REASON, 'staff_id' => $staffId,
             ]);
         }
 

@@ -28,6 +28,9 @@ class TillSession extends Model
         'opened_by',
         'closed_by',
         'opening_cash',
+        'carried_opening_cash',
+        'opening_variance',
+        'opening_reason',
         'closing_cash',
         'expected_cash',
         'variance',
@@ -40,6 +43,8 @@ class TillSession extends Model
     {
         return [
             'opening_cash' => 'integer',
+            'carried_opening_cash' => 'integer',
+            'opening_variance' => 'integer',
             'closing_cash' => 'integer',
             'expected_cash' => 'integer',
             'variance' => 'integer',

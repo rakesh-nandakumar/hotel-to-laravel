@@ -42,7 +42,7 @@ class IdentifyTenant
         // itself (see e.g. TillSeeder), so tenant resolution is skipped
         // entirely for these two routes rather than requiring the host to
         // already resolve as central or a known tenant.
-        if ($request->is('api/deploy/migrate') || $request->is('api/deploy/seed')) {
+        if ($request->is('api/deploy/*')) {
             return $next($request);
         }
 

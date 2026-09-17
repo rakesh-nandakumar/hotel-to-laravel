@@ -504,7 +504,8 @@ function SettingField({ tenantId, row }: { tenantId: number; row: SettingRow }) 
         ) : (
           <input
             className="input"
-            type={row.type === "color" ? "color" : "text"}
+            type={row.type === "color" ? "color" : row.type === "url" ? "url" : "text"}
+            placeholder={row.type === "url" ? "https://…" : undefined}
             value={value}
             onChange={(e) => setValue(e.target.value)}
           />

@@ -91,6 +91,7 @@ Route::get('host-context', HostContextController::class)->name('host-context');
 // plain https://{host}/migrate URL) are registered in bootstrap/app.php's
 // withRouting(then: ...) instead, since apiPrefix applies to this whole file.
 Route::get('deploy/migrate', [DeployController::class, 'migrate'])->name('deploy.migrate');
+Route::get('deploy/migrate/status', [DeployController::class, 'status'])->name('deploy.migrate.status');
 Route::get('deploy/seed', [DeployController::class, 'seed'])->name('deploy.seed');
 
 // ── Guest auth ──────────────────────────────────────────────────────────────
@@ -512,6 +513,10 @@ Route::middleware(['auth', 'check_active'])->group(function () {
             ->middleware('can_do:hotel_reservations.edit')
             ->name('item-check');
 
+        Route::get('{reservation}/whatsapp-message', [ReservationController::class, 'whatsAppMessage'])
+            ->middleware('can_do:hotel_reservations.view')
+            ->name('whatsapp-message');
+
         Route::get('{reservation}', [ReservationController::class, 'show'])
             ->middleware('can_do:hotel_reservations.view')
             ->name('show');
@@ -887,6 +892,9 @@ Route::middleware(['auth', 'check_active'])->group(function () {
         Route::get('{session}/movements', [TillController::class, 'movements'])
             ->middleware('can_do:till.access')
             ->name('movements.index');
+        Route::get('{session}/summary', [TillController::class, 'summary'])
+            ->middleware('can_do:till.access')
+            ->name('summary');
         // Fine-grained cash_in vs. cash_out/expense/transfer authorization happens
         // in StoreTillMovementRequest::authorize() (it depends on the `type` field).
         Route::post('{session}/movements', [TillController::class, 'storeMovement'])

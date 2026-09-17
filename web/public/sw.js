@@ -23,6 +23,10 @@ self.addEventListener("fetch", (e) => {
   // Auth/CSRF and broadcasting must ALWAYS hit the network — never intercept or
   // cache them (a cached 404/CSRF cookie breaks login on the deployed server).
   if (url.pathname.startsWith("/sanctum") || url.pathname.startsWith("/broadcasting")) return;
+  // Server-only pages that are never part of the shell: the deploy utilities
+  // (/migrate, /migrate/status, /seed — artisan output, must never be replayed
+  // from cache) and the /up health check.
+  if (/^\/(migrate|seed|up)(\/|$)/.test(url.pathname)) return;
   // Never cache API responses except menu/board reads used by the offline POS UI
   const isApi = url.pathname.startsWith("/api");
   const cacheableApi = ["/api/menu/full", "/api/rooms/board", "/api/settings"].some((p) => url.pathname === p);

@@ -93,3 +93,32 @@ it('refuses to invent a setting key that is not in the catalog', function () {
 
     expect(Setting::query()->withoutTenantScope()->where('tenant_id', $tenant->id)->count())->toBe(0);
 });
+
+it('accepts a full https WhatsApp group link and lets it be cleared again', function () {
+    actingAsCentral(CentralAdmin::factory()->create());
+    $tenant = Tenant::factory()->create();
+
+    $this->putJson("/api/central/tenants/{$tenant->id}/settings/notifications.whatsapp_group_link", [
+        'value' => 'https://chat.whatsapp.com/AbCdEfGh123',
+    ])->assertOk();
+
+    $stored = fn () => json_decode(Setting::query()->withoutTenantScope()
+        ->where('tenant_id', $tenant->id)->where('key', 'notifications.whatsapp_group_link')->value('value'));
+
+    expect($stored())->toBe('https://chat.whatsapp.com/AbCdEfGh123');
+
+    // "" is turned into null by ConvertEmptyStringsToNull before validation runs.
+    $this->putJson("/api/central/tenants/{$tenant->id}/settings/notifications.whatsapp_group_link", ['value' => ''])->assertOk();
+
+    expect($stored())->toBeNull();
+});
+
+it('rejects a WhatsApp group link that is not an absolute http(s) URL', function () {
+    actingAsCentral(CentralAdmin::factory()->create());
+    $tenant = Tenant::factory()->create();
+
+    foreach (['chat.whatsapp.com/AbCdEfGh123', 'javascript:alert(1)', 'not a link', 42] as $bad) {
+        $this->putJson("/api/central/tenants/{$tenant->id}/settings/notifications.whatsapp_group_link", ['value' => $bad])
+            ->assertUnprocessable()->assertJsonValidationErrors('value');
+    }
+});

@@ -26,4 +26,6 @@ class SettingType
     public const IMAGE = 'image';
 
     public const COLOR = 'color';
+
+    public const URL = 'url';
 }

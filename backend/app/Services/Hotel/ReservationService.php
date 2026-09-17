@@ -438,7 +438,7 @@ class ReservationService
                 'folio_id' => $folioId,
                 'method' => $isChangeFromTender ? PaymentMethod::CASH : ($data['refund_method'] ?? PaymentMethod::CASH),
                 'amount' => $result['overpaid'], 'kind' => PaymentKind::REFUND,
-                'reason' => $isChangeFromTender ? 'Change returned to guest' : 'Deposit/overpayment refund at checkout',
+                'reason' => $isChangeFromTender ? Payment::CHANGE_REASON : 'Deposit/overpayment refund at checkout',
                 'staff_id' => $staffId,
             ]);
         }

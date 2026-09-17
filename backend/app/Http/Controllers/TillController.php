@@ -17,11 +17,12 @@ class TillController extends Controller
 
     /**
      * Tills the current user may open — every active till in the tenant, each
-     * with its last closing balance (null if never closed) so the open-till
-     * screen can pre-fill the opening amount. ?include_inactive=1 also
-     * returns deactivated tills — till definitions themselves are managed
-     * only from master control (App\Http\Controllers\Central\TenantTillController),
-     * this stays read-only.
+     * with its last closing count and who counted it when (all null if the
+     * till has never been closed), so the open-till screen can suggest an
+     * opening amount and show where that suggestion came from.
+     * ?include_inactive=1 also returns deactivated tills — till definitions
+     * themselves are managed only from master control
+     * (App\Http\Controllers\Central\TenantTillController), this stays read-only.
      */
     public function index(Request $request): JsonResponse
     {
@@ -31,9 +32,12 @@ class TillController extends Controller
         }
 
         $tills = $query->get();
-        $lastClosingBalances = $this->till->lastClosingBalances($tills->pluck('id')->all());
-        $tills->each(function (Till $till) use ($lastClosingBalances): void {
-            $till->last_closing_cash = $lastClosingBalances[$till->id] ?? null;
+        $lastClosings = $this->till->lastClosings($tills->pluck('id')->all());
+        $tills->each(function (Till $till) use ($lastClosings): void {
+            $last = $lastClosings[$till->id] ?? null;
+            $till->last_closing_cash = $last['cash'] ?? null;
+            $till->last_closed_at = $last['closed_at'] ?? null;
+            $till->last_closed_by = $last['closed_by'] ?? null;
         });
 
         return response()->json(['tills' => $tills]);
@@ -60,9 +64,20 @@ class TillController extends Controller
     public function close(CloseTillRequest $request, TillSession $session): JsonResponse
     {
         $data = $request->validated();
-        $closed = $this->till->closeTill($session, $data['closing_cash'], $data['reason'] ?? null, $data['notes'] ?? null, $request->user());
+        $closed = $this->till->closeTill($session, $data['closing_cash'] ?? null, $data['reason'] ?? null, $data['notes'] ?? null, $request->user());
 
         return response()->json(['session' => $closed]);
+    }
+
+    /**
+     * The close-out breakdown for a session — every activity that put cash in
+     * or took it out, and the expected balance those movements add up to. Read
+     * live on the Till page and again inside the close dialog, so the operator
+     * reconciles against an itemised statement rather than a bare total.
+     */
+    public function summary(TillSession $session): JsonResponse
+    {
+        return response()->json(['summary' => $this->till->sessionSummary($session)]);
     }
 
     /** Full ledger for one session, oldest first — the audit trail a variance dispute gets resolved against. */

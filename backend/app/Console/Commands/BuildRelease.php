@@ -43,8 +43,9 @@ use ZipArchive;
  *       index.php                 patched front controller -> ./app_core
  *       index.html                the React SPA shell (client-side routes)
  *       assets/ sw.js …           built SPA + the backend's public assets
- *       .htaccess                 /api,/sanctum,/broadcasting,/up -> index.php;
- *                                 real files served as-is; else -> index.html
+ *       .htaccess                 /api,/sanctum,/broadcasting,/up,/migrate,/seed
+ *                                 -> index.php; real files served as-is;
+ *                                 else -> index.html
  *       app_core/                 the Laravel core, DENIED to the web
  *         app/ bootstrap/ config/ routes/ database/ vendor/ storage/ .env
  *
@@ -57,9 +58,17 @@ use ZipArchive;
  * validateProductionEnv() still checks the few values that matter for a single
  * host so a bad env file fails loudly here instead of after a deploy.
  *
- * Migrations are NOT run by this bundle: on this shared-hosting workflow the
- * database is loaded by importing a SQL dump (phpMyAdmin), so there is nothing
- * for the server to execute after extracting.
+ * Migrations are not run *during* extraction — nothing in the bundle executes
+ * on its own. The first-time database is still loaded by importing a SQL dump
+ * (phpMyAdmin). For every release after that, hit the deploy utilities the
+ * bundle exposes (App\Http\Controllers\DeployController) in a browser:
+ *
+ *     https://{host}/migrate/status   see what is pending (changes nothing)
+ *     https://{host}/migrate          apply the pending migrations
+ *     https://{host}/seed             run the (idempotent) seeders
+ *
+ * writeDocrootHtaccess() routes those paths to index.php — that rule is what
+ * makes them work; without it Apache hands back the SPA shell instead.
  *
  * Inode strategy (cPanel shared hosting, ~300k inode budget), in order of payoff:
  *   1. Skip the obvious heavyweights at copy time (node_modules, vendor, .git…).
@@ -605,10 +614,27 @@ class BuildRelease extends Command
      *
      * The prefix list is exhaustive for this app in production: every registered
      * route lives under api/ (Fortify's prefix is `api` too), plus Sanctum's
-     * csrf-cookie, broadcasting auth, and the /up health check.
+     * csrf-cookie, broadcasting auth, the /up health check, and the bare
+     * migrate/seed deploy utilities (DeployController — the whole point of them
+     * is a plain https://{host}/migrate URL on a host with no terminal, so they
+     * must be sent to index.php rather than falling through to the SPA shell).
+     * App\Rules\ReservedSlug keeps a tenant from ever claiming one of these.
+     *
+     * The SPA shell (index.html) and the service worker are served with
+     * Cache-Control: no-cache. Without it Apache sends them with only a
+     * Last-Modified, and browsers then apply heuristic freshness (10% of the
+     * file's age) — so a copy of index.html that a browser picked up days ago
+     * keeps being served straight from its cache for hours after a new
+     * release lands, without the server being asked at all. That shows up in
+     * two ways: the app loads hashed assets the new release no longer ships,
+     * and — because earlier releases answered /migrate with the SPA shell —
+     * the React app keeps coming back for /migrate even after the rewrite
+     * above is in place. Hashed /assets are immutable and need no such rule.
      */
     private function writeDocrootHtaccess(string $docrootStage, string $coreDir, string $host): void
     {
+        $serverPrefixes = 'api|sanctum|broadcasting|up|migrate|seed';
+
         $htaccess = <<<HTACCESS
         # Single-domain bundle: this document root serves the built React SPA and
         # proxies API paths to the Laravel front controller (index.php). The
@@ -648,15 +674,29 @@ class BuildRelease extends Command
             # API paths are NOT rewritten — the old SPA build still calls
             # "{slug}.{$host}/api/..." and the Laravel Host fallback (Phase 1)
             # resolves those. Delete this block at cutover.
-            RewriteCond %{REQUEST_URI} !^/(api|sanctum|broadcasting|up)(/|\$)
+            RewriteCond %{REQUEST_URI} !^/({$serverPrefixes})(/|\$)
             RewriteCond %{HTTP_HOST} ^([a-z0-9-]+)\.{$host}\$
             RewriteRule ^(.*)\$ https://{$host}/%1/\$1 [L,R=301]
 
-            # Server-side paths -> Laravel front controller.
-            RewriteRule ^(api|sanctum|broadcasting|up)(/|\$) index.php [L]
+            # Server-side paths -> Laravel front controller. Includes the bare
+            # /migrate, /migrate/status and /seed deploy utilities: without them
+            # here those URLs fall through to the SPA shell below and you get
+            # the React app back instead of the artisan output.
+            RewriteRule ^({$serverPrefixes})(/|\$) index.php [L]
 
             # Anything else is a client-side (React Router) route -> SPA shell.
             RewriteRule ^ index.html [L]
+        </IfModule>
+
+        # The SPA shell and service worker must be revalidated on every load:
+        # index.html names THIS release's hashed assets, and a heuristically
+        # cached copy (Apache sends only Last-Modified by default) would keep
+        # loading a previous release — or keep answering /migrate with the
+        # React app, as releases before the migrate|seed rewrite above did.
+        <IfModule mod_headers.c>
+            <FilesMatch "^(index\\.html|sw\\.js)\$">
+                Header set Cache-Control "no-cache"
+            </FilesMatch>
         </IfModule>
 
         # Belt-and-suspenders: deny dotenv/VCS dotfiles even if mod_rewrite is off.
@@ -758,8 +798,13 @@ class BuildRelease extends Command
         $steps[] = 'In cPanel File Manager, open that document root.';
         $steps[] = 'Upload this zip there and Extract it (choose "overwrite" if prompted). '
             ."Its entries land directly in the document root — index.php, index.html, assets/, and the web-denied {$coreDir}/.";
-        $steps[] = "Import your MySQL dump into the \"{$db}\" database (phpMyAdmin > Import). "
-            .'Only needed the first time, or whenever your data/schema changes — this bundle never runs migrations.';
+        $steps[] = "FIRST DEPLOY ONLY: import your MySQL dump into the \"{$db}\" database (phpMyAdmin > Import). "
+            .'Later releases do not need this — use the migrate URLs in the next step instead.';
+        $steps[] = "Apply this release's schema changes from a browser (no terminal needed):\n"
+            ."       https://{$host}/migrate/status   <- look first: lists every migration and whether it has run\n"
+            ."       https://{$host}/migrate          <- run the pending ones\n"
+            ."       https://{$host}/seed             <- refresh reference data (safe to repeat)\n"
+            .'    Each prints the plain artisan output in the browser, ending in "OK" or "FAILED".';
         $steps[] = 'Create/verify tenant rows (slug = URL prefix) via the central panel at the reserved prefix '
             .'— every tenant slug automatically resolves to its /{slug}/… prefix on this same host, once its row exists.';
 
@@ -780,7 +825,27 @@ class BuildRelease extends Command
             ."DEPLOY (repeat for every release):\n"
             .implode("\n", $lines)."\n\n"
             ."That's it — no terminal, no artisan, no composer on the server.\n\n"
+            ."IF A MIGRATE URL DOES NOT ANSWER WITH ARTISAN TEXT\n"
+            ."  - You see the React app (or a blank page that then loads the app): the request\n"
+            ."    never reached Laravel. Either the browser served its own cached copy of the\n"
+            ."    app shell for that URL (releases before this one answered /migrate with it) —\n"
+            ."    hard-refresh (Ctrl+Shift+R) or open the URL in a private window — or the\n"
+            ."    document root's .htaccess is not this release's: in File Manager turn on\n"
+            ."    Settings > \"Show Hidden Files\", open .htaccess and check that the line\n"
+            ."    \"RewriteRule ^(api|sanctum|broadcasting|up|migrate|seed)\" is there. If the\n"
+            ."    extract skipped it, re-extract the zip with overwrite.\n"
+            ."    https://{$host}/index.php/migrate/status reaches Laravel without depending on\n"
+            ."    that rewrite at all, and is a quick way to tell the two apart.\n"
+            ."  - \"FAILED (exit code 1)\" with a message: that message IS the answer — a wrong\n"
+            ."    DB_* value in {$coreDir}/.env, a missing database, or a migration the server's\n"
+            ."    MySQL rejects. \"Migration table not found\" on /migrate/status just means\n"
+            ."    /migrate has never run here yet.\n"
+            ."  - A timeout / 5xx after a long wait: a big batch outran the host's PHP time limit.\n"
+            ."    Open /migrate again — it resumes with the migrations that are still pending.\n\n"
             ."NOTES\n"
+            ."  - The /migrate, /migrate/status and /seed URLs above are PUBLIC — no login, no\n"
+            ."    token. Anyone who knows them can run migrations here. They exist because this\n"
+            ."    host has no SSH; gate or remove them once it does (DeployController).\n"
             ."  - One origin for everything: the SPA is reached at /{slug}/… or /admin (its own\n"
             ."    prefixes), the API at /api (VITE_API_URL is empty), so there is no CORS and no\n"
             ."    cross-host cookie handling anywhere.\n"
@@ -827,7 +892,8 @@ class BuildRelease extends Command
         $this->newLine();
         $this->components->bulletList([
             "Extract the zip into the {$host} document root (overwrite).",
-            "Import your SQL dump into \"{$db}\" (first time / on schema change).",
+            "Import your SQL dump into \"{$db}\" (first deploy only).",
+            "Then open https://{$host}/migrate/status, and https://{$host}/migrate to apply.",
             'No terminal, no artisan — see the DEPLOY-*.txt next to the zip.',
         ]);
 

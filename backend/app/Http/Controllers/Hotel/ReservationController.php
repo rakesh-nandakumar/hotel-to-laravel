@@ -21,6 +21,7 @@ use App\Services\AuditLog;
 use App\Services\Hotel\BillingService;
 use App\Services\Hotel\ReservationAvailabilityService;
 use App\Services\Hotel\ReservationService;
+use App\Services\Hotel\ReservationShareService;
 use App\Services\Hotel\RoomPricingService;
 use App\Support\Lookups\LookupType;
 use App\Support\Lookups\PaymentMethod;
@@ -37,6 +38,7 @@ class ReservationController extends Controller
         private readonly RoomPricingService $pricing,
         private readonly BillingService $billing,
         private readonly ReservationService $reservations,
+        private readonly ReservationShareService $share,
     ) {}
 
     public function availability(Request $request): JsonResponse
@@ -176,6 +178,16 @@ class ReservationController extends Controller
             'reservation' => $reservation,
             'folio' => $folio ? $this->billing->present($folio) : null,
         ]);
+    }
+
+    /**
+     * Text summary + the configured group link for the "share to WhatsApp
+     * group" button — see ReservationShareService for why it's copy-and-open
+     * rather than a real send.
+     */
+    public function whatsAppMessage(Reservation $reservation): JsonResponse
+    {
+        return response()->json($this->share->whatsAppMessage($reservation));
     }
 
     public function store(StoreReservationRequest $request): JsonResponse

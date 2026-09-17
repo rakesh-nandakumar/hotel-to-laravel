@@ -4,6 +4,7 @@ import { Printer, LogIn, LogOut, Ban, Plus, Pencil, Trash2, Check, CircleDot, Ci
 import { printDocument, post, put } from "../lib/api";
 import { useFetch, lkr, usd, fmtDate, fmtDateTime, toCents, useSettings } from "../lib/util";
 import { Badge, Card, Empty, ErrorText, Field, Modal, statusColor } from "../components/ui";
+import { WhatsAppIcon, WhatsAppShareModal, useWhatsAppShare } from "../components/WhatsAppShare";
 import { SplitPay, ReasonModal, DiscountModal } from "./POS";
 import { useToast } from "../lib/toast";
 import { useAuth } from "../lib/auth";
@@ -69,12 +70,17 @@ export default function ReservationDetail() {
   const [editStayOpen, setEditStayOpen] = useState(false);
   const [editGuestOpen, setEditGuestOpen] = useState(false);
   const [voidingLine, setVoidingLine] = useState<FolioLineT | null>(null);
+  const [shareOpen, setShareOpen] = useState(false);
+  const whatsapp = useWhatsAppShare();
   const nav = useNavigate();
 
   if (error) return <ErrorText error={error} />;
   if (!data) return <Empty text="Loading…" />;
   const r = data.reservation;
   const f = data.folio;
+  // Change handed back on a cash over-tender is money the guest never really
+  // paid, so it's split out of "Refunded" rather than lumped in with it.
+  const changeReturned = f ? f.payments.filter((p) => p.kind.code === "refund" && p.reason === "Change returned to guest").reduce((s, p) => s + p.amount, 0) : 0;
 
   return (
     <div className="space-y-4">
@@ -94,6 +100,11 @@ export default function ReservationDetail() {
           )}
           {r.status.code === "checked_in" && can("hotel_reservations.checkout") && (
             <button className="btn-primary" onClick={() => setCheckoutOpen(true)}><LogOut size={16} /> Check out</button>
+          )}
+          {whatsapp.canShare(r.status.code) && (
+            <button className="btn-secondary !border-emerald-200 !text-emerald-700 hover:!bg-emerald-50" onClick={() => setShareOpen(true)} title="Share booking to the WhatsApp group">
+              <WhatsAppIcon size={16} /> WhatsApp
+            </button>
           )}
           {f && can("hotel_folios.invoice") && (
             <div className="flex">
@@ -194,8 +205,10 @@ export default function ReservationDetail() {
           </div>
           <div className="mt-3 grid gap-1 border-t border-slate-100 pt-3 text-sm sm:ml-auto sm:w-72">
             <div className="flex justify-between font-extrabold"><span>Total</span><span>{lkr(f.total)} {usdRate > 0 && <span className="text-xs font-normal text-slate-400">{usd(f.total, usdRate)}</span>}</span></div>
-            <div className="flex justify-between text-emerald-700"><span>Paid</span><span>{lkr(f.paid)}</span></div>
-            {f.refunded > 0 && <div className="flex justify-between text-red-600"><span>Refunded</span><span>{lkr(f.refunded)}</span></div>}
+            <div className="flex justify-between text-emerald-700"><span>{changeReturned > 0 ? "Received" : "Paid"}</span><span>{lkr(f.paid)}</span></div>
+            {changeReturned > 0 && <div className="flex justify-between text-amber-700"><span>Change returned</span><span>-{lkr(changeReturned)}</span></div>}
+            {f.refunded - changeReturned > 0 && <div className="flex justify-between text-red-600"><span>Refunded</span><span>-{lkr(f.refunded - changeReturned)}</span></div>}
+            {changeReturned > 0 && <div className="flex justify-between text-emerald-700"><span>Net paid</span><span>{lkr(f.paid - f.refunded)}</span></div>}
             <div className="flex justify-between font-bold"><span>Balance</span><span>{lkr(f.balance)}</span></div>
           </div>
           {f.payments.length > 0 && (
@@ -323,6 +336,7 @@ export default function ReservationDetail() {
           onClose={() => setVoidingLine(null)}
         />
       )}
+      {shareOpen && <WhatsAppShareModal reservationId={r.id} code={r.code} onClose={() => setShareOpen(false)} />}
       {editStayOpen && <EditStayModal r={r} onClose={() => setEditStayOpen(false)} onDone={() => { setEditStayOpen(false); reload(); }} />}
       {editGuestOpen && <EditGuestModal guest={r.guest} onClose={() => setEditGuestOpen(false)} onDone={() => { setEditGuestOpen(false); reload(); }} />}
     </div>
@@ -546,14 +560,23 @@ function CheckOutModal({ r, usdRate, onClose, onDone }: { r: Detail; usdRate: nu
   const [payments, setPayments] = useState<{ method: string; amount: string; reference: string }[]>([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [invoiceNo, setInvoiceNo] = useState("");
+  const [done, setDone] = useState<{ invoiceNo: string; changeDue: number; tendered: number } | null>(null);
 
-  if (invoiceNo) {
+  if (done) {
     return (
       <Modal open onClose={onDone} title="Checked out ✓">
         <div className="space-y-3 text-center">
           <div className="text-3xl">🧾</div>
-          <p className="text-sm">Consolidated invoice <b>{invoiceNo}</b> generated. Rooms sent to housekeeping.</p>
+          <p className="text-sm">Consolidated invoice <b>{done.invoiceNo}</b> generated. Rooms sent to housekeeping.</p>
+          {done.changeDue > 0 && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-left text-sm">
+              <div className="flex justify-between"><span>Bill total</span><span>{lkr(quote?.grand_total)}</span></div>
+              <div className="flex justify-between"><span>Paid now</span><span>{lkr(done.tendered)}</span></div>
+              <div className="mt-1 flex justify-between border-t border-amber-200 pt-1 text-base font-extrabold text-amber-800">
+                <span>Change to return</span><span>{lkr(done.changeDue)}</span>
+              </div>
+            </div>
+          )}
           <div className="flex justify-center gap-2">
             <button className="btn-primary" onClick={() => quote && printDocument(`/folios/${quote.folio.id}/invoice?format=a4`)}><Printer size={15} /> Print A4</button>
             <button className="btn-secondary" onClick={() => quote && printDocument(`/folios/${quote.folio.id}/invoice?format=thermal`)}>Thermal</button>
@@ -577,13 +600,13 @@ function CheckOutModal({ r, usdRate, onClose, onDone }: { r: Detail; usdRate: nu
     setBusy(true);
     setError("");
     try {
-      const res = await post<{ invoice_no: string }>(`/reservations/${r.id}/checkout`, {
+      const res = await post<{ invoice_no: string; change_due: number }>(`/reservations/${r.id}/checkout`, {
         apply_late_surcharge: applyLate,
         apply_early_departure: applyEarlyDeparture,
         payments: payments.filter((p) => toCents(p.amount) > 0).map((p) => ({ method: p.method, amount: toCents(p.amount), reference: p.reference || undefined })),
       });
-      setInvoiceNo(res.invoice_no);
-      toast.success(`${r.guest.name} checked out`, `Invoice ${res.invoice_no} generated`);
+      setDone({ invoiceNo: res.invoice_no, changeDue: res.change_due ?? 0, tendered: newSum });
+      toast.success(`${r.guest.name} checked out`, res.change_due > 0 ? `Invoice ${res.invoice_no} — return ${lkr(res.change_due)} change` : `Invoice ${res.invoice_no} generated`);
     } catch (e) {
       setError((e as Error).message);
     } finally {
