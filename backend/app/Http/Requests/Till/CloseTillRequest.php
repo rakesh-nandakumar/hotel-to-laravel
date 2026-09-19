@@ -17,7 +17,14 @@ class CloseTillRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'closing_cash' => ['required', 'integer', 'min:0'],
+            // Optional: omitting it accepts the session's own expected balance
+            // as the counted amount, which closes at zero variance. Only a
+            // physical recount that disagrees needs to be sent.
+            'closing_cash' => ['nullable', 'integer', 'min:0'],
+            // Required only when closing_cash differs from the session's
+            // expected balance — enforced in TillService::closeTill(), which
+            // is the only place that knows that comparison value.
+            'reason' => ['nullable', 'string', 'max:500'],
             'notes' => ['nullable', 'string', 'max:1000'],
         ];
     }

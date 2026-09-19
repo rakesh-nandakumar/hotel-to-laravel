@@ -19,6 +19,10 @@ class ReservedSlug implements ValidationRule
         'central', 'www', 'api', 'sanctum', 'broadcasting', 'up', 'app', 'mail',
         'smtp', 'ftp', 'cdn', 'static', 'assets', 'status', 'help', 'support',
         'billing', 'dashboard',
+        // Bare deploy utilities (DeployController) — the server sends these two
+        // prefixes to Laravel instead of the SPA, so a tenant on either slug
+        // would be unreachable.
+        'migrate', 'seed',
     ];
 
     public function validate(string $attribute, mixed $value, Closure $fail): void

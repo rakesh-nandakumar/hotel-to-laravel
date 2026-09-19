@@ -45,7 +45,7 @@ class SystemRoleDefinition
                     'hotel_laundry' => ['access', 'create', 'edit', 'charge'],
                     'hotel_venues' => ['access', 'create', 'edit'],
                     'hotel_venue_bookings' => ['access', 'view', 'create', 'edit', 'confirm', 'complete', 'cancel'],
-                    'till' => ['access', 'open', 'close', 'close_any', 'cash_in', 'cash_out', 'manage'],
+                    'till' => ['access', 'open', 'close', 'close_any', 'cash_in', 'cash_out'],
                     'hotel_attendance' => ['access', 'on_duty', 'view_all', 'export'],
                     'hotel_visitors' => ['access', 'create', 'sign_out'],
                     // hotel_notifications.test is deliberately NOT granted to any named
@@ -117,7 +117,7 @@ class SystemRoleDefinition
                     'hotel_laundry' => ['access', 'create', 'edit', 'charge'],
                     'hotel_venues' => ['access', 'create', 'edit'],
                     'hotel_venue_bookings' => ['access', 'view', 'create', 'edit', 'confirm', 'complete', 'cancel'],
-                    'till' => ['access', 'open', 'close', 'close_any', 'cash_in', 'cash_out', 'manage'],
+                    'till' => ['access', 'open', 'close', 'close_any', 'cash_in', 'cash_out'],
                     'hotel_attendance' => ['access', 'on_duty', 'view_all', 'export'],
                     // Payroll is OWNER-only — Node explicitly excludes Manager here
                     // (router.use(requireRole("OWNER"))), unlike every other module.

@@ -36,6 +36,7 @@ use App\Http\Controllers\Central\TenantSettingController;
 use App\Http\Controllers\Central\TenantTillController;
 use App\Http\Controllers\Central\TestInstanceController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\DeployController;
 use App\Http\Controllers\HostContextController;
 use App\Http\Controllers\Hotel\AddOnController;
 use App\Http\Controllers\Hotel\AttendanceController;
@@ -76,8 +77,6 @@ use App\Http\Controllers\Settings\ProfileController;
 use App\Http\Controllers\TillController;
 use App\Http\Controllers\UserManagement\RoleController;
 use App\Http\Controllers\UserManagement\UserManagementUserController;
-use Illuminate\Support\Facades\Artisan;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route;
 
 // ── Boot gate ───────────────────────────────────────────────────────────────
@@ -86,24 +85,14 @@ use Illuminate\Support\Facades\Route;
 Route::get('host-context', HostContextController::class)->name('host-context');
 
 // ── Deploy utility ────────────────────────────────────────────────────────
-// Deliberately public (no auth, no CSRF, no token) for hosts where shell/SSH
-// access isn't available to run `php artisan migrate` directly — see the
-// IdentifyTenant bypass for this path in app/Http/Middleware/IdentifyTenant.php.
-// WARNING: this means anyone who discovers the URL can run migrations
-// against this environment. Requested as-is; remove or gate behind a secret
-// once SSH access exists.
-Route::get('deploy/migrate', function () {
-    $exitCode = Artisan::call('migrate', ['--force' => true]);
-    $output = Artisan::output();
-
-    Log::warning('Public deploy/migrate route invoked', ['ip' => request()->ip(), 'exit_code' => $exitCode]);
-
-    return response()->json([
-        'ok' => $exitCode === 0,
-        'exit_code' => $exitCode,
-        'output' => $output,
-    ], $exitCode === 0 ? 200 : 500);
-})->name('deploy.migrate');
+// See App\Http\Controllers\DeployController for the shared logic + the full
+// rationale/warning. These /api/deploy/* paths need the IdentifyTenant
+// bypass below; the bare /migrate + /seed aliases (no /api prefix, for a
+// plain https://{host}/migrate URL) are registered in bootstrap/app.php's
+// withRouting(then: ...) instead, since apiPrefix applies to this whole file.
+Route::get('deploy/migrate', [DeployController::class, 'migrate'])->name('deploy.migrate');
+Route::get('deploy/migrate/status', [DeployController::class, 'status'])->name('deploy.migrate.status');
+Route::get('deploy/seed', [DeployController::class, 'seed'])->name('deploy.seed');
 
 // ── Guest auth ──────────────────────────────────────────────────────────────
 Route::middleware('guest')->group(function () {
@@ -190,6 +179,8 @@ Route::prefix('central')->name('central.')->middleware('central_only')->group(fu
         Route::put('tenants/{tenant}/settings/{key}', [TenantSettingController::class, 'update'])->name('tenants.settings.update');
 
         Route::get('tenants/{tenant}/tills', [TenantTillController::class, 'index'])->name('tenants.tills.index');
+        Route::post('tenants/{tenant}/tills', [TenantTillController::class, 'store'])->name('tenants.tills.store');
+        Route::put('tenants/{tenant}/tills/{till}', [TenantTillController::class, 'update'])->name('tenants.tills.update');
 
         Route::get('tenants/{tenant}/modules', [TenantModuleController::class, 'index'])->name('tenants.modules.index');
         Route::put('tenants/{tenant}/modules/{moduleKey}', [TenantModuleController::class, 'update'])->name('tenants.modules.update');
@@ -521,6 +512,10 @@ Route::middleware(['auth', 'check_active'])->group(function () {
         Route::post('{reservation}/item-check', [ReservationController::class, 'itemCheck'])
             ->middleware('can_do:hotel_reservations.edit')
             ->name('item-check');
+
+        Route::get('{reservation}/whatsapp-message', [ReservationController::class, 'whatsAppMessage'])
+            ->middleware('can_do:hotel_reservations.view')
+            ->name('whatsapp-message');
 
         Route::get('{reservation}', [ReservationController::class, 'show'])
             ->middleware('can_do:hotel_reservations.view')
@@ -880,16 +875,13 @@ Route::middleware(['auth', 'check_active'])->group(function () {
     });
 
     // ── Till (shared cash ledger — Hotel + Restaurant + Apartments) ────────────
+    // Till definitions themselves are master-control-only — see
+    // Central\TenantTillController — this group only opens/closes sessions
+    // and records movements against whatever tills already exist.
     Route::prefix('till')->name('till.')->group(function () {
         Route::get('tills', [TillController::class, 'index'])
             ->middleware('can_do:till.access')
             ->name('tills.index');
-        Route::post('tills', [TillController::class, 'store'])
-            ->middleware('can_do:till.manage')
-            ->name('tills.store');
-        Route::put('tills/{till}', [TillController::class, 'update'])
-            ->middleware('can_do:till.manage')
-            ->name('tills.update');
 
         Route::get('current', [TillController::class, 'current'])
             ->middleware('can_do:till.access')
@@ -903,6 +895,9 @@ Route::middleware(['auth', 'check_active'])->group(function () {
         Route::get('{session}/movements', [TillController::class, 'movements'])
             ->middleware('can_do:till.access')
             ->name('movements.index');
+        Route::get('{session}/summary', [TillController::class, 'summary'])
+            ->middleware('can_do:till.access')
+            ->name('summary');
         // Fine-grained cash_in vs. cash_out/expense/transfer authorization happens
         // in StoreTillMovementRequest::authorize() (it depends on the `type` field).
         Route::post('{session}/movements', [TillController::class, 'storeMovement'])

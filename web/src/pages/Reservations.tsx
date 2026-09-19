@@ -4,6 +4,7 @@ import { Plus, Search, Users } from "lucide-react";
 import { post } from "../lib/api";
 import { useFetch, usePagedFetch, lkr, todayStr, fmtDate, toCents, useSettings, depositAmount } from "../lib/util";
 import { Badge, Card, Empty, ErrorText, Field, Modal, Pagination, statusColor, Tabs } from "../components/ui";
+import { WhatsAppShareButton, WhatsAppShareModal, useWhatsAppShare } from "../components/WhatsAppShare";
 import { useToast } from "../lib/toast";
 import { useAuth } from "../lib/auth";
 
@@ -100,6 +101,8 @@ function ReservationsList() {
   );
   const rows = data?.rows;
   const [openNew, setOpenNew] = useState(false);
+  const whatsapp = useWhatsAppShare();
+  const [shareTarget, setShareTarget] = useState<ResRow | null>(null);
   const nav = useNavigate();
 
   return (
@@ -130,6 +133,7 @@ function ReservationsList() {
             <tr>
               <th className="th">Code</th><th className="th">Guest</th><th className="th">Rooms</th>
               <th className="th">Dates</th><th className="th">Channel</th><th className="th">Status</th><th className="th">Tags</th>
+              {whatsapp.enabled && <th className="th w-12" aria-label="Share" />}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-50">
@@ -149,6 +153,11 @@ function ReservationsList() {
                   {r.corporate_account && <Badge color="blue">{r.corporate_account.company_name}</Badge>}
                   {r.package && r.package.code !== "RO" && <Badge>{r.package.code}</Badge>}
                 </td>
+                {whatsapp.enabled && (
+                  <td className="td text-right">
+                    {whatsapp.canShare(r.status.code) && <WhatsAppShareButton onClick={() => setShareTarget(r)} />}
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
@@ -157,6 +166,7 @@ function ReservationsList() {
         {data && <Pagination page={data.page} pageSize={data.pageSize} total={data.total} onPage={setPage} onPageSize={(n) => { setPageSize(n); setPage(1); }} />}
       </div>
 
+      {shareTarget && <WhatsAppShareModal reservationId={shareTarget.id} code={shareTarget.code} onClose={() => setShareTarget(null)} />}
       {openNew && (
         <NewBooking
           onClose={() => setOpenNew(false)}

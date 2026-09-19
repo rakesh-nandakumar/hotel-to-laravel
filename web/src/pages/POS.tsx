@@ -1223,7 +1223,10 @@ function OrderModal({ orderId, usdRate, mergeCandidates, onClose }: { orderId: n
                 payments: payments.map((p) => ({ ...p, idempotency_key: crypto.randomUUID() })),
               })
             );
-            if (ok) toast.success(`Order #${order.id} settled`, lkr(order.total));
+            // Anything tendered over the amount due comes back as cash change
+            // (the server only allows the over-tender when cash is in the mix).
+            const change = payments.reduce((s, p) => s + p.amount, 0) - due;
+            if (ok) toast.success(`Order #${order.id} settled`, change > 0 ? `${lkr(order.total)} — return ${lkr(change)} change` : lkr(order.total));
             setPayOpen(false);
           }}
           onClose={() => setPayOpen(false)}
