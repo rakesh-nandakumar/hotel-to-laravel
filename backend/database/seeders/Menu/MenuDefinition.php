@@ -188,7 +188,7 @@ class MenuDefinition
                         'name' => 'Venues',
                         'route_name' => 'hotel.venues.index',
                         'module_key' => 'hotel_venues',
-                        'actions' => ['access', 'edit'],
+                        'actions' => ['access', 'create', 'edit'],
                     ],
                     [
                         'name' => 'Bookings',

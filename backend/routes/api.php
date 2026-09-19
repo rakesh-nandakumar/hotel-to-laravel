@@ -846,6 +846,9 @@ Route::middleware(['auth', 'check_active'])->group(function () {
         Route::get('/', [VenueController::class, 'index'])
             ->middleware('can_do:hotel_venues.access')
             ->name('index');
+        Route::post('/', [VenueController::class, 'store'])
+            ->middleware('can_do:hotel_venues.create')
+            ->name('store');
         Route::put('{venue}', [VenueController::class, 'update'])
             ->middleware('can_do:hotel_venues.edit')
             ->name('update');

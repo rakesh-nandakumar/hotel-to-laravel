@@ -19,6 +19,34 @@ class VenueController extends Controller
         return response()->json(['venues' => Venue::query()->orderBy('name')->get()]);
     }
 
+    public function store(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'name' => 'required|string|max:255',
+            'max_capacity' => 'required|integer|min:1',
+            'hourly_rate' => 'required|integer|min:0',
+            'half_day_rate' => 'required|integer|min:0',
+            'full_day_rate' => 'required|integer|min:0',
+            'facilities' => 'array',
+            'facilities.*' => 'string',
+            'active' => 'boolean',
+        ]);
+
+        $venue = Venue::create([
+            'name' => $validated['name'],
+            'max_capacity' => $validated['max_capacity'],
+            'hourly_rate' => $validated['hourly_rate'],
+            'half_day_rate' => $validated['half_day_rate'],
+            'full_day_rate' => $validated['full_day_rate'],
+            'facilities' => $validated['facilities'] ?? [],
+            'active' => $validated['active'] ?? true,
+        ]);
+
+        AuditLog::record('venue.created', $venue, ['name' => $venue->name]);
+
+        return response()->json(['message' => 'Venue created.', 'venue' => $venue], 201);
+    }
+
     public function update(UpdateVenueRequest $request, Venue $venue): JsonResponse
     {
         $venue->update($request->validated());

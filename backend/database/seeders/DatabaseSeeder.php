@@ -18,6 +18,7 @@ class DatabaseSeeder extends Seeder
             SettingsSeeder::class,
             HotelRoomsSeeder::class,
             TillSeeder::class,
+            Demo\DemoCatalogSeeder::class,
         ]);
     }
 }

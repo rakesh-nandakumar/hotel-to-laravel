@@ -118,39 +118,50 @@ function VenueCalendar() {
 function VenueList() {
   const { can } = useAuth();
   const canEdit = can("hotel_venues.edit");
-  const { data, reload } = useFetch<{ venues: Venue[] }>("/venues");
+  const canCreate = can("hotel_venues.create");
+  const { data, reload, error, loading } = useFetch<{ venues: Venue[] }>("/venues");
   const venues = data?.venues;
-  const [error, setError] = useState("");
+  const [localError, setLocalError] = useState("");
+  const [showCreateModal, setShowCreateModal] = useState(false);
+
   return (
-    <div className="grid gap-3 md:grid-cols-3">
-      <ErrorText error={error} />
-      {(venues ?? []).map((v) => (
-        <Card key={v.id} title={`${v.name} · seats ${v.max_capacity}`}>
-          <div className="space-y-2 text-sm">
-            {(["hourly_rate", "half_day_rate", "full_day_rate"] as const).map((k) => (
-              <div key={k} className="flex items-center gap-2">
-                <span className="w-20 text-xs text-slate-500">{k === "hourly_rate" ? "Hourly" : k === "half_day_rate" ? "Half-day" : "Full-day"}</span>
+    <div className="space-y-3">
+      <div className="flex justify-end">
+        {canCreate && <button className="btn-primary" onClick={() => setShowCreateModal(true)}><Plus size={16} /> New venue</button>}
+      </div>
+      <div className="grid gap-3 md:grid-cols-3">
+        <ErrorText error={error || localError} />
+        {loading && <div className="text-slate-500">Loading venues...</div>}
+        {!loading && (!venues || venues.length === 0) && <div className="text-slate-500">No venues found</div>}
+        {(venues ?? []).map((v) => (
+          <Card key={v.id} title={`${v.name} · seats ${v.max_capacity}`}>
+            <div className="space-y-2 text-sm">
+              {(["hourly_rate", "half_day_rate", "full_day_rate"] as const).map((k) => (
+                <div key={k} className="flex items-center gap-2">
+                  <span className="w-20 text-xs text-slate-500">{k === "hourly_rate" ? "Hourly" : k === "half_day_rate" ? "Half-day" : "Full-day"}</span>
+                  <input
+                    className="input"
+                    disabled={!canEdit}
+                    defaultValue={centsToRupees(v[k])}
+                    onBlur={(e) => put(`/venues/${v.id}`, { [k]: toCents(e.target.value) }).then(reload).catch((err) => setLocalError(err.message))}
+                  />
+                </div>
+              ))}
+              <div>
+                <span className="label">Facilities (comma-separated)</span>
                 <input
                   className="input"
                   disabled={!canEdit}
-                  defaultValue={centsToRupees(v[k])}
-                  onBlur={(e) => put(`/venues/${v.id}`, { [k]: toCents(e.target.value) }).then(reload).catch((err) => setError(err.message))}
+                  defaultValue={(v.facilities ?? []).join(", ")}
+                  onBlur={(e) => put(`/venues/${v.id}`, { facilities: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) }).catch((err) => setLocalError(err.message))}
                 />
               </div>
-            ))}
-            <div>
-              <span className="label">Facilities (comma-separated)</span>
-              <input
-                className="input"
-                disabled={!canEdit}
-                defaultValue={(v.facilities ?? []).join(", ")}
-                onBlur={(e) => put(`/venues/${v.id}`, { facilities: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) }).catch((err) => setError(err.message))}
-              />
+              <p className="text-[11px] text-slate-400">Pricing & facilities are editable settings (owner instruction §9). Edit and click away to save.</p>
             </div>
-            <p className="text-[11px] text-slate-400">Pricing & facilities are editable settings (owner instruction §9). Edit and click away to save.</p>
-          </div>
-        </Card>
-      ))}
+          </Card>
+        ))}
+      </div>
+      {showCreateModal && <CreateVenueModal onClose={() => setShowCreateModal(false)} onDone={() => { setShowCreateModal(false); reload(); }} />}
     </div>
   );
 }
@@ -397,6 +408,62 @@ function BookingModal({ b, onClose }: { b: Booking; onClose: () => void }) {
           onClose={() => setCancelOpen(false)}
         />
       )}
+    </Modal>
+  );
+}
+
+function CreateVenueModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+  const toast = useToast();
+  const [f, setF] = useState({
+    name: "", maxCapacity: "", hourlyRate: "", halfDayRate: "", fullDayRate: "", facilities: ""
+  });
+  const [error, setError] = useState("");
+
+  return (
+    <Modal open onClose={onClose} title="Create new venue">
+      <div className="space-y-3">
+        <Field label="Venue name *">
+          <input className="input" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="e.g. Grand Ballroom" />
+        </Field>
+        <Field label="Max capacity *">
+          <input className="input" type="number" value={f.maxCapacity} onChange={(e) => setF({ ...f, maxCapacity: e.target.value })} placeholder="e.g. 300" />
+        </Field>
+        <Field label="Hourly rate (LKR) *">
+          <input className="input" type="number" value={f.hourlyRate} onChange={(e) => setF({ ...f, hourlyRate: e.target.value })} placeholder="e.g. 15000" />
+        </Field>
+        <Field label="Half-day rate (LKR) *">
+          <input className="input" type="number" value={f.halfDayRate} onChange={(e) => setF({ ...f, halfDayRate: e.target.value })} placeholder="e.g. 60000" />
+        </Field>
+        <Field label="Full-day rate (LKR) *">
+          <input className="input" type="number" value={f.fullDayRate} onChange={(e) => setF({ ...f, fullDayRate: e.target.value })} placeholder="e.g. 100000" />
+        </Field>
+        <Field label="Facilities (comma-separated)">
+          <input className="input" value={f.facilities} onChange={(e) => setF({ ...f, facilities: e.target.value })} placeholder="e.g. Stage, Sound System, Projector" />
+        </Field>
+        <ErrorText error={error} />
+        <button
+          className="btn-primary w-full"
+          disabled={!f.name.trim() || !f.maxCapacity || !f.hourlyRate || !f.halfDayRate || !f.fullDayRate}
+          onClick={() =>
+            post<{ message: string; venue: Venue }>("/venues", {
+              name: f.name,
+              max_capacity: parseInt(f.maxCapacity) || 0,
+              hourly_rate: toCents(f.hourlyRate),
+              half_day_rate: toCents(f.halfDayRate),
+              full_day_rate: toCents(f.fullDayRate),
+              facilities: f.facilities.split(",").map((s) => s.trim()).filter(Boolean),
+              active: true,
+            })
+              .then((r) => {
+                toast.success(`Venue "${r.venue.name}" created`);
+                onDone();
+              })
+              .catch((e) => setError(e.message))
+          }
+        >
+          Create venue
+        </button>
+      </div>
     </Modal>
   );
 }
