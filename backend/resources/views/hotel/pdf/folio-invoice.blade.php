@@ -41,26 +41,8 @@
 @endif
 <hr class="hr">
 <x-pdf-row bold left="TOTAL (LKR)" :right="\App\Support\Money::format($totals['total'])" />
-
-@php
-    $hasChange = $folio->payments->contains(fn ($p) => $p->reason === 'Change returned to guest');
-@endphp
-@if($hasChange)
-    <x-pdf-row :left="'TENDERED'" :right="\App\Support\Money::format($totals['paid'])" />
-@endif
-@foreach($folio->payments as $payment)
-    @php
-        $isChange = $payment->reason === 'Change returned to guest';
-        $kindLabel = $isChange ? 'Change'
-            : ($payment->kind->code === \App\Support\Lookups\PaymentKind::REFUND ? 'Refund'
-            : ($payment->kind->code === \App\Support\Lookups\PaymentKind::DEPOSIT ? 'Deposit' : 'Payment'));
-    @endphp
-    <x-pdf-row
-        :left="$kindLabel.' — '.$payment->method->code.($payment->reference ? ' ('.$payment->reference.')' : '').' '.$payment->created_at->format('d/m/Y')"
-        :right="($payment->kind->code === \App\Support\Lookups\PaymentKind::REFUND ? '' : '-').\App\Support\Money::format($payment->amount)"
-    />
-@endforeach
-<x-pdf-row bold :left="$totals['balance'] > 0 ? 'BALANCE DUE' : 'BALANCE'" :right="\App\Support\Money::format(abs($totals['balance']))" />
+<hr class="hr">
+@include('hotel.pdf.partials.payment-summary', ['payments' => $folio->payments, 'total' => $totals['total']])
 @endsection
 
 @php($footerExtra = 'Settlement currency: LKR. Thank you for choosing us!')

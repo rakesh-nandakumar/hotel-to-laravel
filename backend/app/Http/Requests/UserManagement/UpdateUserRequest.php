@@ -29,7 +29,9 @@ class UpdateUserRequest extends FormRequest
                 'string',
                 'email',
                 'max:255',
-                Rule::unique('users', 'email')->ignore($target->id),
+                Rule::unique('users', 'email')
+                    ->where(fn ($query) => $query->where('tenant_id', $target->tenant_id))
+                    ->ignore($target->id),
             ],
             'phone' => ['nullable', 'string', 'max:20'],
             'password' => [

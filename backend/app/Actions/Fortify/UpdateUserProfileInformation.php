@@ -28,7 +28,9 @@ class UpdateUserProfileInformation implements UpdatesUserProfileInformation
                 'string',
                 'email',
                 'max:255',
-                Rule::unique('users')->ignore($user->id),
+                Rule::unique('users')
+                    ->where(fn ($query) => $query->where('tenant_id', $user->tenant_id))
+                    ->ignore($user->id),
             ],
         ])->validateWithBag('updateProfileInformation');
 

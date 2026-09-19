@@ -227,11 +227,24 @@ class Settings
             SettingType::COLOR => (! is_string($value) || ! preg_match('/^#[0-9a-fA-F]{6}$/', $value))
                 ? 'Value must be a hex color, e.g. #0462d3.'
                 : null,
+            // Blank (or the null ConvertEmptyStringsToNull makes of it) clears
+            // the link; anything else must be an absolute http(s) URL, or the
+            // SPA would open it as a relative path of its own origin.
+            SettingType::URL => ($value !== null && $value !== '' && ! self::isHttpUrl($value))
+                ? 'Value must be a full link starting with https://, or blank.'
+                : null,
             default => null,
         };
 
         if ($error !== null) {
             throw ValidationException::withMessages(['value' => $error]);
         }
+    }
+
+    private static function isHttpUrl(mixed $value): bool
+    {
+        return is_string($value)
+            && filter_var($value, FILTER_VALIDATE_URL) !== false
+            && in_array(strtolower((string) parse_url($value, PHP_URL_SCHEME)), ['http', 'https'], true);
     }
 }

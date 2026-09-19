@@ -157,6 +157,9 @@ class DemoCatalogSeeder extends Seeder
 
     public function run(): void
     {
+        $tenant = \App\Models\Tenant::demo();
+        app(\App\Services\CurrentContext::class)->setTenant($tenant->id);
+
         $ingredients = $this->seedIngredients();
         $this->seedMenu($ingredients);
         $this->seedProducts();

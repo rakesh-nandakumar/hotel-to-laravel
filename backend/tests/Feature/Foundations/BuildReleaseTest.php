@@ -75,14 +75,19 @@ it('assembles a single-domain bundle: patched index.php, split .htaccess, core q
         ->toContain("__DIR__.'/app_core/vendor/autoload.php'")
         ->toContain("__DIR__.'/app_core/bootstrap/app.php'");
 
-    // .htaccess: forces https, core denied, server prefixes -> Laravel, else -> SPA shell.
+    // .htaccess: forces https, core denied, server prefixes (including the bare
+    // /migrate + /seed deploy utilities) -> Laravel, else -> SPA shell, and the
+    // shell itself is never heuristically cached (a stale index.html keeps
+    // answering /migrate with the React app after a deploy).
     expect(File::get("{$stage}/.htaccess"))
         ->toContain('DirectoryIndex index.html index.php')
         ->toContain('RewriteCond %{HTTPS} off')
         ->toContain('RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]')
         ->toContain('RewriteRule ^app_core(/|$) - [F,L]')
-        ->toContain('RewriteRule ^(api|sanctum|broadcasting|up)(/|$) index.php [L]')
-        ->toContain('RewriteRule ^ index.html [L]');
+        ->toContain('RewriteRule ^(api|sanctum|broadcasting|up|migrate|seed)(/|$) index.php [L]')
+        ->toContain('RewriteRule ^ index.html [L]')
+        ->toContain('<FilesMatch "^(index\.html|sw\.js)$">')
+        ->toContain('Header set Cache-Control "no-cache"');
 
     // Laravel core is inside app_core/, its env is baked, and public/ is NOT
     // duplicated there (it was merged into the document root instead).
