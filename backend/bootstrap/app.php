@@ -34,7 +34,8 @@ return Application::configure(basePath: dirname(__DIR__))
         then: function () {
             Route::get('migrate', [DeployController::class, 'migrate'])->name('deploy.migrate.bare');
             Route::get('migrate/status', [DeployController::class, 'status'])->name('deploy.migrate.status.bare');
-            Route::get('seed', [DeployController::class, 'seed'])->name('deploy.seed.bare');
+            // Route::get('seed', [DeployController::class, 'seed'])->name('deploy.seed.bare');
+            Route::get('seed/menus', [DeployController::class, 'seedMenusAndPermissions'])->name('deploy.seed.menus.bare');
         },
     )
     // Registered separately (rather than via withRouting's `channels:` param)

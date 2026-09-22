@@ -65,7 +65,8 @@ use ZipArchive;
  *
  *     https://{host}/migrate/status   see what is pending (changes nothing)
  *     https://{host}/migrate          apply the pending migrations
- *     https://{host}/seed             run the (idempotent) seeders
+ *     https://{host}/seed             run every (idempotent) seeder
+ *     https://{host}/seed/menus       just re-sync menu items + permissions/roles
  *
  * writeDocrootHtaccess() routes those paths to index.php — that rule is what
  * makes them work; without it Apache hands back the SPA shell instead.
@@ -803,7 +804,8 @@ class BuildRelease extends Command
         $steps[] = "Apply this release's schema changes from a browser (no terminal needed):\n"
             ."       https://{$host}/migrate/status   <- look first: lists every migration and whether it has run\n"
             ."       https://{$host}/migrate          <- run the pending ones\n"
-            ."       https://{$host}/seed             <- refresh reference data (safe to repeat)\n"
+            ."       https://{$host}/seed             <- refresh ALL reference data (safe to repeat)\n"
+            ."       https://{$host}/seed/menus       <- just re-sync menu items + derived permissions/roles (safe to repeat, quicker than a full /seed when that's all that changed)\n"
             .'    Each prints the plain artisan output in the browser, ending in "OK" or "FAILED".';
         $steps[] = 'Create/verify tenant rows (slug = URL prefix) via the central panel at the reserved prefix '
             .'— every tenant slug automatically resolves to its /{slug}/… prefix on this same host, once its row exists.';
@@ -843,8 +845,8 @@ class BuildRelease extends Command
             ."  - A timeout / 5xx after a long wait: a big batch outran the host's PHP time limit.\n"
             ."    Open /migrate again — it resumes with the migrations that are still pending.\n\n"
             ."NOTES\n"
-            ."  - The /migrate, /migrate/status and /seed URLs above are PUBLIC — no login, no\n"
-            ."    token. Anyone who knows them can run migrations here. They exist because this\n"
+            ."  - The /migrate, /migrate/status, /seed and /seed/menus URLs above are PUBLIC — no\n"
+            ."    login, no token. Anyone who knows them can run migrations here. They exist because this\n"
             ."    host has no SSH; gate or remove them once it does (DeployController).\n"
             ."  - One origin for everything: the SPA is reached at /{slug}/… or /admin (its own\n"
             ."    prefixes), the API at /api (VITE_API_URL is empty), so there is no CORS and no\n"

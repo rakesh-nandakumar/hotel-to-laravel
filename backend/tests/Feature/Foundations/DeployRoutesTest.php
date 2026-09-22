@@ -1,5 +1,7 @@
 <?php
 
+use App\Models\MenuItem;
+use App\Models\Permission;
 use App\Rules\ReservedSlug;
 use Illuminate\Support\Facades\Route;
 
@@ -21,13 +23,14 @@ use Illuminate\Support\Facades\Route;
  * shell. Both list them next to api|sanctum|broadcasting|up.
  */
 it('registers the bare deploy routes outside the api prefix', function () {
-    foreach (['deploy.migrate.bare', 'deploy.migrate.status.bare', 'deploy.seed.bare'] as $name) {
+    foreach (['deploy.migrate.bare', 'deploy.migrate.status.bare', 'deploy.seed.bare', 'deploy.seed.menus.bare'] as $name) {
         expect(Route::has($name))->toBeTrue("route [{$name}] is not registered");
     }
 
     expect(route('deploy.migrate.bare', absolute: false))->toBe('/migrate')
         ->and(route('deploy.migrate.status.bare', absolute: false))->toBe('/migrate/status')
-        ->and(route('deploy.seed.bare', absolute: false))->toBe('/seed');
+        ->and(route('deploy.seed.bare', absolute: false))->toBe('/seed')
+        ->and(route('deploy.seed.menus.bare', absolute: false))->toBe('/seed/menus');
 });
 
 it('reports migration status as plain text with no tenant and no auth', function () {
@@ -75,6 +78,37 @@ it('serves the same utilities under the /api/deploy prefix', function () {
 
     $response->assertOk();
     expect($response->getContent())->toContain('php artisan migrate:status');
+});
+
+it('runs only the menu + permissions seeders from the bare /seed/menus path, with no tenant and no auth', function () {
+    expect(MenuItem::query()->count())->toBe(0);
+
+    $response = $this->get('/seed/menus');
+
+    $response->assertOk();
+    expect($response->headers->get('Content-Type'))->toStartWith('text/plain');
+    expect($response->getContent())
+        ->toContain('php artisan db:seed')
+        ->toContain('Database\Seeders\MenuSeeder')
+        ->toContain('Database\Seeders\PermissionsAndRolesSeeder')
+        ->toContain('OK (exit code 0)');
+
+    // Only the two seeders ran — never AdminUsersSeeder, LookupSeeder, etc.
+    expect($response->getContent())->not->toContain('Database\Seeders\AdminUsersSeeder');
+
+    // Proves the actual seeders ran, not just that the route resolved.
+    expect(MenuItem::query()->count())->toBeGreaterThan(0)
+        ->and(Permission::query()->count())->toBeGreaterThan(0);
+});
+
+it('serves /seed/menus under the /api/deploy prefix too', function () {
+    $response = $this->get('/api/deploy/seed/menus');
+
+    $response->assertOk();
+    expect($response->getContent())
+        ->toContain('Database\Seeders\MenuSeeder')
+        ->toContain('Database\Seeders\PermissionsAndRolesSeeder')
+        ->toContain('OK (exit code 0)');
 });
 
 it('refuses migrate and seed as tenant slugs, since the server routes them to Laravel', function () {
