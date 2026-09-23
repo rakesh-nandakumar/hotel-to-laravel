@@ -1,0 +1,202 @@
+name: Deploy to Live (htl.vellixglobal.com)
+
+# Mirrors leolanka-filament's deploy-live.yml, adapted for this repo:
+#  - monorepo layout: Laravel API in backend/, React SPA in web/
+#  - the artifact is built with `php artisan release:build`, which produces
+#    ONE single-domain zip (SPA + Laravel core in app_core/ + .htaccess).
+#    Extract it into the live domain's document root and it just works.
+#  - the zip is uploaded over FTP and extracted on the server with a
+#    self-deleting unzip.php, exactly like the reference projects.
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-hotel-live
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Build and Deploy (Live)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+
+    env:
+      APP_URL: "https://htl.vellixglobal.com"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.2"
+          extensions: mbstring, bcmath, ctype, fileinfo, mysql, gd, zip, intl, exif, pcntl, dom, curl, xml
+          coverage: none
+          tools: composer:v2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: web/package-lock.json
+
+      - name: Cache Composer dependencies (backend)
+        uses: actions/cache@v4
+        with:
+          path: backend/vendor
+          key: composer-hotel-${{ hashFiles('backend/composer.lock') }}
+          restore-keys: |
+            composer-hotel-
+
+      - name: Install PHP dependencies (so artisan can run)
+        working-directory: backend
+        run: composer install --no-interaction --prefer-dist --optimize-autoloader
+
+      - name: Install frontend dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Build frontend assets
+        working-directory: web
+        env:
+          VITE_API_URL: ""
+        run: npm run build
+
+      - name: Build single-domain release zip
+        # Uses the committed backend/.env.production, baked in as app_core/.env.
+        working-directory: backend
+        run: php artisan release:build --env-file=.env.production --name=hotel-live --skip-npm --no-interaction
+
+      - name: Collect release zip
+        run: |
+          zip_file=$(ls -t backend/storage/app/release/hotel-live-*.zip | head -n 1)
+          echo "Release zip: $zip_file"
+          cp "$zip_file" deploy.zip
+
+      - name: Install zip and lftp
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends zip lftp
+
+      - name: Create remote extractor script
+        # The release zip's entries land DIRECTLY in the document root
+        # (index.php, index.html, assets/, app_core/), so unlike the reference
+        # projects this extractor targets its own directory, not one level up.
+        run: |
+          cat << 'EOF' > unzip.php
+          <?php
+          // This script lives in the document root next to deploy.zip.
+          $baseDir = __DIR__;
+          $zipFile = $baseDir . '/deploy.zip';
+
+          if (!file_exists($zipFile)) {
+              http_response_code(404);
+              echo "Zip file not found at: " . $zipFile;
+              exit;
+          }
+
+          $zip = new ZipArchive;
+          if ($zip->open($zipFile) !== TRUE) {
+              http_response_code(500);
+              echo "Failed to open zip archive.";
+              exit;
+          }
+
+          $success = $zip->extractTo($baseDir);
+          $zip->close();
+          @unlink($zipFile);
+
+          if (!$success) {
+              http_response_code(500);
+              echo "Extraction failed. Check cPanel directory permissions.";
+              exit;
+          }
+
+          // Clear Laravel caches inside the web-denied core folder.
+          $cachePaths = [
+              $baseDir . '/app_core/storage/framework/views/*.php',
+              $baseDir . '/app_core/bootstrap/cache/*.php',
+              $baseDir . '/app_core/storage/framework/cache/data/*/*',
+          ];
+          foreach ($cachePaths as $path) {
+              foreach (glob($path) ?: [] as $file) {
+                  if (is_file($file)) @unlink($file);
+              }
+          }
+
+          if (function_exists('opcache_reset')) {
+              opcache_reset();
+          }
+
+          @unlink(__FILE__);
+          echo "Extraction and cache clear successful!";
+          EOF
+
+      - name: Upload build to cPanel (Live)
+        env:
+          # TODO: replace with the correct credentials.
+          FTP_SERVER: "REPLACE_WITH_FTP_HOST"
+          FTP_USERNAME: "REPLACE_ME"
+          FTP_PASSWORD: "REPLACE_ME"
+        run: |
+          if [ -z "$FTP_USERNAME" ] || [ -z "$FTP_PASSWORD" ] || [ "$FTP_USERNAME" = "REPLACE_ME" ]; then
+            echo "::error::Missing FTP credentials — fill in FTP_SERVER/FTP_USERNAME/FTP_PASSWORD in deploy-live.yml"
+            exit 1
+          fi
+
+          if ! getent hosts "$FTP_SERVER" > /dev/null; then
+            echo "::error::FTP server '$FTP_SERVER' could not be resolved."
+            exit 1
+          fi
+
+          lftp -c "
+            set ftp:ssl-force true;
+            set ftp:ssl-protect-data true;
+            set ftp:passive-mode true;
+            set net:timeout 30;
+            set net:max-retries 3;
+            set net:reconnect-interval-base 5;
+
+            open -u \"$FTP_USERNAME\",\"$FTP_PASSWORD\" \"$FTP_SERVER\";
+
+            put deploy.zip;
+            put unzip.php -o unzip.php;
+          "
+
+      - name: Trigger remote extraction
+        run: |
+          echo "Triggering remote extraction and cache clear..."
+          response=$(curl -fsSL --retry 3 --retry-delay 5 --max-time 120 "${APP_URL}/unzip.php")
+          echo "$response"
+
+          if ! echo "$response" | grep -q "successful"; then
+            echo "::error::Remote extraction did not report success."
+            exit 1
+          fi
+
+          echo "Extraction on Live complete!"
+
+      - name: Apply pending migrations
+        # First deploy ever still needs the MySQL dump imported via phpMyAdmin;
+        # after that, /migrate applies each release's schema changes (no terminal).
+        run: |
+          echo "Applying pending migrations..."
+          migrate_out=$(curl -fsSL --retry 3 --retry-delay 5 --max-time 300 "${APP_URL}/migrate")
+          echo "$migrate_out"
+
+          if echo "$migrate_out" | grep -qi "FAILED"; then
+            echo "::error::Remote migrate reported FAILED — see output above."
+            exit 1
+          fi
+
+          echo "Deployment to Live complete!"
