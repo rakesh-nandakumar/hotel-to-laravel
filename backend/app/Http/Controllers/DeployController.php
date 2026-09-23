@@ -12,28 +12,33 @@ use Illuminate\Support\Facades\Log;
  * `php artisan migrate` / `db:seed` directly — the release:build bundle is
  * extracted through cPanel's File Manager and there is no terminal after that.
  *
- * Four routes, each registered twice (see routes/api.php for the /api/deploy/*
+ * Five routes, each registered twice (see routes/api.php for the /api/deploy/*
  * form and bootstrap/app.php's withRouting(then: ...) for the bare form):
  *
  *     GET /migrate/status   what has and hasn't run — read-only, changes nothing
  *     GET /migrate          run the pending migrations
  *     GET /seed             run every seeder (DatabaseSeeder)
  *     GET /seed/menus       run only MenuSeeder + PermissionsAndRolesSeeder
+ *     GET /migrate/menu     sync menu items, derive permissions, re-sync system roles, flush caches
  *
  * /seed/menus exists because a full /seed also replays AdminUsersSeeder,
  * LookupSeeder, SettingsSeeder, HotelRoomsSeeder etc. — overkill (and slower)
  * when only the menu/permission definitions changed and you just want the
  * new menu items, derived permissions and system roles picked up.
  *
+ * /migrate/menu is the same as /seed/menus but runs the dedicated menu:sync
+ * command, which also handles per-tenant system role syncs and cache flushing.
+ *
  * The bare (unprefixed) form only reaches Laravel if the server sends it there:
  * both the release bundle's .htaccess (BuildRelease::writeDocrootHtaccess) and
  * the Docker nginx config (web/nginx.conf) list `migrate|seed` alongside
  * api/sanctum/broadcasting/up, otherwise the path falls through to the SPA's
  * index.html and the React app comes back instead — that regex matches
- * `seed/menus` too (prefix followed by `/`), so no separate .htaccess entry is
- * needed for it, only a matching nginx `location` block. `migrate` and `seed`
- * are reserved tenant slugs for the same reason (App\Rules\ReservedSlug); a
- * reservation on `seed` already covers every path under it.
+ * `seed/menus` and `migrate/menu` too (prefix followed by `/`), so no separate
+ * .htaccess entry is needed for them, only matching nginx `location` blocks.
+ * `migrate` and `seed` are reserved tenant slugs for the same reason
+ * (App\Rules\ReservedSlug); a reservation on `seed` already covers every path
+ * under it.
  *
  * Responses are plain text, not JSON, so the artisan output is readable as-is
  * in a browser tab rather than one long escaped "\n" string.
@@ -83,6 +88,17 @@ class DeployController extends Controller
             '--class' => MenusAndPermissionsSeeder::class,
             '--force' => true,
         ], 'deploy/seed/menus');
+    }
+
+    /**
+     * Syncs menu items, derives permissions, re-syncs system roles for all tenants,
+     * and flushes permission caches. This is safe to hit repeatedly on the live
+     * environment: it only ever re-syncs menu items, their derived permissions
+     * and the system roles built from them, never user accounts or other reference data.
+     */
+    public function menu(): Response
+    {
+        return $this->run('menu:sync', [], 'deploy/migrate/menu');
     }
 
     /**

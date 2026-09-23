@@ -92,6 +92,7 @@ Route::get('host-context', HostContextController::class)->name('host-context');
 // withRouting(then: ...) instead, since apiPrefix applies to this whole file.
 Route::get('deploy/migrate', [DeployController::class, 'migrate'])->name('deploy.migrate');
 Route::get('deploy/migrate/status', [DeployController::class, 'status'])->name('deploy.migrate.status');
+Route::get('deploy/migrate/menu', [DeployController::class, 'menu'])->name('deploy.migrate.menu');
 Route::get('deploy/seed', [DeployController::class, 'seed'])->name('deploy.seed');
 Route::get('deploy/seed/menus', [DeployController::class, 'seedMenusAndPermissions'])->name('deploy.seed.menus');
 

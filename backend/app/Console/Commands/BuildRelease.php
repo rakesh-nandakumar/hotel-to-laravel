@@ -65,6 +65,7 @@ use ZipArchive;
  *
  *     https://{host}/migrate/status   see what is pending (changes nothing)
  *     https://{host}/migrate          apply the pending migrations
+ *     https://{host}/migrate/menu     sync menu items, derive permissions, re-sync system roles, flush caches
  *     https://{host}/seed             run every (idempotent) seeder
  *     https://{host}/seed/menus       just re-sync menu items + permissions/roles
  *

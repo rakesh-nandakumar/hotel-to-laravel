@@ -23,13 +23,13 @@ use Illuminate\Support\Facades\Route;
  * shell. Both list them next to api|sanctum|broadcasting|up.
  */
 it('registers the bare deploy routes outside the api prefix', function () {
-    foreach (['deploy.migrate.bare', 'deploy.migrate.status.bare', 'deploy.seed.bare', 'deploy.seed.menus.bare'] as $name) {
+    foreach (['deploy.migrate.bare', 'deploy.migrate.status.bare', 'deploy.migrate.menu.bare', 'deploy.seed.menus.bare'] as $name) {
         expect(Route::has($name))->toBeTrue("route [{$name}] is not registered");
     }
 
     expect(route('deploy.migrate.bare', absolute: false))->toBe('/migrate')
         ->and(route('deploy.migrate.status.bare', absolute: false))->toBe('/migrate/status')
-        ->and(route('deploy.seed.bare', absolute: false))->toBe('/seed')
+        ->and(route('deploy.migrate.menu.bare', absolute: false))->toBe('/migrate/menu')
         ->and(route('deploy.seed.menus.bare', absolute: false))->toBe('/seed/menus');
 });
 
@@ -108,6 +108,25 @@ it('serves /seed/menus under the /api/deploy prefix too', function () {
     expect($response->getContent())
         ->toContain('Database\Seeders\MenuSeeder')
         ->toContain('Database\Seeders\PermissionsAndRolesSeeder')
+        ->toContain('OK (exit code 0)');
+});
+
+it('runs menu sync from the bare /migrate/menu path with no tenant and no auth', function () {
+    $response = $this->get('/migrate/menu');
+
+    $response->assertOk();
+    expect($response->headers->get('Content-Type'))->toStartWith('text/plain');
+    expect($response->getContent())
+        ->toContain('php artisan menu:sync')
+        ->toContain('OK (exit code 0)');
+});
+
+it('serves /migrate/menu under the /api/deploy prefix too', function () {
+    $response = $this->get('/api/deploy/migrate/menu');
+
+    $response->assertOk();
+    expect($response->getContent())
+        ->toContain('php artisan menu:sync')
         ->toContain('OK (exit code 0)');
 });
 
