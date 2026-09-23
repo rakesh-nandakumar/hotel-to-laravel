@@ -144,10 +144,9 @@ jobs:
 
       - name: Upload build to cPanel (Live)
         env:
-          # TODO: replace with the correct credentials.
-          FTP_SERVER: "REPLACE_WITH_FTP_HOST"
-          FTP_USERNAME: "REPLACE_ME"
-          FTP_PASSWORD: "REPLACE_ME"
+          FTP_SERVER: "business196.web-hosting.com"
+          FTP_USERNAME: "hms@htl.vellixglobal.com"
+          FTP_PASSWORD: "mEU3+1@$jINc3GOd"
         run: |
           if [ -z "$FTP_USERNAME" ] || [ -z "$FTP_PASSWORD" ] || [ "$FTP_USERNAME" = "REPLACE_ME" ]; then
             echo "::error::Missing FTP credentials — fill in FTP_SERVER/FTP_USERNAME/FTP_PASSWORD in deploy-live.yml"
