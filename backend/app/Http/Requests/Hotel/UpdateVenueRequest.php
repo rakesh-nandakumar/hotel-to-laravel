@@ -25,6 +25,16 @@ class UpdateVenueRequest extends FormRequest
             'half_day_rate' => ['sometimes', 'integer', 'min:0'],
             'full_day_rate' => ['sometimes', 'integer', 'min:0'],
             'active' => ['sometimes', 'boolean'],
+            // New package pricing fields
+            'hall_type' => ['sometimes', 'nullable', 'in:luxury,basic'],
+            'luxury_hall_charge' => ['sometimes', 'nullable', 'integer', 'min:0'],
+            'basic_hall_charge' => ['sometimes', 'nullable', 'integer', 'min:0'],
+            'per_plate_starting_price' => ['sometimes', 'nullable', 'integer', 'min:0'],
+            'hall_only_per_person' => ['sometimes', 'nullable', 'integer', 'min:0'],
+            'dj_included' => ['sometimes', 'nullable', 'boolean'],
+            'bar_charges_included' => ['sometimes', 'nullable', 'boolean'],
+            'byod_allowed' => ['sometimes', 'nullable', 'boolean'],
+            'use_package_pricing' => ['sometimes', 'boolean'],
         ];
     }
 }

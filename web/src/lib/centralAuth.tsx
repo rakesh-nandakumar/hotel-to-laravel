@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from "react";
-import { api, post } from "./api";
+import { api, post, ensureCsrfCookie } from "./api";
 
 export type CentralAdmin = { id: number; name: string; email: string };
 
@@ -41,6 +41,7 @@ export function CentralAuthProvider({ children }: { children: ReactNode }) {
         admin,
         loading,
         login: async (email, password) => {
+          await ensureCsrfCookie(true);
           const r = await post<{ admin: CentralAdmin }>("/central/login", { email, password });
           setAdmin(r.admin);
           return r.admin;
