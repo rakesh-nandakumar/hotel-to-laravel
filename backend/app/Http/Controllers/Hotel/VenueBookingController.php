@@ -22,7 +22,7 @@ class VenueBookingController extends Controller
 
     public function index(Request $request): JsonResponse
     {
-        $query = VenueBooking::query()->with(['venue:id,name,max_capacity', 'folio:id,folio_status_id,invoice_no', 'folio.status', 'status'])->orderBy('date');
+        $query = VenueBooking::query()->with(['venue:id,name,max_capacity', 'folio', 'folio.status', 'folio.lines', 'folio.payments.kind', 'folio.payments.method', 'status'])->orderBy('date');
 
         if ($request->has('page')) {
             $paginated = $query->paginate($request->integer('page_size', 25))->withQueryString();
@@ -78,17 +78,47 @@ class VenueBookingController extends Controller
         ));
     }
 
+    public function recordAdvancePayment(Request $request, VenueBooking $booking): JsonResponse
+    {
+        $validated = $request->validate([
+            'amount' => 'required|integer|min:1',
+            'method' => 'required|string',
+        ]);
+
+        return response()->json($this->bookings->recordAdvancePayment(
+            $booking, $validated['amount'], $validated['method'], $request->user()->id,
+        ));
+    }
+
     private function withFolioTotals(VenueBooking $booking): VenueBooking
     {
-        if ($booking->folio) {
-            $totals = $this->billing->totals($booking->folio);
-            $booking->setAttribute('total', $totals['total']);
-            $booking->setAttribute('paid', $totals['paid'] - $totals['refunded']);
-            $booking->setAttribute('balance', $totals['balance']);
-        } else {
+        try {
+            if ($booking->folio) {
+                $totals = $this->billing->totals($booking->folio);
+                $booking->setAttribute('total', $totals['total']);
+                $booking->setAttribute('paid', $totals['paid'] - $totals['refunded']);
+                $booking->setAttribute('balance', $totals['balance']);
+            } else {
+                $booking->setAttribute('total', 0)->setAttribute('paid', 0)->setAttribute('balance', 0);
+            }
+        } catch (\Exception $e) {
             $booking->setAttribute('total', 0)->setAttribute('paid', 0)->setAttribute('balance', 0);
         }
 
         return $booking;
+    }
+
+    public function print(Request $request, VenueBooking $booking)
+    {
+        $booking->load(['venue', 'status', 'extraCharges']);
+        $format = $request->get('format', 'a4');
+
+        if ($request->get('output') === 'html') {
+            return view('hotel.pdf.venue-booking', compact('booking', 'format'));
+        }
+
+        return response()->streamDownload(function () use ($booking, $format) {
+            echo view('hotel.pdf.venue-booking', compact('booking', 'format'))->render();
+        }, "venue-booking-{$booking->code}.html");
     }
 }

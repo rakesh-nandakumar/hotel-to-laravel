@@ -7,6 +7,7 @@ use App\Models\Lookup;
 use App\Traits\HasUserstamps;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
@@ -40,6 +41,18 @@ class VenueBooking extends Model
         'cancel_reason',
         'created_by',
         'updated_by',
+        // Enhanced package pricing fields
+        'package_type',
+        'per_plate_price',
+        'hall_charge_used',
+        'service_charge_pct',
+        'byod_selected',
+        'dj_required',
+        'advance_payment',
+        'advance_paid_at',
+        'advance_payment_method',
+        'profit_margin',
+        'folio_id',
     ];
 
     protected function casts(): array
@@ -51,6 +64,14 @@ class VenueBooking extends Model
             'catering_by_hotel' => 'boolean',
             'deposit_due' => 'integer',
             'cancelled_at' => 'datetime',
+            'per_plate_price' => 'integer',
+            'hall_charge_used' => 'integer',
+            'service_charge_pct' => 'integer',
+            'byod_selected' => 'boolean',
+            'dj_required' => 'boolean',
+            'advance_payment' => 'integer',
+            'advance_paid_at' => 'datetime',
+            'profit_margin' => 'integer',
         ];
     }
 
@@ -77,5 +98,10 @@ class VenueBooking extends Model
     public function folio(): HasOne
     {
         return $this->hasOne(Folio::class);
+    }
+
+    public function extraCharges(): HasMany
+    {
+        return $this->hasMany(VenueExtraCharge::class)->orderBy('sort_order');
     }
 }

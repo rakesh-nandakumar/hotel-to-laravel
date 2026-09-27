@@ -6,6 +6,7 @@ use App\Models\Hotel\Folio;
 use App\Models\Hotel\FolioLine;
 use App\Models\Hotel\Venue;
 use App\Models\Hotel\VenueBooking;
+use App\Models\Hotel\VenueExtraCharge;
 use App\Models\Lookup;
 use App\Services\AuditLog;
 use App\Services\DocumentNumberService;
@@ -46,6 +47,7 @@ class VenueBookingService
         }
 
         $confirm = $data['confirm'] ?? false;
+        $usePackagePricing = $data['use_package_pricing'] ?? $venue->usesPackagePricing();
 
         // Double-booking guard: same venue, same date, another CONFIRMED booking —
         // only blocks when this booking is itself being confirmed, not on inquiry.
@@ -58,17 +60,19 @@ class VenueBookingService
             }
         }
 
-        $rental = match ($data['duration_type']) {
-            DurationType::FULL_DAY => $venue->full_day_rate,
-            DurationType::HALF_DAY => $venue->half_day_rate,
-            default => (int) round($venue->hourly_rate * ($data['hours'] ?? 1)),
-        };
+        // Calculate pricing based on model (legacy vs package)
+        if ($usePackagePricing) {
+            $pricing = $this->calculatePackagePricing($venue, $data);
+        } else {
+            $pricing = $this->calculateLegacyPricing($venue, $data);
+        }
+
         $extras = $data['extras'] ?? [];
         $extrasTotal = (int) collect($extras)->sum('amount');
-        $depositDue = Settings::depositAmount($rental + $extrasTotal, 'billing.venue_deposit_mode', 'billing.venue_deposit_pct', 'billing.venue_deposit_fixed', 25);
+        $depositDue = Settings::depositAmount($pricing['total'] + $extrasTotal, 'billing.venue_deposit_mode', 'billing.venue_deposit_pct', 'billing.venue_deposit_fixed', 25);
 
-        $booking = DB::transaction(function () use ($data, $venue, $confirm, $rental, $extras, $depositDue, $staffId) {
-            $booking = VenueBooking::create([
+        $booking = DB::transaction(function () use ($data, $venue, $confirm, $pricing, $extras, $depositDue, $staffId, $usePackagePricing) {
+            $bookingData = [
                 'code' => $this->documentNumbers->next(VenueBooking::class, 'code', 'VNB-'),
                 'venue_id' => $venue->id,
                 'guest_id' => $data['guest_id'] ?? null,
@@ -79,8 +83,6 @@ class VenueBookingService
                 'date' => $data['date'],
                 'start_time' => $data['start_time'] ?? null,
                 'end_time' => $data['end_time'] ?? null,
-                'duration_type_id' => Lookup::id(LookupType::DURATION_TYPE, $data['duration_type']),
-                'hours' => $data['hours'] ?? null,
                 'guest_count' => $data['guest_count'] ?? 0,
                 'seating' => $data['seating'] ?? null,
                 'av_needs' => $data['av_needs'] ?? null,
@@ -89,39 +91,240 @@ class VenueBookingService
                 'notes' => $data['notes'] ?? null,
                 'venue_booking_status_id' => Lookup::id(LookupType::VENUE_BOOKING_STATUS, $confirm ? VenueBookingStatus::CONFIRMED : VenueBookingStatus::INQUIRY),
                 'deposit_due' => $depositDue,
-            ]);
+            ];
+
+            // Legacy fields for backward compatibility
+            if (! $usePackagePricing) {
+                $bookingData['duration_type_id'] = Lookup::id(LookupType::DURATION_TYPE, $data['duration_type']);
+                $bookingData['hours'] = $data['hours'] ?? null;
+            } else {
+                // Package pricing fields
+                $bookingData['package_type'] = $data['package_type'] ?? null;
+                $bookingData['per_plate_price'] = $pricing['per_plate_price'] ?? null;
+                $bookingData['hall_charge_used'] = $pricing['hall_charge'];
+                $bookingData['service_charge_pct'] = $pricing['service_charge_pct'];
+                $bookingData['byod_selected'] = $data['byod_selected'] ?? false;
+                $bookingData['dj_required'] = $data['dj_required'] ?? true;
+                $bookingData['advance_payment'] = $data['advance_payment'] ?? 0;
+                $bookingData['profit_margin'] = $data['profit_margin'] ?? 0;
+                if ($bookingData['advance_payment'] > 0) {
+                    $bookingData['advance_paid_at'] = now();
+                    $bookingData['advance_payment_method'] = $data['advance_payment_method'] ?? null;
+                }
+            }
+
+            $booking = VenueBooking::create($bookingData);
 
             $folio = $booking->folio()->create([
                 'folio_type_id' => Lookup::id(LookupType::FOLIO_TYPE, FolioType::VENUE),
                 'folio_status_id' => Lookup::id(LookupType::FOLIO_STATUS, FolioStatus::OPEN),
             ]);
 
-            $venueSourceId = Lookup::id(LookupType::LINE_SOURCE, LineSource::VENUE);
-            $rentalDescription = match ($data['duration_type']) {
-                DurationType::HOURLY => (($data['hours'] ?? 1)).'h rental',
-                DurationType::HALF_DAY => 'Half-day rental',
-                default => 'Full-day rental',
-            };
-            FolioLine::create([
-                'folio_id' => $folio->id, 'line_source_id' => $venueSourceId,
-                'description' => "{$venue->name} — {$rentalDescription}",
-                'qty' => 1, 'unit_price' => $rental, 'amount' => $rental, 'staff_id' => $staffId,
-            ]);
+            $booking->update(['folio_id' => $folio->id]);
 
+            $venueSourceId = Lookup::id(LookupType::LINE_SOURCE, LineSource::VENUE);
+
+            // Create folio lines based on pricing model
+            if ($usePackagePricing) {
+                // Package pricing folio lines
+                foreach ($pricing['folio_lines'] as $line) {
+                    FolioLine::create([
+                        'folio_id' => $folio->id,
+                        'line_source_id' => $venueSourceId,
+                        'description' => $line['description'],
+                        'qty' => $line['qty'],
+                        'unit_price' => $line['unit_price'],
+                        'amount' => $line['amount'],
+                        'staff_id' => $staffId,
+                    ]);
+                }
+
+                // Add advance payment as a folio line if provided
+                if (isset($data['advance_payment']) && $data['advance_payment'] > 0) {
+                    FolioLine::create([
+                        'folio_id' => $folio->id,
+                        'line_source_id' => $venueSourceId,
+                        'description' => 'Advance payment',
+                        'qty' => 1,
+                        'unit_price' => -$data['advance_payment'], // Negative to reduce balance
+                        'amount' => -$data['advance_payment'],
+                        'staff_id' => $staffId,
+                    ]);
+
+                    // Record the payment
+                    $this->billing->recordPayment([
+                        'folio_id' => $folio->id,
+                        'method' => $data['advance_payment_method'] ?? 'cash',
+                        'amount' => $data['advance_payment'],
+                        'kind' => PaymentKind::PAYMENT,
+                        'reason' => 'Advance payment for venue booking',
+                        'staff_id' => $staffId,
+                    ]);
+                }
+            } else {
+                // Legacy pricing folio lines
+                $rentalDescription = match ($data['duration_type']) {
+                    DurationType::HOURLY => (($data['hours'] ?? 1)).'h rental',
+                    DurationType::HALF_DAY => 'Half-day rental',
+                    default => 'Full-day rental',
+                };
+                FolioLine::create([
+                    'folio_id' => $folio->id,
+                    'line_source_id' => $venueSourceId,
+                    'description' => "{$venue->name} — {$rentalDescription}",
+                    'qty' => 1,
+                    'unit_price' => $pricing['rental'],
+                    'amount' => $pricing['rental'],
+                    'staff_id' => $staffId,
+                ]);
+            }
+
+            // Add extra charges
             foreach ($extras as $extra) {
                 FolioLine::create([
-                    'folio_id' => $folio->id, 'line_source_id' => $venueSourceId,
+                    'folio_id' => $folio->id,
+                    'line_source_id' => $venueSourceId,
                     'description' => "{$extra['description']} — optional extra",
-                    'qty' => 1, 'unit_price' => $extra['amount'], 'amount' => $extra['amount'], 'staff_id' => $staffId,
+                    'qty' => 1,
+                    'unit_price' => $extra['amount'],
+                    'amount' => $extra['amount'],
+                    'staff_id' => $staffId,
                 ]);
+            }
+
+            // Create venue extra charges records for unlimited extras
+            if ($usePackagePricing && isset($data['venue_extras'])) {
+                foreach ($data['venue_extras'] as $index => $extra) {
+                    VenueExtraCharge::create([
+                        'venue_booking_id' => $booking->id,
+                        'description' => $extra['description'],
+                        'amount' => $extra['amount'],
+                        'charge_type' => $extra['charge_type'] ?? 'misc',
+                        'is_percentage' => $extra['is_percentage'] ?? false,
+                        'sort_order' => $index,
+                        'created_by' => $staffId,
+                        'updated_by' => $staffId,
+                    ]);
+                }
             }
 
             return $booking;
         });
 
-        AuditLog::record('venue_booking.created', $booking, ['code' => $booking->code, 'rental' => $rental, 'deposit_due' => $depositDue]);
+        AuditLog::record('venue_booking.created', $booking, [
+            'code' => $booking->code,
+            'total' => $pricing['total'],
+            'deposit_due' => $depositDue,
+            'package_type' => $usePackagePricing ? ($data['package_type'] ?? null) : null,
+        ]);
 
         return $booking->load(['venue', 'folio', 'status', 'durationType']);
+    }
+
+    /**
+     * Calculate pricing using the new package model
+     *
+     * @param  array<string, mixed>  $data
+     * @return array{total: int, hall_charge: int, per_plate_price: int|null, service_charge_pct: int, folio_lines: array<array{description: string, qty: int, unit_price: int, amount: int}>}
+     */
+    private function calculatePackagePricing(Venue $venue, array $data): array
+    {
+        $guestCount = $data['guest_count'] ?? 0;
+        $packageType = $data['package_type'] ?? 'hall_food';
+        $serviceChargePct = $data['service_charge_pct'] ?? 10;
+        $profitMargin = $data['profit_margin'] ?? 0;
+
+        $folioLines = [];
+        $total = 0;
+        $hallCharge = 0;
+        $perPlatePrice = null;
+
+        if ($packageType === 'hall_only') {
+            // Hall only: 500 per person (or venue-specific rate)
+            $hallOnlyRate = $venue->hall_only_per_person;
+            $hallCharge = $hallOnlyRate * $guestCount;
+
+            $folioLines[] = [
+                'description' => "{$venue->name} — Hall Only ({$guestCount} persons)",
+                'qty' => $guestCount,
+                'unit_price' => $hallOnlyRate,
+                'amount' => $hallCharge,
+            ];
+
+            $total = $hallCharge;
+        } else {
+            // Hall + Food: Hall charge + per plate price
+            $hallCharge = $venue->getHallCharge();
+            $perPlatePrice = $data['per_plate_price'] ?? $venue->per_plate_starting_price;
+            $foodCost = $perPlatePrice * $guestCount;
+
+            $folioLines[] = [
+                'description' => "{$venue->name} — Hall Charge",
+                'qty' => 1,
+                'unit_price' => $hallCharge,
+                'amount' => $hallCharge,
+            ];
+
+            $folioLines[] = [
+                'description' => "Food & Beverage ({$guestCount} plates @ {$perPlatePrice})",
+                'qty' => $guestCount,
+                'unit_price' => $perPlatePrice,
+                'amount' => $foodCost,
+            ];
+
+            $total = $hallCharge + $foodCost;
+        }
+
+        // Add service charge if applicable
+        if ($serviceChargePct > 0) {
+            $serviceCharge = (int) round($total * $serviceChargePct / 100);
+            $folioLines[] = [
+                'description' => "Service Charge ({$serviceChargePct}%)",
+                'qty' => 1,
+                'unit_price' => $serviceCharge,
+                'amount' => $serviceCharge,
+            ];
+            $total += $serviceCharge;
+        }
+
+        // Add profit margin if applicable
+        if ($profitMargin > 0) {
+            $folioLines[] = [
+                'description' => 'Profit Margin',
+                'qty' => 1,
+                'unit_price' => $profitMargin,
+                'amount' => $profitMargin,
+            ];
+            $total += $profitMargin;
+        }
+
+        return [
+            'total' => $total,
+            'hall_charge' => $hallCharge,
+            'per_plate_price' => $perPlatePrice,
+            'service_charge_pct' => $serviceChargePct,
+            'folio_lines' => $folioLines,
+        ];
+    }
+
+    /**
+     * Calculate pricing using the legacy hourly/half-day/full-day model
+     *
+     * @param  array<string, mixed>  $data
+     * @return array{total: int, rental: int}
+     */
+    private function calculateLegacyPricing(Venue $venue, array $data): array
+    {
+        $rental = match ($data['duration_type']) {
+            DurationType::FULL_DAY => $venue->full_day_rate,
+            DurationType::HALF_DAY => $venue->half_day_rate,
+            default => (int) round($venue->hourly_rate * ($data['hours'] ?? 1)),
+        };
+
+        return [
+            'total' => $rental,
+            'rental' => $rental,
+        ];
     }
 
     /**
@@ -181,6 +384,44 @@ class VenueBookingService
         AuditLog::record('venue_booking.completed', $booking, ['invoice_no' => $invoiceNo]);
 
         return $invoiceNo;
+    }
+
+    /**
+     * Record an advance payment for a venue booking
+     *
+     * @return array{ok: bool, advance_payment: int}
+     */
+    public function recordAdvancePayment(VenueBooking $booking, int $amount, string $method, int $staffId): array
+    {
+        if ($amount <= 0) {
+            throw ValidationException::withMessages(['amount' => 'Advance payment must be greater than zero.']);
+        }
+
+        $booking->update([
+            'advance_payment' => $amount,
+            'advance_paid_at' => now(),
+            'advance_payment_method' => $method,
+        ]);
+
+        // If there's a folio, record the advance as a payment
+        if ($booking->folio) {
+            $this->billing->recordPayment([
+                'folio_id' => $booking->folio->id,
+                'method' => $method,
+                'amount' => $amount,
+                'kind' => PaymentKind::PAYMENT,
+                'reason' => 'Advance payment for venue booking',
+                'staff_id' => $staffId,
+            ]);
+        }
+
+        AuditLog::record('venue_booking.advance_payment', $booking, [
+            'code' => $booking->code,
+            'amount' => $amount,
+            'method' => $method,
+        ]);
+
+        return ['ok' => true, 'advance_payment' => $amount];
     }
 
     /**

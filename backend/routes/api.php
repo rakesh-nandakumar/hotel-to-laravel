@@ -69,6 +69,7 @@ use App\Http\Controllers\Hotel\SettingController;
 use App\Http\Controllers\Hotel\StaffController;
 use App\Http\Controllers\Hotel\VenueBookingController;
 use App\Http\Controllers\Hotel\VenueController;
+use App\Http\Controllers\Hotel\VenueExtraChargeController;
 use App\Http\Controllers\Hotel\VisitorLogController;
 use App\Http\Controllers\Profile\TwoFactorController;
 use App\Http\Controllers\Settings\BrowserSessionsController;
@@ -872,6 +873,26 @@ Route::middleware(['auth', 'check_active'])->group(function () {
         Route::post('bookings/{booking}/cancel', [VenueBookingController::class, 'cancel'])
             ->middleware('can_do:hotel_venue_bookings.cancel')
             ->name('bookings.cancel');
+        Route::post('bookings/{booking}/advance-payment', [VenueBookingController::class, 'recordAdvancePayment'])
+            ->middleware('can_do:hotel_venue_bookings.edit')
+            ->name('bookings.advance_payment');
+        Route::get('bookings/{booking}/print', [VenueBookingController::class, 'print'])
+            ->middleware('can_do:hotel_venue_bookings.view')
+            ->name('bookings.print');
+
+        // Venue extra charges (unlimited additional charges)
+        Route::get('bookings/{booking}/extras', [VenueExtraChargeController::class, 'index'])
+            ->middleware('can_do:hotel_venue_bookings.edit')
+            ->name('bookings.extras.index');
+        Route::post('bookings/{booking}/extras', [VenueExtraChargeController::class, 'store'])
+            ->middleware('can_do:hotel_venue_bookings.edit')
+            ->name('bookings.extras.store');
+        Route::put('extras/{charge}', [VenueExtraChargeController::class, 'update'])
+            ->middleware('can_do:hotel_venue_bookings.edit')
+            ->name('bookings.extras.update');
+        Route::delete('extras/{charge}', [VenueExtraChargeController::class, 'destroy'])
+            ->middleware('can_do:hotel_venue_bookings.edit')
+            ->name('bookings.extras.destroy');
     });
 
     // ── Till (shared cash ledger — Hotel + Restaurant + Apartments) ────────────
