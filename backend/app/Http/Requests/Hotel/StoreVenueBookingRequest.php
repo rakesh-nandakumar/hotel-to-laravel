@@ -28,7 +28,7 @@ class StoreVenueBookingRequest extends FormRequest
             'date' => ['required', 'date'],
             'start_time' => ['nullable', 'string', 'max:10'],
             'end_time' => ['nullable', 'string', 'max:10'],
-            'duration_type' => ['required', 'string', Rule::exists('lookups', 'code')->where('type', LookupType::DURATION_TYPE)],
+            'duration_type' => ['nullable', 'string', Rule::exists('lookups', 'code')->where('type', LookupType::DURATION_TYPE)],
             'hours' => ['nullable', 'numeric', 'min:0.5'],
             'guest_count' => ['nullable', 'integer', 'min:0'],
             'seating' => ['nullable', 'string', 'max:1000'],
@@ -40,6 +40,21 @@ class StoreVenueBookingRequest extends FormRequest
             'extras.*.description' => ['required', 'string', 'max:255'],
             'extras.*.amount' => ['required', 'integer', 'min:0'],
             'confirm' => ['nullable', 'boolean'],
+            // New package pricing fields
+            'use_package_pricing' => ['nullable', 'boolean'],
+            'package_type' => ['nullable', 'string', 'in:hall_only,hall_food'],
+            'per_plate_price' => ['nullable', 'integer', 'min:0'],
+            'service_charge_pct' => ['nullable', 'integer', 'min:0', 'max:100'],
+            'byod_selected' => ['nullable', 'boolean'],
+            'dj_required' => ['nullable', 'boolean'],
+            'advance_payment' => ['nullable', 'integer', 'min:0'],
+            'advance_payment_method' => ['nullable', 'string'],
+            'profit_margin' => ['nullable', 'integer', 'min:0'],
+            'venue_extras' => ['nullable', 'array'],
+            'venue_extras.*.description' => ['required', 'string', 'max:255'],
+            'venue_extras.*.amount' => ['required', 'integer', 'min:0'],
+            'venue_extras.*.charge_type' => ['nullable', 'string'],
+            'venue_extras.*.is_percentage' => ['nullable', 'boolean'],
         ];
     }
 }

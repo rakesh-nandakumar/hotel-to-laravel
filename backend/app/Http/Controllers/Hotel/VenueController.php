@@ -30,6 +30,16 @@ class VenueController extends Controller
             'facilities' => 'array',
             'facilities.*' => 'string',
             'active' => 'boolean',
+            // New package pricing fields
+            'hall_type' => 'nullable|in:luxury,basic',
+            'luxury_hall_charge' => 'nullable|integer|min:0',
+            'basic_hall_charge' => 'nullable|integer|min:0',
+            'per_plate_starting_price' => 'nullable|integer|min:0',
+            'hall_only_per_person' => 'nullable|integer|min:0',
+            'dj_included' => 'nullable|boolean',
+            'bar_charges_included' => 'nullable|boolean',
+            'byod_allowed' => 'nullable|boolean',
+            'use_package_pricing' => 'nullable|boolean',
         ]);
 
         $venue = Venue::create([
@@ -40,6 +50,16 @@ class VenueController extends Controller
             'full_day_rate' => $validated['full_day_rate'],
             'facilities' => $validated['facilities'] ?? [],
             'active' => $validated['active'] ?? true,
+            // Package pricing fields
+            'hall_type' => $validated['hall_type'] ?? null,
+            'luxury_hall_charge' => $validated['luxury_hall_charge'] ?? 45000,
+            'basic_hall_charge' => $validated['basic_hall_charge'] ?? 40000,
+            'per_plate_starting_price' => $validated['per_plate_starting_price'] ?? 1950,
+            'hall_only_per_person' => $validated['hall_only_per_person'] ?? 500,
+            'dj_included' => $validated['dj_included'] ?? true,
+            'bar_charges_included' => $validated['bar_charges_included'] ?? true,
+            'byod_allowed' => $validated['byod_allowed'] ?? true,
+            'use_package_pricing' => $validated['use_package_pricing'] ?? false,
         ]);
 
         AuditLog::record('venue.created', $venue, ['name' => $venue->name]);
@@ -49,7 +69,18 @@ class VenueController extends Controller
 
     public function update(UpdateVenueRequest $request, Venue $venue): JsonResponse
     {
-        $venue->update($request->validated());
+        $validated = $request->validated();
+
+        // Handle package pricing toggle - if switching to package pricing, set defaults
+        if (isset($validated['use_package_pricing']) && $validated['use_package_pricing']) {
+            $validated['hall_type'] = $validated['hall_type'] ?? 'basic';
+            $validated['luxury_hall_charge'] = $validated['luxury_hall_charge'] ?? 45000;
+            $validated['basic_hall_charge'] = $validated['basic_hall_charge'] ?? 40000;
+            $validated['per_plate_starting_price'] = $validated['per_plate_starting_price'] ?? 1950;
+            $validated['hall_only_per_person'] = $validated['hall_only_per_person'] ?? 500;
+        }
+
+        $venue->update($validated);
 
         AuditLog::record('venue.updated', $venue, ['name' => $venue->name]);
 
