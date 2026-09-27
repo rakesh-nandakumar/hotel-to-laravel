@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use Database\Seeders\MenusAndPermissionsSeeder;
+use Database\Seeders\MountviewVenueSeeder;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Log;
@@ -99,6 +100,14 @@ class DeployController extends Controller
     public function menu(): Response
     {
         return $this->run('menu:sync', [], 'deploy/migrate/menu');
+    }
+
+    public function seedMountviewVenues(): Response
+    {
+        return $this->run('db:seed', [
+            '--class' => MountviewVenueSeeder::class,
+            '--force' => true,
+        ], 'deploy/seed/mountview-venues');
     }
 
     /**
