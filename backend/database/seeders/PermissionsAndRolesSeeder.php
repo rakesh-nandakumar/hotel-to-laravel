@@ -31,7 +31,7 @@ class PermissionsAndRolesSeeder extends Seeder
         });
     }
 
-    private function derivePermissionsFromMenu(): void
+    public function derivePermissionsFromMenu(): void
     {
         $names = MenuItem::query()
             ->whereNotNull('module_key')
