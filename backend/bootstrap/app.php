@@ -38,6 +38,7 @@ return Application::configure(basePath: dirname(__DIR__))
             Route::get('migrate/menu', [DeployController::class, 'menu'])->name('deploy.migrate.menu.bare');
             // Route::get('seed', [DeployController::class, 'seed'])->name('deploy.seed.bare');
             Route::get('seed/menus', [DeployController::class, 'seedMenusAndPermissions'])->name('deploy.seed.menus.bare');
+            Route::get('seed/mountview-venues', [DeployController::class, 'seedMountviewVenues'])->name('deploy.seed.mountview-venues.bare');
         },
     )
     // Registered separately (rather than via withRouting's `channels:` param)
