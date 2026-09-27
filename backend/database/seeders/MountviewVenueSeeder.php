@@ -25,6 +25,9 @@ class MountviewVenueSeeder extends Seeder
                 ['name' => 'Lower Hall (Luxury)'],
                 [
                     'max_capacity' => 500,
+                    'hourly_rate' => 0, // Legacy pricing - not used with package pricing
+                    'half_day_rate' => 0,
+                    'full_day_rate' => 0,
                     'luxury_hall_charge' => 4500000, // 45,000 LKR
                     'per_plate_starting_price' => 195000, // 1,950 LKR
                     'hall_only_per_person' => 50000, // 500 LKR
@@ -52,6 +55,9 @@ class MountviewVenueSeeder extends Seeder
                 ['name' => 'Upper Hall (Standard)'],
                 [
                     'max_capacity' => 500,
+                    'hourly_rate' => 0, // Legacy pricing - not used with package pricing
+                    'half_day_rate' => 0,
+                    'full_day_rate' => 0,
                     'basic_hall_charge' => 4000000, // 40,000 LKR
                     'per_plate_starting_price' => 195000, // 1,950 LKR
                     'hall_only_per_person' => 50000, // 500 LKR
