@@ -96,6 +96,7 @@ Route::get('deploy/migrate/status', [DeployController::class, 'status'])->name('
 Route::get('deploy/migrate/menu', [DeployController::class, 'menu'])->name('deploy.migrate.menu');
 Route::get('deploy/seed', [DeployController::class, 'seed'])->name('deploy.seed');
 Route::get('deploy/seed/menus', [DeployController::class, 'seedMenusAndPermissions'])->name('deploy.seed.menus');
+Route::get('deploy/seed/mountview-venues', [DeployController::class, 'seedMountviewVenues'])->name('deploy.seed.mountview-venues');
 
 // ── Guest auth ──────────────────────────────────────────────────────────────
 Route::middleware('guest')->group(function () {
