@@ -29,11 +29,11 @@ jobs:
     environment: development
 
     env:
-      # TODO: replace with your dev host (e.g. test.htl.vellixglobal.com).
+      # TODO: replace with your dev host (e.g.demo.hms.vellixglobal.com).
       # This host is baked into the release (.env + .htaccess 301 rules), so
       # keep it in sync with the cPanel domain the FTP account below lands in.
-      DEV_HOST: "test.htl.vellixglobal.com"
-      APP_URL: "https://test.htl.vellixglobal.com"
+      DEV_HOST: "demo.hms.vellixglobal.com"
+      APP_URL: "https://demo.hms.vellixglobal.com"
 
     steps:
       - name: Checkout
