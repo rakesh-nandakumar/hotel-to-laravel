@@ -844,7 +844,7 @@ function NewBooking({ onClose, onDone }: { onClose: () => void; onDone: () => vo
         className="btn-primary mt-3 w-full !py-3"
         disabled={
           !f.venueId ||
-          f.clientName.trim().length === 0 ||
+          !f.clientName ||
           (f.splitPayment && f.advancePayment && splitPaymentMethods.reduce((sum, pm) => sum + (parseInt(pm.amount) || 0), 0) !== (parseInt(f.advancePayment) || 0))
         }
         onClick={() => {
