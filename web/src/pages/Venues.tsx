@@ -544,16 +544,16 @@ function NewBooking({ onClose, onDone }: { onClose: () => void; onDone: () => vo
     if (venue && venue.default_charge_defaults) {
       const defaults = venue.default_charge_defaults;
       setVenueExtras([
-        { description: "AC", amount: centsToRupees(defaults.ac || 1200000), charge_type: "ac", is_percentage: false, enabled: false, isCustom: false },
-        { description: "Table", amount: centsToRupees(defaults.table || 1000000), charge_type: "table", is_percentage: false, enabled: false, isCustom: false },
-        { description: "Cleaning Staff", amount: centsToRupees(defaults.cleaning_staff || 250000), charge_type: "cleaning_staff", is_percentage: false, enabled: false, isCustom: false },
-        { description: "Service Supply", amount: centsToRupees(defaults.service_supply || 600000), charge_type: "service_supply", is_percentage: false, enabled: false, isCustom: false },
-        { description: "Water", amount: centsToRupees(defaults.water || 200000), charge_type: "water", is_percentage: false, enabled: false, isCustom: false },
-        { description: "Light", amount: centsToRupees(defaults.light || 750000), charge_type: "light", is_percentage: false, enabled: false, isCustom: false },
-        { description: "DJ", amount: centsToRupees(defaults.dj || 1100000), charge_type: "dj", is_percentage: false, enabled: false, isCustom: false },
-        { description: "Water (Cleaning)", amount: centsToRupees(defaults.water_cleaning || 600000), charge_type: "water_cleaning", is_percentage: false, enabled: false, isCustom: false },
-        { description: "Extra Kitchen", amount: centsToRupees(defaults.extra_kitchen || 0), charge_type: "extra_kitchen", is_percentage: false, enabled: false, isCustom: false },
-        { description: "Other", amount: centsToRupees(defaults.other || 100000), charge_type: "other", is_percentage: false, enabled: false, isCustom: false },
+        { description: "AC", amount: String(defaults.ac || 12000), charge_type: "ac", is_percentage: false, enabled: false, isCustom: false },
+        { description: "Table", amount: String(defaults.table || 10000), charge_type: "table", is_percentage: false, enabled: false, isCustom: false },
+        { description: "Cleaning Staff", amount: String(defaults.cleaning_staff || 2500), charge_type: "cleaning_staff", is_percentage: false, enabled: false, isCustom: false },
+        { description: "Service Supply", amount: String(defaults.service_supply || 6000), charge_type: "service_supply", is_percentage: false, enabled: false, isCustom: false },
+        { description: "Water", amount: String(defaults.water || 2000), charge_type: "water", is_percentage: false, enabled: false, isCustom: false },
+        { description: "Light", amount: String(defaults.light || 7500), charge_type: "light", is_percentage: false, enabled: false, isCustom: false },
+        { description: "DJ", amount: String(defaults.dj || 11000), charge_type: "dj", is_percentage: false, enabled: false, isCustom: false },
+        { description: "Water (Cleaning)", amount: String(defaults.water_cleaning || 6000), charge_type: "water_cleaning", is_percentage: false, enabled: false, isCustom: false },
+        { description: "Extra Kitchen", amount: String(defaults.extra_kitchen || 0), charge_type: "extra_kitchen", is_percentage: false, enabled: false, isCustom: false },
+        { description: "Other", amount: String(defaults.other || 1000), charge_type: "other", is_percentage: false, enabled: false, isCustom: false },
       ]);
       // Pre-fill hall only rate from venue
       const venueHallOnlyRate = venue.hall_only_per_person || 50000;
