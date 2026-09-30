@@ -72,6 +72,7 @@ class VenueBooking extends Model
             'dj_required' => 'boolean',
             'advance_payment' => 'integer',
             'advance_paid_at' => 'datetime',
+            'advance_payment_method' => 'array',
             'profit_margin' => 'integer',
         ];
     }
