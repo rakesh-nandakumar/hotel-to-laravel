@@ -109,7 +109,13 @@ class VenueBookingService
                 $bookingData['profit_margin'] = $data['profit_margin'] ?? 0;
                 if ($bookingData['advance_payment'] > 0) {
                     $bookingData['advance_paid_at'] = now();
-                    $bookingData['advance_payment_method'] = $data['advance_payment_method'] ?? null;
+                    $paymentMethod = $data['advance_payment_method'] ?? null;
+                    // Store as JSON if it's an array (split payment), otherwise as string
+                    if (is_array($paymentMethod)) {
+                        $bookingData['advance_payment_method'] = json_encode($paymentMethod);
+                    } else {
+                        $bookingData['advance_payment_method'] = $paymentMethod;
+                    }
                 }
             }
 
@@ -151,15 +157,38 @@ class VenueBookingService
                         'staff_id' => $staffId,
                     ]);
 
-                    // Record the payment
-                    $this->billing->recordPayment([
-                        'folio_id' => $folio->id,
-                        'method' => $data['advance_payment_method'] ?? 'cash',
-                        'amount' => $data['advance_payment'],
-                        'kind' => PaymentKind::PAYMENT,
-                        'reason' => 'Advance payment for venue booking',
-                        'staff_id' => $staffId,
-                    ]);
+                    // Record the payment(s)
+                    $paymentMethod = $data['advance_payment_method'] ?? 'cash';
+                    if (is_array($paymentMethod)) {
+                        // Split payment - record each payment method
+                        foreach ($paymentMethod as $pm) {
+                            $amount = isset($pm['amount']) ? (int) $pm['amount'] : 0;
+                            // Convert LKR to cents if amount is provided as number
+                            if ($amount > 0 && $amount < 10000) {
+                                $amount = $amount * 100; // Assume LKR if less than 10000
+                            }
+                            if ($amount > 0) {
+                                $this->billing->recordPayment([
+                                    'folio_id' => $folio->id,
+                                    'method' => $pm['method'] ?? 'cash',
+                                    'amount' => $amount,
+                                    'kind' => PaymentKind::PAYMENT,
+                                    'reason' => 'Advance payment for venue booking',
+                                    'staff_id' => $staffId,
+                                ]);
+                            }
+                        }
+                    } else {
+                        // Single payment method
+                        $this->billing->recordPayment([
+                            'folio_id' => $folio->id,
+                            'method' => $paymentMethod,
+                            'amount' => $data['advance_payment'],
+                            'kind' => PaymentKind::PAYMENT,
+                            'reason' => 'Advance payment for venue booking',
+                            'staff_id' => $staffId,
+                        ]);
+                    }
                 }
             } else {
                 // Legacy pricing folio lines

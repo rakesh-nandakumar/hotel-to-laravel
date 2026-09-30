@@ -48,7 +48,7 @@ class StoreVenueBookingRequest extends FormRequest
             'byod_selected' => ['nullable', 'boolean'],
             'dj_required' => ['nullable', 'boolean'],
             'advance_payment' => ['nullable', 'integer', 'min:0'],
-            'advance_payment_method' => ['nullable', 'string'],
+            'advance_payment_method' => ['nullable'],
             'profit_margin' => ['nullable', 'integer', 'min:0'],
             'venue_extras' => ['nullable', 'array'],
             'venue_extras.*.description' => ['required', 'string', 'max:255'],
