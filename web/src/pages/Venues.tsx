@@ -534,6 +534,8 @@ function NewBooking({ onClose, onDone }: { onClose: () => void; onDone: () => vo
   ]);
   const [customCharge, setCustomCharge] = useState({ description: "", amount: "" });
   const [splitPaymentMethods, setSplitPaymentMethods] = useState<{ method: string; amount: string }[]>([{ method: "cash", amount: "" }, { method: "card", amount: "" }]);
+
+  const isFormValid = !!f.venueId && !!f.clientName && !(f.splitPayment && f.advancePayment && splitPaymentMethods.reduce((sum, pm) => sum + (parseInt(pm.amount) || 0), 0) !== (parseInt(f.advancePayment) || 0));
   const [error, setError] = useState("");
   const venue = (venues ?? []).find((v) => String(v.id) === f.venueId);
 
@@ -842,11 +844,7 @@ function NewBooking({ onClose, onDone }: { onClose: () => void; onDone: () => vo
       <ErrorText error={error} />
       <button
         className="btn-primary mt-3 w-full !py-3"
-        disabled={
-          !f.venueId ||
-          !f.clientName ||
-          (f.splitPayment && f.advancePayment && splitPaymentMethods.reduce((sum, pm) => sum + (parseInt(pm.amount) || 0), 0) !== (parseInt(f.advancePayment) || 0))
-        }
+        disabled={!isFormValid}
         onClick={() => {
           const payload: any = {
             venue_id: Number(f.venueId),
