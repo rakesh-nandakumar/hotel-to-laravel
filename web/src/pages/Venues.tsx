@@ -511,6 +511,7 @@ function NewBooking({ onClose, onDone }: { onClose: () => void; onDone: () => vo
     // Package pricing fields (only model - legacy removed)
     packageType: "hall_food",
     perPlatePrice: "1950",
+    hallOnlyRate: "500",
     serviceChargePct: "10",
     byodSelected: false,
     djRequired: true,
@@ -550,6 +551,9 @@ function NewBooking({ onClose, onDone }: { onClose: () => void; onDone: () => vo
         { description: "Extra Kitchen", amount: centsToRupees(defaults.extra_kitchen || 0), charge_type: "extra_kitchen", is_percentage: false, enabled: false, isCustom: false },
         { description: "Other", amount: centsToRupees(defaults.other || 100000), charge_type: "other", is_percentage: false, enabled: false, isCustom: false },
       ]);
+      // Pre-fill hall only rate from venue
+      const venueHallOnlyRate = venue.hall_only_per_person || 50000;
+      setF(prev => ({ ...prev, hallOnlyRate: centsToRupees(venueHallOnlyRate) }));
     }
   }, [venue?.id]);
   
@@ -560,11 +564,13 @@ function NewBooking({ onClose, onDone }: { onClose: () => void; onDone: () => vo
     const guestCount = parseInt(f.guestCount) || 0;
 
     if (f.packageType === "hall_only") {
-      const hallOnlyRate = venue.hall_only_per_person || 50000;
+      // Use editable hall only rate
+      const hallOnlyRate = f.hallOnlyRate ? toCents(f.hallOnlyRate) : (venue.hall_only_per_person || 50000);
       const hallCharge = hallOnlyRate * guestCount;
       const serviceCharge = Math.round(hallCharge * (parseFloat(f.serviceChargePct) || 10) / 100);
       return { rental: hallCharge, foodCost: 0, serviceCharge, total: hallCharge + serviceCharge };
     } else {
+      // Hall + Food: use fixed venue hall charge
       const hallCharge = venue.hall_type === "luxury" ? (venue.luxury_hall_charge ?? 4500000) : (venue.basic_hall_charge ?? 4000000);
       const perPlatePrice = f.perPlatePrice ? toCents(f.perPlatePrice) : (venue.per_plate_starting_price || 195000);
       const foodCost = perPlatePrice * guestCount;
@@ -620,14 +626,22 @@ function NewBooking({ onClose, onDone }: { onClose: () => void; onDone: () => vo
             </Field>
             {venue && (
               <div className="text-xs text-slate-500">
-                Hall charge: {lkr(venue.hall_type === "luxury" ? venue.luxury_hall_charge : venue.basic_hall_charge)}
+                Hall charge: {lkr(venue.hall_type === "luxury" ? (venue.luxury_hall_charge ?? 4500000) : (venue.basic_hall_charge ?? 4000000))}
               </div>
             )}
           </>
         ) : (
-          <div className="text-xs text-slate-500">
-            Hall only: {venue ? `${centsToRupees(venue.hall_only_per_person || 500)} per person` : "500 per person"}
-          </div>
+          <>
+            <Field label="Hall Only Rate (LKR per person)">
+              <input
+                className="input"
+                type="number"
+                value={f.hallOnlyRate}
+                onChange={(e) => setF({ ...f, hallOnlyRate: e.target.value })}
+                placeholder={venue ? centsToRupees(venue.hall_only_per_person || 50000) : "500"}
+              />
+            </Field>
+          </>
         )}
         <Field label="Service Charge %">
           <input className="input" type="number" value={f.serviceChargePct} onChange={(e) => setF({ ...f, serviceChargePct: e.target.value })} />
@@ -790,6 +804,8 @@ function NewBooking({ onClose, onDone }: { onClose: () => void; onDone: () => vo
             use_package_pricing: true,
             package_type: f.packageType,
             per_plate_price: f.perPlatePrice ? toCents(f.perPlatePrice) : null,
+            hall_charge_used: f.packageType === "hall_food" && venue ? (venue.hall_type === "luxury" ? venue.luxury_hall_charge : venue.basic_hall_charge) : null,
+            hall_only_per_person: f.packageType === "hall_only" ? (f.hallOnlyRate ? toCents(f.hallOnlyRate) : (venue?.hall_only_per_person ?? null)) : null,
             service_charge_pct: parseInt(f.serviceChargePct) || 10,
             byod_selected: f.byodSelected,
             dj_required: f.djRequired,

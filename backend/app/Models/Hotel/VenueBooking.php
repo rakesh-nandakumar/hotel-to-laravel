@@ -45,6 +45,7 @@ class VenueBooking extends Model
         'package_type',
         'per_plate_price',
         'hall_charge_used',
+        'hall_only_per_person',
         'service_charge_pct',
         'byod_selected',
         'dj_required',
