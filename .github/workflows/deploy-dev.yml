@@ -29,11 +29,11 @@ jobs:
     environment: development
 
     env:
-      # TODO: replace with your dev host (e.g. test.htl.vellixglobal.com).
+      # TODO: replace with your dev host (e.g. demo.hms.vellixglobal.com).
       # This host is baked into the release (.env + .htaccess 301 rules), so
       # keep it in sync with the cPanel domain the FTP account below lands in.
-      DEV_HOST: "test.htl.vellixglobal.com"
-      APP_URL: "https://test.htl.vellixglobal.com"
+      DEV_HOST: "demo.hms.vellixglobal.com"
+      APP_URL: "https://demo.hms.vellixglobal.com"
 
     steps:
       - name: Checkout
@@ -84,9 +84,9 @@ jobs:
           cp backend/.env.production backend/.env.staging
           sed -i "s/htl\.vellixglobal\.com/${DEV_HOST}/g" backend/.env.staging
           # TODO: replace with the DEV database credentials.
-          sed -i "s/^DB_DATABASE=.*/DB_DATABASE=REPLACE_ME/" backend/.env.staging
-          sed -i "s/^DB_USERNAME=.*/DB_USERNAME=REPLACE_ME/" backend/.env.staging
-          sed -i "s/^DB_PASSWORD=.*/DB_PASSWORD=REPLACE_ME/" backend/.env.staging
+          sed -i "s/^DB_DATABASE=.*/DB_DATABASE=your_database_name/" backend/.env.staging
+          sed -i "s/^DB_USERNAME=.*/DB_USERNAME=your_database_username/" backend/.env.staging
+          sed -i "s/^DB_PASSWORD=.*/DB_PASSWORD=your_database_password/" backend/.env.staging
           grep -E "^(APP_URL|TENANCY_BASE_DOMAIN|FRONTEND_URL|SANCTUM_STATEFUL_DOMAINS|DB_DATABASE|DB_USERNAME)=" backend/.env.staging
 
       - name: Build single-domain release zip

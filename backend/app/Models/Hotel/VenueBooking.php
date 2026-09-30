@@ -45,6 +45,7 @@ class VenueBooking extends Model
         'package_type',
         'per_plate_price',
         'hall_charge_used',
+        'hall_only_per_person',
         'service_charge_pct',
         'byod_selected',
         'dj_required',
@@ -71,6 +72,7 @@ class VenueBooking extends Model
             'dj_required' => 'boolean',
             'advance_payment' => 'integer',
             'advance_paid_at' => 'datetime',
+            'advance_payment_method' => 'array',
             'profit_margin' => 'integer',
         ];
     }

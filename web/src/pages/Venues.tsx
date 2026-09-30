@@ -511,26 +511,31 @@ function NewBooking({ onClose, onDone }: { onClose: () => void; onDone: () => vo
     // Package pricing fields (only model - legacy removed)
     packageType: "hall_food",
     perPlatePrice: "1950",
+    hallOnlyRate: "500",
     serviceChargePct: "10",
     byodSelected: false,
     djRequired: true,
+    splitPayment: false,
     advancePayment: "",
     advancePaymentMethod: "cash",
     profitMargin: "20000",
   });
   const [venueExtras, setVenueExtras] = useState<{ description: string; amount: string; charge_type: string; is_percentage: boolean; enabled: boolean; isCustom: boolean }[]>([
-    { description: "AC", amount: "10000", charge_type: "ac", is_percentage: false, enabled: false, isCustom: false },
-    { description: "Table", amount: "7500", charge_type: "table", is_percentage: false, enabled: false, isCustom: false },
+    { description: "AC", amount: "12000", charge_type: "ac", is_percentage: false, enabled: false, isCustom: false },
+    { description: "Table", amount: "10000", charge_type: "table", is_percentage: false, enabled: false, isCustom: false },
     { description: "Cleaning Staff", amount: "2500", charge_type: "cleaning_staff", is_percentage: false, enabled: false, isCustom: false },
-    { description: "Service Supply", amount: "4000", charge_type: "service_supply", is_percentage: false, enabled: false, isCustom: false },
-    { description: "Water", amount: "1000", charge_type: "water", is_percentage: false, enabled: false, isCustom: false },
+    { description: "Service Supply", amount: "6000", charge_type: "service_supply", is_percentage: false, enabled: false, isCustom: false },
+    { description: "Water", amount: "2000", charge_type: "water", is_percentage: false, enabled: false, isCustom: false },
     { description: "Light", amount: "7500", charge_type: "light", is_percentage: false, enabled: false, isCustom: false },
     { description: "DJ", amount: "11000", charge_type: "dj", is_percentage: false, enabled: false, isCustom: false },
-    { description: "Water (Cleaning)", amount: "5000", charge_type: "water_cleaning", is_percentage: false, enabled: false, isCustom: false },
+    { description: "Water (Cleaning)", amount: "6000", charge_type: "water_cleaning", is_percentage: false, enabled: false, isCustom: false },
     { description: "Extra Kitchen", amount: "0", charge_type: "extra_kitchen", is_percentage: false, enabled: false, isCustom: false },
     { description: "Other", amount: "1000", charge_type: "other", is_percentage: false, enabled: false, isCustom: false },
   ]);
   const [customCharge, setCustomCharge] = useState({ description: "", amount: "" });
+  const [splitPaymentMethods, setSplitPaymentMethods] = useState<{ method: string; amount: string }[]>([{ method: "cash", amount: "" }, { method: "card", amount: "" }]);
+
+  const isFormValid = !!f.venueId && !!f.clientName && !(f.splitPayment && f.advancePayment && splitPaymentMethods.reduce((sum, pm) => sum + (parseInt(pm.amount) || 0), 0) !== (parseInt(f.advancePayment) || 0));
   const [error, setError] = useState("");
   const venue = (venues ?? []).find((v) => String(v.id) === f.venueId);
 
@@ -539,17 +544,20 @@ function NewBooking({ onClose, onDone }: { onClose: () => void; onDone: () => vo
     if (venue && venue.default_charge_defaults) {
       const defaults = venue.default_charge_defaults;
       setVenueExtras([
-        { description: "AC", amount: centsToRupees(defaults.ac || 1000000), charge_type: "ac", is_percentage: false, enabled: false, isCustom: false },
-        { description: "Table", amount: centsToRupees(defaults.table || 750000), charge_type: "table", is_percentage: false, enabled: false, isCustom: false },
-        { description: "Cleaning Staff", amount: centsToRupees(defaults.cleaning_staff || 250000), charge_type: "cleaning_staff", is_percentage: false, enabled: false, isCustom: false },
-        { description: "Service Supply", amount: centsToRupees(defaults.service_supply || 400000), charge_type: "service_supply", is_percentage: false, enabled: false, isCustom: false },
-        { description: "Water", amount: centsToRupees(defaults.water || 100000), charge_type: "water", is_percentage: false, enabled: false, isCustom: false },
-        { description: "Light", amount: centsToRupees(defaults.light || 750000), charge_type: "light", is_percentage: false, enabled: false, isCustom: false },
-        { description: "DJ", amount: centsToRupees(defaults.dj || 1100000), charge_type: "dj", is_percentage: false, enabled: false, isCustom: false },
-        { description: "Water (Cleaning)", amount: centsToRupees(defaults.water_cleaning || 500000), charge_type: "water_cleaning", is_percentage: false, enabled: false, isCustom: false },
-        { description: "Extra Kitchen", amount: centsToRupees(defaults.extra_kitchen || 0), charge_type: "extra_kitchen", is_percentage: false, enabled: false, isCustom: false },
-        { description: "Other", amount: centsToRupees(defaults.other || 100000), charge_type: "other", is_percentage: false, enabled: false, isCustom: false },
+        { description: "AC", amount: String(defaults.ac || 12000), charge_type: "ac", is_percentage: false, enabled: false, isCustom: false },
+        { description: "Table", amount: String(defaults.table || 10000), charge_type: "table", is_percentage: false, enabled: false, isCustom: false },
+        { description: "Cleaning Staff", amount: String(defaults.cleaning_staff || 2500), charge_type: "cleaning_staff", is_percentage: false, enabled: false, isCustom: false },
+        { description: "Service Supply", amount: String(defaults.service_supply || 6000), charge_type: "service_supply", is_percentage: false, enabled: false, isCustom: false },
+        { description: "Water", amount: String(defaults.water || 2000), charge_type: "water", is_percentage: false, enabled: false, isCustom: false },
+        { description: "Light", amount: String(defaults.light || 7500), charge_type: "light", is_percentage: false, enabled: false, isCustom: false },
+        { description: "DJ", amount: String(defaults.dj || 11000), charge_type: "dj", is_percentage: false, enabled: false, isCustom: false },
+        { description: "Water (Cleaning)", amount: String(defaults.water_cleaning || 6000), charge_type: "water_cleaning", is_percentage: false, enabled: false, isCustom: false },
+        { description: "Extra Kitchen", amount: String(defaults.extra_kitchen || 0), charge_type: "extra_kitchen", is_percentage: false, enabled: false, isCustom: false },
+        { description: "Other", amount: String(defaults.other || 1000), charge_type: "other", is_percentage: false, enabled: false, isCustom: false },
       ]);
+      // Pre-fill hall only rate from venue
+      const venueHallOnlyRate = venue.hall_only_per_person || 50000;
+      setF(prev => ({ ...prev, hallOnlyRate: centsToRupees(venueHallOnlyRate) }));
     }
   }, [venue?.id]);
   
@@ -560,11 +568,13 @@ function NewBooking({ onClose, onDone }: { onClose: () => void; onDone: () => vo
     const guestCount = parseInt(f.guestCount) || 0;
 
     if (f.packageType === "hall_only") {
-      const hallOnlyRate = venue.hall_only_per_person || 50000;
+      // Use editable hall only rate
+      const hallOnlyRate = f.hallOnlyRate ? toCents(f.hallOnlyRate) : (venue.hall_only_per_person || 50000);
       const hallCharge = hallOnlyRate * guestCount;
       const serviceCharge = Math.round(hallCharge * (parseFloat(f.serviceChargePct) || 10) / 100);
       return { rental: hallCharge, foodCost: 0, serviceCharge, total: hallCharge + serviceCharge };
     } else {
+      // Hall + Food: use fixed venue hall charge
       const hallCharge = venue.hall_type === "luxury" ? (venue.luxury_hall_charge ?? 4500000) : (venue.basic_hall_charge ?? 4000000);
       const perPlatePrice = f.perPlatePrice ? toCents(f.perPlatePrice) : (venue.per_plate_starting_price || 195000);
       const foodCost = perPlatePrice * guestCount;
@@ -620,14 +630,22 @@ function NewBooking({ onClose, onDone }: { onClose: () => void; onDone: () => vo
             </Field>
             {venue && (
               <div className="text-xs text-slate-500">
-                Hall charge: {lkr(venue.hall_type === "luxury" ? venue.luxury_hall_charge : venue.basic_hall_charge)}
+                Hall charge: {lkr(venue.hall_type === "luxury" ? (venue.luxury_hall_charge ?? 4500000) : (venue.basic_hall_charge ?? 4000000))}
               </div>
             )}
           </>
         ) : (
-          <div className="text-xs text-slate-500">
-            Hall only: {venue ? `${centsToRupees(venue.hall_only_per_person || 500)} per person` : "500 per person"}
-          </div>
+          <>
+            <Field label="Hall Only Rate (LKR per person)">
+              <input
+                className="input"
+                type="number"
+                value={f.hallOnlyRate}
+                onChange={(e) => setF({ ...f, hallOnlyRate: e.target.value })}
+                placeholder={venue ? centsToRupees(venue.hall_only_per_person || 50000) : "500"}
+              />
+            </Field>
+          </>
         )}
         <Field label="Service Charge %">
           <input className="input" type="number" value={f.serviceChargePct} onChange={(e) => setF({ ...f, serviceChargePct: e.target.value })} />
@@ -715,28 +733,84 @@ function NewBooking({ onClose, onDone }: { onClose: () => void; onDone: () => vo
         </label>
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <span className="label">PAYMENT METHOD</span>
-            <select className="input" value={f.advancePaymentMethod} onChange={(e) => setF({ ...f, advancePaymentMethod: e.target.value })}>
-              <option value="cash">Cash</option>
-              <option value="card">Card</option>
-              <option value="credit_card">Credit Card</option>
-              <option value="debit_card">Debit Card</option>
-              <option value="bank_transfer">Bank Transfer</option>
-              <option value="cheque">Cheque</option>
-              <option value="online">Online Payment</option>
-            </select>
+            <span className="label">ADVANCE PAYMENT (LKR)</span>
+            <input className="input" type="number" value={f.advancePayment} onChange={(e) => setF({ ...f, advancePayment: e.target.value })} placeholder="Optional" />
           </div>
           <div>
             <span className="label">PROFIT MARGIN (LKR)</span>
             <input className="input" type="number" value={f.profitMargin} onChange={(e) => setF({ ...f, profitMargin: e.target.value })} />
           </div>
         </div>
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <span className="label">ADVANCE PAYMENT (LKR)</span>
-            <input className="input" type="number" value={f.advancePayment} onChange={(e) => setF({ ...f, advancePayment: e.target.value })} placeholder="Optional" />
-          </div>
-        </div>
+        {f.advancePayment && (
+          <>
+            <label className="flex items-center gap-2 text-sm font-semibold">
+              <input type="checkbox" checked={f.splitPayment} onChange={(e) => {
+                setF({ ...f, splitPayment: e.target.checked });
+                if (e.target.checked) {
+                  setSplitPaymentMethods([{ method: "cash", amount: "" }, { method: "card", amount: "" }]);
+                } else {
+                  setSplitPaymentMethods([{ method: "cash", amount: "" }]);
+                }
+              }} />
+              Split Payment
+            </label>
+            {f.splitPayment ? (
+              <div className="flex gap-4 flex-wrap">
+                {splitPaymentMethods.map((pm, i) => (
+                  <div key={i} className="flex-1 min-w-[200px] space-y-2">
+                    <div className="flex justify-between items-center">
+                      <span className="label">Payment Method {i + 1}</span>
+                      {splitPaymentMethods.length > 1 && (
+                        <button className="btn-ghost !px-2 text-xs" onClick={() => setSplitPaymentMethods(splitPaymentMethods.filter((_, j) => j !== i))}>✕</button>
+                      )}
+                    </div>
+                    <select className="input" value={pm.method} onChange={(e) => setSplitPaymentMethods(splitPaymentMethods.map((x, j) => j === i ? { ...x, method: e.target.value } : x))}>
+                      <option value="cash">Cash</option>
+                      <option value="card">Card</option>
+                      <option value="credit_card">Credit Card</option>
+                      <option value="debit_card">Debit Card</option>
+                      <option value="bank_transfer">Bank Transfer</option>
+                      <option value="cheque">Cheque</option>
+                      <option value="online">Online Payment</option>
+                    </select>
+                    <input className="input" type="number" placeholder="Amount (LKR)" value={pm.amount} onChange={(e) => setSplitPaymentMethods(splitPaymentMethods.map((x, j) => j === i ? { ...x, amount: e.target.value } : x))} />
+                  </div>
+                ))}
+                <button className="btn-secondary w-full mt-2" onClick={() => setSplitPaymentMethods([...splitPaymentMethods, { method: "cash", amount: "" }])} disabled={splitPaymentMethods.length >= 3}>
+                  + Add Payment Method
+                </button>
+                {splitPaymentMethods.length >= 3 && <div className="flex justify-center w-full mt-1"><p className="text-xs bg-yellow-100 text-yellow-800 py-1 px-2 rounded font-semibold">Maximum 3 payment methods allowed</p></div>}
+                <div className="w-full mt-2 p-2 bg-slate-50 rounded text-sm">
+                  <div className="flex justify-between">
+                    <span>Total split payment:</span>
+                    <span className={splitPaymentMethods.reduce((sum, pm) => sum + (parseInt(pm.amount) || 0), 0) === (parseInt(f.advancePayment) || 0) ? "text-green-600 font-semibold" : "text-red-600 font-semibold"}>
+                      {splitPaymentMethods.reduce((sum, pm) => sum + (parseInt(pm.amount) || 0), 0).toLocaleString()} LKR
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-gray-500">
+                    <span>Advance payment:</span>
+                    <span>{(parseInt(f.advancePayment) || 0).toLocaleString()} LKR</span>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <span className="label">PAYMENT METHOD</span>
+                  <select className="input" value={f.advancePaymentMethod} onChange={(e) => setF({ ...f, advancePaymentMethod: e.target.value })}>
+                    <option value="cash">Cash</option>
+                    <option value="card">Card</option>
+                    <option value="credit_card">Credit Card</option>
+                    <option value="debit_card">Debit Card</option>
+                    <option value="bank_transfer">Bank Transfer</option>
+                    <option value="cheque">Cheque</option>
+                    <option value="online">Online Payment</option>
+                  </select>
+                </div>
+              </div>
+            )}
+          </>
+        )}
       </div>
 
       <div className="mt-3 rounded-xl bg-slate-50 p-3 text-sm">
@@ -770,7 +844,7 @@ function NewBooking({ onClose, onDone }: { onClose: () => void; onDone: () => vo
       <ErrorText error={error} />
       <button
         className="btn-primary mt-3 w-full !py-3"
-        disabled={!f.venueId || !f.clientName.trim()}
+        disabled={!isFormValid}
         onClick={() => {
           const payload: any = {
             venue_id: Number(f.venueId),
@@ -790,11 +864,13 @@ function NewBooking({ onClose, onDone }: { onClose: () => void; onDone: () => vo
             use_package_pricing: true,
             package_type: f.packageType,
             per_plate_price: f.perPlatePrice ? toCents(f.perPlatePrice) : null,
+            hall_charge_used: f.packageType === "hall_food" && venue ? (venue.hall_type === "luxury" ? venue.luxury_hall_charge : venue.basic_hall_charge) : null,
+            hall_only_per_person: f.packageType === "hall_only" ? (f.hallOnlyRate ? toCents(f.hallOnlyRate) : (venue?.hall_only_per_person ?? null)) : null,
             service_charge_pct: parseInt(f.serviceChargePct) || 10,
             byod_selected: f.byodSelected,
             dj_required: f.djRequired,
             advance_payment: f.advancePayment ? toCents(f.advancePayment) : 0,
-            advance_payment_method: f.advancePaymentMethod,
+            advance_payment_method: f.splitPayment ? JSON.stringify(splitPaymentMethods) : f.advancePaymentMethod,
             profit_margin: f.profitMargin ? toCents(f.profitMargin) : 0,
             venue_extras: venueExtras.filter((x) => (x.enabled || x.isCustom) && toCents(x.amount) > 0).map((x) => ({
               description: x.description,
