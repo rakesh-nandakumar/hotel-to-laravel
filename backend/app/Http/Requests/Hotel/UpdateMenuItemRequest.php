@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Hotel;
 
+use App\Services\CurrentContext;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -21,7 +22,7 @@ class UpdateMenuItemRequest extends FormRequest
             'name' => ['sometimes', 'string', 'max:150'],
             'menu_category_id' => ['sometimes', 'integer', 'exists:pos_menu_categories,id'],
             'price' => ['sometimes', 'integer', 'min:0'],
-            'item_no' => ['sometimes', 'nullable', 'integer', 'min:1', Rule::unique('pos_menu_items', 'item_no')->ignore($this->route('menuItem'))],
+            'item_no' => ['sometimes', 'nullable', 'integer', 'min:1', Rule::unique('pos_menu_items', 'item_no')->where('tenant_id', app(CurrentContext::class)->tenantId())->ignore($this->route('menuItem'))],
             'description' => ['sometimes', 'nullable', 'string', 'max:1000'],
             'image' => ['sometimes', 'nullable', 'string', 'max:5000000'],
             'active' => ['sometimes', 'boolean'],

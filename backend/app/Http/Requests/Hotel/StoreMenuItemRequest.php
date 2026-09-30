@@ -2,7 +2,9 @@
 
 namespace App\Http\Requests\Hotel;
 
+use App\Services\CurrentContext;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class StoreMenuItemRequest extends FormRequest
 {
@@ -20,7 +22,7 @@ class StoreMenuItemRequest extends FormRequest
             'name' => ['required', 'string', 'max:150'],
             'menu_category_id' => ['required', 'integer', 'exists:pos_menu_categories,id'],
             'price' => ['required', 'integer', 'min:0'],
-            'item_no' => ['nullable', 'integer', 'min:1', 'unique:pos_menu_items,item_no'],
+            'item_no' => ['nullable', 'integer', 'min:1', Rule::unique('pos_menu_items', 'item_no')->where('tenant_id', app(CurrentContext::class)->tenantId())],
             'description' => ['nullable', 'string', 'max:1000'],
             'image' => ['nullable', 'string', 'max:5000000'],
             'active' => ['nullable', 'boolean'],

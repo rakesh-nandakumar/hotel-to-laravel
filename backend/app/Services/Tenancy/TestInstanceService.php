@@ -174,56 +174,13 @@ class TestInstanceService
      */
     private static function orderedTables(array $config): array
     {
-        $tables = $config['tables'];
-        $names = array_keys($tables);
-
         $deps = [];
-        foreach ($tables as $name => $def) {
-            $deps[$name] = collect($def['fks'] ?? [])
-                ->values()
-                ->unique()
-                ->reject(fn (string $target): bool => $target === $name || ! isset($tables[$target]))
-                ->values()
-                ->all();
+        foreach ($config['tables'] as $name => $def) {
+            $deps[$name] = array_values($def['fks'] ?? []);
         }
 
-        $order = [];
-        $processed = [];
-
-        while (count($processed) < count($names)) {
-            $progress = false;
-
-            foreach ($names as $name) {
-                if (isset($processed[$name])) {
-                    continue;
-                }
-
-                $unresolved = array_values(array_filter(
-                    $deps[$name],
-                    fn (string $dep): bool => ! isset($processed[$dep]),
-                ));
-
-                if ($unresolved === []) {
-                    $processed[$name] = true;
-                    $order[] = $name;
-                    $progress = true;
-                }
-            }
-
-            if (! $progress) {
-                // Cycle (users ↔ roles etc.): force the remaining tables into
-                // config order; their blocking edges are deferred to pass 2.
-                foreach ($names as $name) {
-                    if (! isset($processed[$name])) {
-                        $processed[$name] = true;
-                        $order[] = $name;
-                    }
-                }
-                break;
-            }
-        }
-
-        return [$order];
+        // Cycle edges (users ↔ roles etc.) are deferred to pass 2.
+        return [TableTopology::order($deps)];
     }
 
     /**
