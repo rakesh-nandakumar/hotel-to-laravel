@@ -7,6 +7,7 @@ import {
 import { ThemeCustomizer, ThemeColors } from "../../components/ThemeCustomizer";
 import { applyTheme } from "../../lib/theme";
 import { RolesTab } from "./TenantRoles";
+import { DataTab } from "./TenantDataTab";
 import { KeyRound, LogIn, Plus, RefreshCw, Trash2 } from "lucide-react";
 
 type Tenant = {
@@ -22,7 +23,7 @@ type OwnerAdmin = { id: number; name: string; email: string; status: string; cre
 type SettingRow = { key: string; type: string; category: string; label: string; hint: string | null; value: string; overridden: boolean };
 type ModuleRow = { key: string; name: string; description: string; enabled: boolean };
 
-type Tab = "overview" | "settings" | "modules" | "roles" | "test-instance" | "audit";
+type Tab = "overview" | "settings" | "modules" | "roles" | "test-instance" | "data" | "audit";
 
 export default function CentralTenantDetail() {
   const { id } = useParams<{ id: string }>();
@@ -99,6 +100,7 @@ export default function CentralTenantDetail() {
           { id: "modules", label: "Modules" },
           { id: "roles", label: "Roles" },
           { id: "test-instance", label: "Test instance" },
+          { id: "data", label: "Data" },
           { id: "audit", label: "Audit log" },
         ]}
         active={tab}
@@ -110,6 +112,7 @@ export default function CentralTenantDetail() {
       {tab === "modules" && <ModulesTab tenantId={tenant.id} />}
       {tab === "roles" && <RolesTab tenantId={tenant.id} tenantName={tenant.name} />}
       {tab === "test-instance" && <TestInstanceTab tenant={tenant} />}
+      {tab === "data" && <DataTab tenantId={tenant.id} tenantName={tenant.name} />}
       {tab === "audit" && <AuditLogTab tenantId={tenant.id} />}
     </div>
   );
@@ -730,6 +733,7 @@ const AUDIT_ACTIONS = [
   "tenant_setting.changed", "tenant_module.toggled",
   "admin.created", "admin.updated", "admin.deleted",
   "test_instance.created", "test_instance.synced", "test_instance.destroyed",
+  "tenant.data_purged", "tenant.data_restored", "tenant.data_backup_downloaded",
   "role.created", "role.updated", "role.deleted", "role.duplicated", "role.toggled_active",
   "user.created", "user.updated", "user.deleted", "user.suspended", "user.reactivated", "user.deactivated",
   "user.unlocked", "user.password_reset_by_admin", "user.login", "user.logout",

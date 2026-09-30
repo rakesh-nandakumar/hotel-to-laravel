@@ -30,6 +30,7 @@ use App\Http\Controllers\Central\CentralDashboardController;
 use App\Http\Controllers\Central\ImpersonationController as CentralImpersonationController;
 use App\Http\Controllers\Central\MeController as CentralMeController;
 use App\Http\Controllers\Central\TenantController;
+use App\Http\Controllers\Central\TenantDataPurgeController;
 use App\Http\Controllers\Central\TenantModuleController;
 use App\Http\Controllers\Central\TenantRoleController;
 use App\Http\Controllers\Central\TenantSettingController;
@@ -208,6 +209,16 @@ Route::prefix('central')->name('central.')->middleware('central_only')->group(fu
         Route::post('tenants/{tenant}/test-instance', [TestInstanceController::class, 'store'])->name('tenants.test-instance.store');
         Route::post('tenants/{tenant}/test-instance/sync', [TestInstanceController::class, 'sync'])->name('tenants.test-instance.sync');
         Route::delete('tenants/{tenant}/test-instance', [TestInstanceController::class, 'destroy'])->name('tenants.test-instance.destroy');
+
+        Route::prefix('tenants/{tenant}/data')->name('tenants.data.')->group(function () {
+            Route::get('catalog', [TenantDataPurgeController::class, 'catalog'])->name('catalog');
+            Route::post('preview', [TenantDataPurgeController::class, 'preview'])->middleware('throttle:20,1')->name('preview');
+            Route::post('purge', [TenantDataPurgeController::class, 'purge'])->middleware('throttle:5,1')->name('purge');
+            Route::get('purges', [TenantDataPurgeController::class, 'purges'])->name('purges');
+            Route::get('purges/{purge}/download', [TenantDataPurgeController::class, 'download'])->name('purges.download');
+            Route::post('purges/{purge}/restore-preview', [TenantDataPurgeController::class, 'restorePreview'])->middleware('throttle:10,1')->name('purges.restore-preview');
+            Route::post('purges/{purge}/restore', [TenantDataPurgeController::class, 'restore'])->middleware('throttle:5,1')->name('purges.restore');
+        });
     });
 });
 
