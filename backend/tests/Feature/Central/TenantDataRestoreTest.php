@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 
 use App\Models\CentralAdmin;
 use App\Models\Tenant;

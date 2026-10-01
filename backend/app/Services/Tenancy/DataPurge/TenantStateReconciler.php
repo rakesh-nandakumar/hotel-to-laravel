@@ -77,6 +77,46 @@ final class TenantStateReconciler
     }
 
     /**
+     * What a purge will re-check, in operator terms, for the preview. Reads
+     * only; the real repairs are decided after the delete by {@see apply()}.
+     *
+     * @return list<array{kind: string, count: int, description: string}>
+     */
+    public function preview(PurgePlan $plan): array
+    {
+        $captured = $this->capture($plan);
+        $repairs = [];
+
+        foreach ([
+            'rooms' => ['Rooms', 'room(s) will be re-checked and set back to Available if no stay, cleaning task or maintenance issue still justifies their status.'],
+            'dining_tables' => ['Dining tables', 'table(s) will be re-checked and freed if no open order is still using them.'],
+            'apartment_units' => ['Apartment units', 'unit(s) will be re-checked and set back to Available if no booking, lease, sale, task or issue still justifies their status.'],
+        ] as $key => [$kind, $text]) {
+            if ($captured[$key] !== []) {
+                $repairs[] = ['kind' => $kind, 'count' => count($captured[$key]), 'description' => count($captured[$key]).' '.$text];
+            }
+        }
+
+        if ($captured['loyalty'] !== []) {
+            $repairs[] = [
+                'kind' => 'Loyalty points',
+                'count' => count($captured['loyalty']),
+                'description' => count($captured['loyalty']).' guest(s) will lose the loyalty points earned on the deleted records.',
+            ];
+        }
+
+        if ($plan->zeroStock) {
+            $repairs[] = [
+                'kind' => 'Stock',
+                'count' => 1,
+                'description' => 'On-hand stock of every product and ingredient will be set to zero.',
+            ];
+        }
+
+        return $repairs;
+    }
+
+    /**
      * Must run AFTER the rows are deleted.
      *
      * @param  array{rooms: list<int>, dining_tables: list<int>, apartment_units: list<int>, guests: list<int>, loyalty: array<int, int>}  $captured

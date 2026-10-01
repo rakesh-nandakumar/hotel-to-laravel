@@ -75,7 +75,7 @@ final class DataPurgeService
             $lock->release();
         }
 
-        Cache::forget('pos.menu_categories');
+        PurgeCaches::flush();
 
         DataPurgeAudit::record(
             $tenant,

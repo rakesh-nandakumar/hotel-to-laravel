@@ -24,7 +24,7 @@ final class PurgeToken
      */
     public static function issue(string $kind, array $claims): string
     {
-        return Crypt::encryptString(json_encode([...$claims, 'kind' => $kind, 'issued_at' => time()], JSON_THROW_ON_ERROR));
+        return Crypt::encryptString(json_encode([...$claims, 'kind' => $kind, 'issued_at' => now()->getTimestamp()], JSON_THROW_ON_ERROR));
     }
 
     /**
@@ -44,7 +44,7 @@ final class PurgeToken
             throw self::invalid('This confirmation is not valid. Preview again.');
         }
 
-        $age = time() - (int) ($claims['issued_at'] ?? 0);
+        $age = now()->getTimestamp() - (int) ($claims['issued_at'] ?? 0);
 
         if ($age > (int) config('tenancy-purge.token_ttl_seconds')) {
             throw self::invalid('This preview has expired. Preview again to continue.');

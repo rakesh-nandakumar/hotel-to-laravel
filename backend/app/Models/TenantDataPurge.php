@@ -44,6 +44,10 @@ class TenantDataPurge extends Model
         'restore_summary',
     ];
 
+    protected $attributes = [
+        'status' => self::STATUS_COMPLETED,
+    ];
+
     protected static function booted(): void
     {
         static::creating(function (self $purge): void {

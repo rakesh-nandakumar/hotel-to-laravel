@@ -186,7 +186,7 @@ final class PurgeCatalog
         $parsed = is_string($value) ? DateTimeImmutable::createFromFormat('!'.$format, $value) : false;
 
         if ($parsed === false || $parsed->format($format) !== $value) {
-            throw self::invalid($path, "Expected a {$format} value.");
+            throw self::invalid($path, 'Use the format '.($format === 'Y-m' ? 'YYYY-MM' : 'YYYY-MM-DD').'.');
         }
 
         return $value;

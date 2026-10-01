@@ -16,6 +16,7 @@ use App\Services\Tenancy\DataPurge\PurgeConflictException;
 use App\Services\Tenancy\DataPurge\PurgeGraph;
 use App\Services\Tenancy\DataPurge\PurgePlanner;
 use App\Services\Tenancy\DataPurge\PurgeToken;
+use App\Services\Tenancy\DataPurge\TenantStateReconciler;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
@@ -37,6 +38,7 @@ class TenantDataPurgeController extends Controller
         private readonly PurgeGraph $graph,
         private readonly DataPurgeService $purger,
         private readonly DataRestoreService $restorer,
+        private readonly TenantStateReconciler $reconciler,
     ) {}
 
     /**
@@ -68,7 +70,7 @@ class TenantDataPurgeController extends Controller
         abort_if($plan->isEmpty(), 422, 'Nothing matches this selection, so there is no data to delete.');
 
         return response()->json([
-            'plan' => $plan->toSummary($this->graph),
+            'plan' => [...$plan->toSummary($this->graph), 'reconcile' => $this->reconciler->preview($plan)],
             'token' => PurgeToken::issue(PurgeToken::PURGE, [
                 'tenant' => $tenant->id,
                 'admin' => $this->admin($request)->id,

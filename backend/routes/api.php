@@ -212,12 +212,15 @@ Route::prefix('central')->name('central.')->middleware('central_only')->group(fu
 
         Route::prefix('tenants/{tenant}/data')->name('tenants.data.')->group(function () {
             Route::get('catalog', [TenantDataPurgeController::class, 'catalog'])->name('catalog');
-            Route::post('preview', [TenantDataPurgeController::class, 'preview'])->middleware('throttle:20,1')->name('preview');
-            Route::post('purge', [TenantDataPurgeController::class, 'purge'])->middleware('throttle:5,1')->name('purge');
+            // The third throttle argument is a bucket prefix: without it every plain
+            // "throttle:N,M" route shares ONE counter per operator, so a few previews
+            // would lock the operator out of the purge itself.
+            Route::post('preview', [TenantDataPurgeController::class, 'preview'])->middleware('throttle:20,1,tenant-data-preview')->name('preview');
+            Route::post('purge', [TenantDataPurgeController::class, 'purge'])->middleware('throttle:5,1,tenant-data-purge')->name('purge');
             Route::get('purges', [TenantDataPurgeController::class, 'purges'])->name('purges');
             Route::get('purges/{purge}/download', [TenantDataPurgeController::class, 'download'])->name('purges.download');
-            Route::post('purges/{purge}/restore-preview', [TenantDataPurgeController::class, 'restorePreview'])->middleware('throttle:10,1')->name('purges.restore-preview');
-            Route::post('purges/{purge}/restore', [TenantDataPurgeController::class, 'restore'])->middleware('throttle:5,1')->name('purges.restore');
+            Route::post('purges/{purge}/restore-preview', [TenantDataPurgeController::class, 'restorePreview'])->middleware('throttle:10,1,tenant-data-restore-preview')->name('purges.restore-preview');
+            Route::post('purges/{purge}/restore', [TenantDataPurgeController::class, 'restore'])->middleware('throttle:5,1,tenant-data-restore')->name('purges.restore');
         });
     });
 });

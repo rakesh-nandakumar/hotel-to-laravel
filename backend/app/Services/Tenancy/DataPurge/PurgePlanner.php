@@ -101,6 +101,33 @@ final class PurgePlanner
     }
 
     /**
+     * Everything that hangs off the given rows under the same rules as a purge.
+     * A restore uses it to undo a document it could only restore in part.
+     *
+     * @param  array<string, list<int>>  $seeds  table => ids
+     * @return array<string, list<int>> table => ids, including the seeds
+     */
+    public function closure(int $tenantId, array $seeds): array
+    {
+        $violations = $this->graph->violations();
+
+        if ($violations !== []) {
+            throw new PurgeAbortedException('The purge engine refuses to run: '.implode(', ', $violations).'.');
+        }
+
+        $this->ids = $this->seeded = $this->pending = $this->reasons = [];
+
+        foreach ($seeds as $table => $ids) {
+            $this->assertScope($table);
+            $this->seed($table, array_map('intval', $ids));
+        }
+
+        $this->close($tenantId);
+
+        return $this->sortedIds();
+    }
+
+    /**
      * @param  array<string, mixed>  $category
      * @param  array<string, mixed>  $filters
      */
