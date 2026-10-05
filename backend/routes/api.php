@@ -32,6 +32,7 @@ use App\Http\Controllers\Central\MeController as CentralMeController;
 use App\Http\Controllers\Central\TenantController;
 use App\Http\Controllers\Central\TenantDataPurgeController;
 use App\Http\Controllers\Central\TenantModuleController;
+use App\Http\Controllers\Central\TenantResetController;
 use App\Http\Controllers\Central\TenantRoleController;
 use App\Http\Controllers\Central\TenantSettingController;
 use App\Http\Controllers\Central\TenantTillController;
@@ -221,6 +222,7 @@ Route::prefix('central')->name('central.')->middleware('central_only')->group(fu
             Route::get('purges/{purge}/download', [TenantDataPurgeController::class, 'download'])->name('purges.download');
             Route::post('purges/{purge}/restore-preview', [TenantDataPurgeController::class, 'restorePreview'])->middleware('throttle:10,1,tenant-data-restore-preview')->name('purges.restore-preview');
             Route::post('purges/{purge}/restore', [TenantDataPurgeController::class, 'restore'])->middleware('throttle:5,1,tenant-data-restore')->name('purges.restore');
+            Route::post('reset', [TenantResetController::class, 'reset'])->middleware('throttle:2,1,tenant-data-reset')->name('reset');
         });
     });
 });

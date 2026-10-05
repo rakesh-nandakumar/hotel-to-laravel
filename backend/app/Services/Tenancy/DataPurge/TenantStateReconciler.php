@@ -113,6 +113,22 @@ final class TenantStateReconciler
             ];
         }
 
+        if ($plan->resetRooms) {
+            $repairs[] = [
+                'kind' => 'Rooms',
+                'count' => 1,
+                'description' => 'All rooms will be set to Available.',
+            ];
+        }
+
+        if ($plan->resetTill) {
+            $repairs[] = [
+                'kind' => 'Till',
+                'count' => 1,
+                'description' => 'All till sessions will be cleared and tills will open with zero balance tomorrow.',
+            ];
+        }
+
         return $repairs;
     }
 
@@ -132,6 +148,8 @@ final class TenantStateReconciler
             ...$this->reconcileApartmentUnits($tenantId, $captured['apartment_units']),
             ...$this->reconcileGuests($tenantId, $captured['guests'], $captured['loyalty']),
             ...($plan->zeroStock ? $this->zeroStock($tenantId) : []),
+            ...($plan->resetRooms ? $this->resetAllRooms($tenantId) : []),
+            ...($plan->resetTill ? $this->resetAllTills($tenantId) : []),
         ];
     }
 
@@ -310,6 +328,57 @@ final class TenantStateReconciler
             });
 
         DB::table('ingredients')->where('tenant_id', $tenantId)->update(['stock_qty' => 0]);
+
+        return $changes;
+    }
+
+    /**
+     * Reset all rooms to available status for tenant reset.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function resetAllRooms(int $tenantId): array
+    {
+        $changes = [];
+        $available = $this->lookup('room_status', 'available');
+
+        if ($available === null) {
+            return [];
+        }
+
+        DB::table('rooms')
+            ->where('tenant_id', $tenantId)
+            ->where('room_status_id', '!=', $available)
+            ->orderBy('id')
+            ->get(['id', 'room_status_id'])
+            ->each(function (object $row) use (&$changes, $available): void {
+                $changes[] = ['kind' => 'set', 'table' => 'rooms', 'id' => (int) $row->id, 'column' => 'room_status_id', 'old' => (int) $row->room_status_id, 'new' => $available];
+            });
+
+        DB::table('rooms')->where('tenant_id', $tenantId)->update(['room_status_id' => $available]);
+
+        return $changes;
+    }
+
+    /**
+     * Reset all till sessions and prepare tills to open with zero balance tomorrow.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function resetAllTills(int $tenantId): array
+    {
+        $changes = [];
+
+        // Delete all till sessions
+        DB::table('till_sessions')->where('tenant_id', $tenantId)->delete();
+
+        // Reset till balances to zero
+        DB::table('tills')->where('tenant_id', $tenantId)->update([
+            'current_balance' => 0,
+            'expected_balance' => 0,
+            'last_opened_at' => null,
+            'last_closed_at' => null,
+        ]);
 
         return $changes;
     }
