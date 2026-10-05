@@ -20,6 +20,7 @@ class UpdateMenuItemRequest extends FormRequest
         return [
             'name' => ['sometimes', 'string', 'max:150'],
             'menu_category_id' => ['sometimes', 'integer', 'exists:pos_menu_categories,id'],
+            'kot_target' => ['sometimes', 'nullable', 'string', 'in:kitchen,bar'],
             'price' => ['sometimes', 'integer', 'min:0'],
             'item_no' => ['sometimes', 'nullable', 'integer', 'min:1', Rule::unique('pos_menu_items', 'item_no')->ignore($this->route('menuItem'))],
             'description' => ['sometimes', 'nullable', 'string', 'max:1000'],

@@ -32,6 +32,7 @@ class Ingredient extends Model
         'low_stock_threshold',
         'unit_cost',
         'inventory_kind_id',
+        'kot_target',
         'selling_price',
         'menu_category_id',
         'image',
@@ -48,6 +49,7 @@ class Ingredient extends Model
             'unit_cost' => 'integer',
             'selling_price' => 'integer',
             'active' => 'boolean',
+            'kot_target' => 'string',
         ];
     }
 

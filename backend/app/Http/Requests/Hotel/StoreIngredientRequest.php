@@ -27,6 +27,7 @@ class StoreIngredientRequest extends FormRequest
             'kind' => ['required', 'string', Rule::in([InventoryKind::INGREDIENT, InventoryKind::PRODUCT])],
             'selling_price' => ['required_if:kind,product', 'nullable', 'integer', 'min:0'],
             'menu_category_id' => ['nullable', 'integer', 'exists:pos_menu_categories,id'],
+            'kot_target' => ['nullable', 'string', 'in:kitchen,bar'],
             'image' => ['nullable', 'string', 'max:5000000'],
             'active' => ['nullable', 'boolean'],
         ];

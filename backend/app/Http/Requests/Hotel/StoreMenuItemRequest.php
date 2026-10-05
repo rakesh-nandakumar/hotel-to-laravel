@@ -19,6 +19,7 @@ class StoreMenuItemRequest extends FormRequest
         return [
             'name' => ['required', 'string', 'max:150'],
             'menu_category_id' => ['required', 'integer', 'exists:pos_menu_categories,id'],
+            'kot_target' => ['nullable', 'string', 'in:kitchen,bar'],
             'price' => ['required', 'integer', 'min:0'],
             'item_no' => ['nullable', 'integer', 'min:1', 'unique:pos_menu_items,item_no'],
             'description' => ['nullable', 'string', 'max:1000'],

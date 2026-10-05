@@ -767,7 +767,7 @@ class OrderService
         $item = $order->items()->create([
             'menu_item_id' => $menuItem->id, 'name' => $menuItem->name, 'qty' => $line['qty'],
             'unit_price' => $unitPrice, 'amount' => $unitPrice * $line['qty'],
-            'send_to_kot' => true,
+            'send_to_kot' => $menuItem->kot_target !== 'bar',
             'notes' => $line['notes'] ?? null,
         ]);
 
@@ -799,8 +799,8 @@ class OrderService
 
     /**
      * Create a standalone product order line — a directly-sellable, no-recipe
-     * stock item (bottled drink, packaged snack). Never routes to the
-     * kitchen; priced off its selling_price.
+     * stock item (bottled drink, packaged snack). Routes to kitchen or bar
+     * based on kot_target; priced off its selling_price.
      *
      * @param  array{product_id: int, qty: int, notes?: string}  $line
      */
@@ -809,7 +809,7 @@ class OrderService
         return $order->items()->create([
             'product_id' => $product->id, 'name' => $product->name, 'qty' => $line['qty'],
             'unit_price' => $product->selling_price, 'amount' => $product->selling_price * $line['qty'],
-            'send_to_kot' => false,
+            'send_to_kot' => $product->kot_target !== 'bar',
             'notes' => $line['notes'] ?? null,
         ]);
     }

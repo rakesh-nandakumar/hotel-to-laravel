@@ -77,6 +77,9 @@ class SettingsSeeder extends Seeder
             ['key' => 'billing.early_departure_fee_pct', 'value' => 50, 'type' => SettingType::PERCENT, 'category' => 'billing', 'label' => 'Early Departure Fee %', 'hint' => 'Of the unused-nights value. Used when the fee mode is "percentage".'],
             ['key' => 'billing.early_departure_fee_fixed', 'value' => 0, 'type' => SettingType::MONEY, 'category' => 'billing', 'label' => 'Early Departure Fee — Fixed Amount (LKR cents)', 'hint' => 'Used when the fee mode is "fixed"; capped to the unused-nights value.'],
 
+            // ── Bar Order Tickets (BOT) ─────────────────────────────────────
+            ['key' => 'bot.enabled', 'value' => false, 'type' => SettingType::BOOLEAN, 'category' => 'bot', 'label' => 'Enable Bar Order Tickets (BOT)', 'hint' => 'When enabled, menu items can be assigned to bar and a BOT screen appears in the sidebar for bar staff.'],
+
             // ── Currency ─────────────────────────────────────────────────────
             ['key' => 'currency.usd_rate', 'value' => 300, 'type' => SettingType::NUMBER, 'category' => 'currency', 'label' => 'LKR per 1 USD (display only)'],
 

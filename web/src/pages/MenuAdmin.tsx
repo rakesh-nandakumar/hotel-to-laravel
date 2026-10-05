@@ -38,6 +38,7 @@ type Item = {
     id: number;
     name: string;
   };
+  kot_target?: string;
   recipe: {
     ingredient_id: number;
     qty: number;
@@ -341,6 +342,7 @@ function ItemEditor({ item, cats, ingredients, onClose }: { item: Item | null; c
   const [f, setF] = useState({
     name: item?.name ?? "",
     categoryId: item ? String(item.category.id) : cats[0] ? String(cats[0].id) : "",
+    kotTarget: item?.kot_target ?? "kitchen",
     price: item ? centsToRupees(item.price) : "",
     itemNo: item?.item_no != null ? String(item.item_no) : "",
     description: item?.description ?? "",
@@ -371,6 +373,7 @@ function ItemEditor({ item, cats, ingredients, onClose }: { item: Item | null; c
     const body = {
       name: f.name.trim(),
       menu_category_id: Number(f.categoryId),
+      kot_target: f.kotTarget ?? "kitchen",
       price: toCents(f.price),
       item_no: f.itemNo.trim() ? parseInt(f.itemNo) : null,
       description: f.description.trim(),
@@ -404,6 +407,12 @@ function ItemEditor({ item, cats, ingredients, onClose }: { item: Item | null; c
           <Field label="Category">
             <select className="input" value={f.categoryId} onChange={(e) => setF({ ...f, categoryId: e.target.value })}>
               {cats.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </Field>
+          <Field label="KOT Target" hint="Where this item appears: Kitchen (KOT) or Bar (BOT)">
+            <select className="input" value={f.kotTarget ?? "kitchen"} onChange={(e) => setF({ ...f, kotTarget: e.target.value })}>
+              <option value="kitchen">Kitchen (KOT)</option>
+              <option value="bar">Bar (BOT)</option>
             </select>
           </Field>
           <Field label="Price (LKR)"><input className="input" value={f.price} onChange={(e) => setF({ ...f, price: e.target.value })} /></Field>
