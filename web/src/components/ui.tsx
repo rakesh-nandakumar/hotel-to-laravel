@@ -1,5 +1,5 @@
 /** Minimal shadcn-style UI kit — Tailwind-only, zero runtime deps beyond lucide icons. */
-import { ReactNode, useEffect } from "react";
+import { ReactNode, useEffect, useRef, useState, useCallback } from "react";
 import { X, ChevronLeft, ChevronRight } from "lucide-react";
 import clsx from "clsx";
 
@@ -143,6 +143,105 @@ export function ConfirmDialog({
     </Modal>
   );
 }
+
+/**
+ * Irreversible-action dialog with:
+ *  - a countdown timer (minSeconds, default 3) that must expire before confirming;
+ *  - a password field that must be non-empty;
+ *  - a live label on the confirm button showing the remaining seconds.
+ *
+ * The countdown restarts whenever `countdownKey` changes (pass `open` or the
+ * selected items so a re-open resets the timer).
+ */
+export function DangerConfirmDialog({
+  open, title, message, confirmLabel = "Confirm", busy,
+  minSeconds = 3, countdownKey,
+  password, onPasswordChange, passwordError,
+  extra,
+  onConfirm, onClose,
+}: {
+  open: boolean;
+  title: ReactNode;
+  message: ReactNode;
+  confirmLabel?: string;
+  busy?: boolean;
+  minSeconds?: number;
+  /** Change this value to restart the countdown (e.g. pass the selections hash). */
+  countdownKey?: string | number | boolean;
+  password: string;
+  onPasswordChange: (v: string) => void;
+  passwordError?: string;
+  /** Extra content rendered above the password field (e.g. a checkbox). */
+  extra?: ReactNode;
+  onConfirm: () => void;
+  onClose: () => void;
+}) {
+  const [remaining, setRemaining] = useState(minSeconds);
+  const startedAt = useRef<number>(0);
+
+  // Reset + start the countdown every time open becomes true or countdownKey changes.
+  const reset = useCallback(() => {
+    setRemaining(minSeconds);
+    startedAt.current = Date.now();
+  }, [minSeconds]);
+
+  useEffect(() => {
+    if (!open) return;
+    reset();
+  }, [open, countdownKey, reset]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!open || remaining <= 0) return;
+    const id = window.setInterval(() => {
+      const elapsed = Math.floor((Date.now() - startedAt.current) / 1000);
+      const left = Math.max(0, minSeconds - elapsed);
+      setRemaining(left);
+    }, 250);
+    return () => window.clearInterval(id);
+  }, [open, remaining, minSeconds]);
+
+  const ready = remaining <= 0 && password.length > 0 && !busy;
+
+  if (!open) return null;
+
+  return (
+    <Modal open onClose={onClose} title={title}>
+      <div className="space-y-4">
+        <div className="text-sm leading-relaxed text-slate-600">{message}</div>
+        {extra}
+        <div>
+          <label className="label">Your password</label>
+          <input
+            id="danger-confirm-password"
+            type="password"
+            className={clsx("input", passwordError && "border-red-500")}
+            value={password}
+            onChange={(e) => onPasswordChange(e.target.value)}
+            autoComplete="current-password"
+            placeholder="Enter your password to confirm"
+          />
+          {passwordError && <p className="mt-1 text-xs text-red-600">{passwordError}</p>}
+        </div>
+        <div className="flex items-center justify-end gap-2 pt-1">
+          <button className="btn-secondary" onClick={onClose} disabled={busy}>Cancel</button>
+          <button
+            id="danger-confirm-submit"
+            className="btn-danger"
+            onClick={onConfirm}
+            disabled={!ready}
+          >
+            {busy
+              ? "Working…"
+              : remaining > 0
+                ? `${confirmLabel} (${remaining}s…)`
+                : confirmLabel}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 
 /** Initials avatar (brand gradient). Mirrors User::initials() server-side. */
 export function Avatar({ name, size = 36 }: { name: string; size?: number }) {

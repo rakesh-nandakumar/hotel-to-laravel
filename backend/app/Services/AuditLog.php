@@ -307,6 +307,14 @@ class AuditLog
             // ── Reports ───────────────────────────────────────────────────────────
             'night_audit.run' => "{$actor} ran the night audit for ".($ctx['date'] ?? $subject ?? 'unknown').'.',
 
+            // ── Tenant Data Purge / Restore ──────────────────────────────────
+            'tenant.data_purged' => "{$actor} purged ".number_format((int) ($ctx['total_rows'] ?? 0)).' record(s) from this tenant ('
+                .implode(', ', (array) ($ctx['categories'] ?? [])).
+                '). A backup is kept for '.config('tenancy-purge.retention_days', 90).' days.',
+            'tenant.data_restored' => "{$actor} restored the backup from purge ".($ctx['purge'] ?? '?')
+                .' — '.number_format((int) ($ctx['total_restored'] ?? 0)).' record(s) restored.',
+            'tenant.data_backup_downloaded' => "{$actor} downloaded the backup file for purge ".($ctx['purge'] ?? '?').'.',
+
             // ── Default ───────────────────────────────────────────────────────
             default => ! empty($ctx['description'])
                 ? (string) $ctx['description']
