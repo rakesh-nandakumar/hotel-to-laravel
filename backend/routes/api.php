@@ -946,6 +946,9 @@ Route::middleware(['auth', 'check_active'])->group(function () {
         Route::get('sessions', [TillController::class, 'sessions'])
             ->middleware('can_do:till.access')
             ->name('sessions.index');
+        Route::get('{session}/daily-sales-report', [TillController::class, 'dailySalesReport'])
+            ->middleware('can_do:till.access')
+            ->name('dailySalesReport');
     });
 
     // ── Attendance ────────────────────────────────────────────────────────────

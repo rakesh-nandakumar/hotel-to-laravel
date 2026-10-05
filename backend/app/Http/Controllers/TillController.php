@@ -122,4 +122,17 @@ class TillController extends Controller
 
         return response()->json(['sessions' => $query->limit(60)->get()]);
     }
+
+    /** Daily sales report for thermal printing after till close. */
+    public function dailySalesReport(Request $request, TillSession $session)
+    {
+        $report = $this->till->sessionSummary($session);
+
+        return response()->view('hotel.pdf.daily-sales-report', [
+            'session' => $session->load('till:id,name'),
+            'report' => $report,
+            'format' => 'thermal',
+            'medium' => 'browser',
+        ])->header('Content-Type', 'text/html');
+    }
 }
