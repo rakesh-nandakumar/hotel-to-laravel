@@ -38,7 +38,7 @@ export default function IngredientsTab() {
 }
 
 function NewIngredient({ onClose }: { onClose: () => void }) {
-  const [f, setF] = useState({ name: "", unit: "g", stockQty: "0", lowStockThreshold: "0" });
+  const [f, setF] = useState({ name: "", unit: "g", stockQty: "0", lowStockThreshold: "0", kotTarget: "kitchen" });
   const [error, setError] = useState("");
   return (
     <Modal open onClose={onClose} title="New ingredient">
@@ -47,6 +47,12 @@ function NewIngredient({ onClose }: { onClose: () => void }) {
         <Field label="Unit">
           <select className="input" value={f.unit} onChange={(e) => setF({ ...f, unit: e.target.value })}>
             {["g", "kg", "ml", "l", "pcs"].map((u) => <option key={u}>{u}</option>)}
+          </select>
+        </Field>
+        <Field label="KOT Target" hint="Where this ingredient appears: Kitchen (KOT) or Bar (BOT)">
+          <select className="input" value={f.kotTarget} onChange={(e) => setF({ ...f, kotTarget: e.target.value })}>
+            <option value="kitchen">Kitchen (KOT)</option>
+            <option value="bar">Bar (BOT)</option>
           </select>
         </Field>
         <Field label="Opening stock"><input className="input" value={f.stockQty} onChange={(e) => setF({ ...f, stockQty: e.target.value })} /></Field>
@@ -59,7 +65,7 @@ function NewIngredient({ onClose }: { onClose: () => void }) {
         onClick={() =>
           post("/ingredients", {
             name: f.name.trim(), unit: f.unit, stock_qty: parseFloat(f.stockQty) || 0, low_stock_threshold: parseFloat(f.lowStockThreshold) || 0,
-            kind: "ingredient",
+            kind: "ingredient", kot_target: f.kotTarget,
           })
             .then(onClose)
             .catch((e) => setError(e.message))

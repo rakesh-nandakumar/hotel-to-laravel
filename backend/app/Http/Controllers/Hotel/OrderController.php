@@ -28,7 +28,7 @@ use Illuminate\Http\Response;
 class OrderController extends Controller
 {
     private const WITH_FULL = [
-        'items.modifiers', 'items.addOn', 'room:id,number', 'diningTable:id,table_no', 'reservation:id,code,guest_id', 'reservation.guest:id,name',
+        'items.modifiers', 'items.addOn', 'items.menuItem', 'items.product', 'room:id,number', 'diningTable:id,table_no', 'reservation:id,code,guest_id', 'reservation.guest:id,name',
         'staff:id,name', 'payments.kind', 'payments.method', 'status', 'type', 'kotStatus', 'diningMode', 'deliveryStatus', 'deliveryRider:id,name',
     ];
 
@@ -56,19 +56,35 @@ class OrderController extends Controller
      * are trimmed to the kitchen-routed lines so direct-fulfill drinks/snacks
      * never clutter the kitchen board.
      */
-    public function kot(): JsonResponse
+    public function kot(Request $request): JsonResponse
     {
-        $orders = Order::query()
-            ->with([...self::WITH_FULL, 'items.menuItem.category.kitchenStation'])
+        $target = $request->query('target', 'kitchen');
+
+        $query = Order::query()
+            ->with([...self::WITH_FULL, 'items.menuItem.category.kitchenStation', 'items.product'])
             ->whereHas('status', fn ($q) => $q->where('code', '!=', OrderStatus::VOID))
             ->whereHas('kotStatus', fn ($q) => $q->whereIn('code', [KotStatus::NEW, KotStatus::PREPARING, KotStatus::READY]))
-            ->whereHas('items', fn ($q) => $q->where('send_to_kot', true)->where('voided', false))
-            ->where('created_at', '>=', now()->subDay())
-            ->oldest()
-            ->get();
+            ->where('created_at', '>=', now()->subDay());
 
-        $orders->each(function (Order $order) {
-            $order->setRelation('items', $order->items->where('send_to_kot', true)->where('voided', false)->values());
+        if ($target === 'bar') {
+            $query->whereHas('items', fn ($q) => $q->where('send_to_kot', false)->where('voided', false))
+                ->where(function ($q) {
+                    $q->whereHas('items.menuItem', fn ($sub) => $sub->where('kot_target', 'bar'))
+                        ->orWhereHas('items.product', fn ($sub) => $sub->where('kot_target', 'bar'));
+                });
+        } else {
+            $query->whereHas('items', fn ($q) => $q->where('send_to_kot', true)->where('voided', false))
+                ->where(function ($q) {
+                    $q->whereHas('items.menuItem', fn ($sub) => $sub->where('kot_target', 'kitchen'))
+                        ->orWhereHas('items.product', fn ($sub) => $sub->where('kot_target', 'kitchen'));
+                });
+        }
+
+        $orders = $query->oldest()->get();
+
+        $sendToKot = $target !== 'bar';
+        $orders->each(function (Order $order) use ($sendToKot) {
+            $order->setRelation('items', $order->items->where('send_to_kot', $sendToKot)->where('voided', false)->values());
         });
 
         return response()->json(['orders' => $orders]);
