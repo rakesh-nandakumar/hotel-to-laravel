@@ -1,5 +1,5 @@
 import { ReactNode, useEffect, useState } from "react";
-import { post } from "../lib/api";
+import { post, printDocument } from "../lib/api";
 import { useFetch, usePagedFetch, lkr, toCents, centsToRupees, fmtDateTime } from "../lib/util";
 import { Badge, Card, Empty, ErrorText, Field, Modal, Pagination, Stat } from "../components/ui";
 import { useToast } from "../lib/toast";
@@ -489,10 +489,12 @@ function CloseTill({ sessionId, onClose }: { sessionId: number; onClose: () => v
       reason: reason || undefined,
       notes: notes || undefined,
     })
-      .then(() => {
+      .then((res) => {
         if (variance === 0) toast.success("Till closed — balanced", `Closing balance ${lkr(expected)}`);
         else toast.warning("Till closed — variance found", signed(variance));
         onClose();
+        // Trigger thermal print with the daily sales report
+        printDocument(`/till/${res.session.id}/daily-sales-report`);
       })
       .catch((e) => setError(e.message))
       .finally(() => setBusy(false));
