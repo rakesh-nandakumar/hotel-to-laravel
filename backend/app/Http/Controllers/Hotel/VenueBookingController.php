@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Hotel\CancelVenueBookingRequest;
 use App\Http\Requests\Hotel\StoreVenueBookingRequest;
 use App\Http\Requests\Hotel\UpdateVenueBookingRequest;
+use App\Models\Hotel\Venue;
 use App\Models\Hotel\VenueBooking;
 use App\Services\Hotel\BillingService;
 use App\Services\Hotel\VenueBookingService;
@@ -26,12 +27,35 @@ class VenueBookingController extends Controller
 
         if ($request->has('page')) {
             $paginated = $query->paginate($request->integer('page_size', 25))->withQueryString();
-            $paginated->getCollection()->transform(fn (VenueBooking $b) => $this->withFolioTotals($b));
+            $paginated->getCollection()->transform(function (VenueBooking $b) {
+                $b = $this->withFolioTotals($b);
+                // Add venue_name for display
+                if ($b->venue_ids && is_array($b->venue_ids) && count($b->venue_ids) > 1) {
+                    $venues = Venue::query()->whereIn('id', $b->venue_ids)->pluck('name');
+                    $b->venue_name = $venues->join(' + ');
+                } else {
+                    $b->venue_name = $b->venue->name ?? '';
+                }
+
+                return $b;
+            });
 
             return response()->json(['bookings' => $paginated]);
         }
 
         $bookings = $query->get()->map(fn (VenueBooking $b) => $this->withFolioTotals($b));
+
+        // Add venue_name to each booking for display
+        $bookings->transform(function (VenueBooking $b) {
+            if ($b->venue_ids && is_array($b->venue_ids) && count($b->venue_ids) > 1) {
+                $venues = Venue::query()->whereIn('id', $b->venue_ids)->pluck('name');
+                $b->venue_name = $venues->join(' + ');
+            } else {
+                $b->venue_name = $b->venue->name ?? '';
+            }
+
+            return $b;
+        });
 
         return response()->json(['bookings' => $bookings]);
     }
@@ -39,6 +63,14 @@ class VenueBookingController extends Controller
     public function store(StoreVenueBookingRequest $request): JsonResponse
     {
         $booking = $this->bookings->createBooking($request->validated(), $request->user()->id);
+
+        // Add venue_name for display
+        if ($booking->venue_ids && is_array($booking->venue_ids) && count($booking->venue_ids) > 1) {
+            $venues = Venue::query()->whereIn('id', $booking->venue_ids)->pluck('name');
+            $booking->venue_name = $venues->join(' + ');
+        } else {
+            $booking->venue_name = $booking->venue->name ?? '';
+        }
 
         return response()->json(['message' => "Venue booking \"{$booking->code}\" created.", 'booking' => $booking], 201);
     }
@@ -48,6 +80,14 @@ class VenueBookingController extends Controller
         $booking->load(['venue', 'guest', 'status', 'durationType']);
         $folio = $booking->folio;
 
+        // Add venue_name for display
+        if ($booking->venue_ids && is_array($booking->venue_ids) && count($booking->venue_ids) > 1) {
+            $venues = Venue::query()->whereIn('id', $booking->venue_ids)->pluck('name');
+            $booking->venue_name = $venues->join(' + ');
+        } else {
+            $booking->venue_name = $booking->venue->name ?? '';
+        }
+
         return response()->json([
             'booking' => $booking,
             'folio' => $folio ? $this->billing->present($folio) : null,
@@ -56,12 +96,30 @@ class VenueBookingController extends Controller
 
     public function update(UpdateVenueBookingRequest $request, VenueBooking $booking): JsonResponse
     {
-        return response()->json(['message' => 'Venue booking updated.', 'booking' => $this->bookings->updateBooking($booking, $request->validated())]);
+        $updated = $this->bookings->updateBooking($booking, $request->validated());
+        // Add venue_name for display
+        if ($updated->venue_ids && is_array($updated->venue_ids) && count($updated->venue_ids) > 1) {
+            $venues = Venue::query()->whereIn('id', $updated->venue_ids)->pluck('name');
+            $updated->venue_name = $venues->join(' + ');
+        } else {
+            $updated->venue_name = $updated->venue->name ?? '';
+        }
+
+        return response()->json(['message' => 'Venue booking updated.', 'booking' => $updated]);
     }
 
     public function confirm(Request $request, VenueBooking $booking): JsonResponse
     {
-        return response()->json(['booking' => $this->bookings->confirmBooking($booking, $request->user()->id)]);
+        $confirmed = $this->bookings->confirmBooking($booking, $request->user()->id);
+        // Add venue_name for display
+        if ($confirmed->venue_ids && is_array($confirmed->venue_ids) && count($confirmed->venue_ids) > 1) {
+            $venues = Venue::query()->whereIn('id', $confirmed->venue_ids)->pluck('name');
+            $confirmed->venue_name = $venues->join(' + ');
+        } else {
+            $confirmed->venue_name = $confirmed->venue->name ?? '';
+        }
+
+        return response()->json(['booking' => $confirmed]);
     }
 
     public function complete(Request $request, VenueBooking $booking): JsonResponse

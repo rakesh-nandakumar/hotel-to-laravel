@@ -17,7 +17,12 @@
     <x-pdf-row :left="'Stay: '.$folio->reservation->check_in->format('Y-m-d').' → '.$folio->reservation->check_out->format('Y-m-d')" />
 @endif
 @if($folio->venueBooking)
-    <x-pdf-row :left="'Venue: '.$folio->venueBooking->venue->name" />
+    @php
+        $venueName = $folio->venueBooking->venue_ids && is_array($folio->venueBooking->venue_ids) && count($folio->venueBooking->venue_ids) > 1
+            ? \App\Models\Hotel\Venue::query()->whereIn('id', $folio->venueBooking->venue_ids)->pluck('name')->join(' + ')
+            : $folio->venueBooking->venue->name;
+    @endphp
+    <x-pdf-row :left="'Venue: '.$venueName" />
     <x-pdf-row :left="'Client: '.$folio->venueBooking->client_name" />
     <x-pdf-row :left="'Event date: '.$folio->venueBooking->date->format('Y-m-d')" />
 @endif
