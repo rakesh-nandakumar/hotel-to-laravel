@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   AlertTriangle, ChevronDown, ChevronRight, Clock, Database,
   Download, Eye, Info, ShieldAlert, Trash2, Undo2,
@@ -8,39 +8,111 @@ import { useToast } from "../../lib/toast";
 import { Badge, Card, DangerConfirmDialog, Empty, ErrorText, Field, Modal, SimpleTable } from "../../components/ui";
 import clsx from "clsx";
 
-type FilterSpec = { key: string; label: string; type: "date" | "month" | "lookup"; options?: { value: string; label: string }[] };
-type CategoryRow = { key: string; label: string; description: string; module: string; master: boolean; count: number; filters: FilterSpec[] };
+/* ── API shapes (see App\Http\Controllers\Central\TenantDataPurgeController) ── */
+
+type LookupOption = { id: number; code: string; name: string };
+type FilterSpec = { key: string; label: string; type: "date" | "month" | "lookup"; options?: LookupOption[] };
+type CategoryRow = { key: string; label: string; description: string; master: boolean; count: number; filters: FilterSpec[] };
 type ModuleGroup = { key: string; label: string; categories: CategoryRow[] };
 type CatalogResponse = { modules: ModuleGroup[]; retention_days: number; min_confirm_seconds: number };
-type PlanTableRow = { table: string; label: string; count: number; reason?: string };
-type NullifyRow = { table: string; label: string; count: number; column: string };
-type ReconcileRow = { kind: string; count: number; description: string };
-type Warning = { message: string };
+
+/** What the operator entered for one filter: a from/to range (date, month) or the chosen lookup ids. */
+type RangeValue = { from: string; to: string };
+type FilterValue = RangeValue | number[];
+
+type PlanCategory = { key: string; label: string; module: string; master: boolean; count: number };
+type PlanTable = { table: string; label: string; count: number; selected: number };
+type PlanBecause = { kind: "cascade" | "owner"; table: string; label: string; count: number };
+type PlanAlsoDeleted = { table: string; label: string; count: number; because: PlanBecause[] };
+type PlanUnlinked = { table: string; label: string; column: string; count: number };
+type PlanRepair = { kind: string; count: number; description: string };
 type PlanSummary = {
-  categories: Record<string, { label: string; total: number; roots: Record<string, number> }>;
-  total_rows: number; tables: PlanTableRow[]; nullify: NullifyRow[];
-  auto_included: { category: string; table: string; label: string; count: number; reason: string }[];
-  reconcile: ReconcileRow[]; warnings: Warning[];
+  total_rows: number; categories: PlanCategory[]; tables: PlanTable[];
+  also_deleted: PlanAlsoDeleted[]; unlinked: PlanUnlinked[]; reconcile?: PlanRepair[];
+  warnings: string[]; zero_stock: boolean; fingerprint: string;
 };
+
+type RestoreReport = {
+  total_restored: number;
+  renumbered: { total: number; samples: { table: string; column: string; from: string; to: string }[] };
+  skipped: { total: number; by_table: Record<string, number>; samples: { table: string; id: number; reason: string }[] };
+  unlinked: Record<string, number>;
+};
+
 type PurgeRow = {
   id: number; uuid: string; status: "completed" | "restored" | "expired"; created_at: string;
-  total_rows: number; summary: PlanSummary & { numbering: string }; note: string | null;
+  total_rows: number; summary: Partial<PlanSummary> & { numbering?: string }; note: string | null;
   continue_numbering: boolean; operator: { id: number; name: string; email: string } | null;
   backup_bytes: number; expires_at: string | null; restorable: boolean;
   restored_at: string | null; restored_by: { id: number; name: string; email: string } | null;
-  restore_summary: Record<string, unknown> | null;
 };
 
 function fmtBytes(b: number): string {
-  if (b < 1024) return ${b} B;
-  if (b < 1024 * 1024) return ${(b / 1024).toFixed(1)} KB;
-  return ${(b / (1024 * 1024)).toFixed(2)} MB;
+  if (b < 1024) return `${b} B`;
+  if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`;
+  return `${(b / (1024 * 1024)).toFixed(2)} MB`;
 }
 function fmtDate(d: string): string { return new Date(d).toLocaleString(); }
 
+const EMPTY_RANGE: RangeValue = { from: "", to: "" };
+const isRange = (v: FilterValue | undefined): v is RangeValue => v !== undefined && !Array.isArray(v);
+
+/** Drops filters the operator left empty, in the shapes the API validates. */
+function filtersPayload(values: Record<string, FilterValue>): Record<string, unknown> {
+  const payload: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(values)) {
+    if (Array.isArray(value)) {
+      if (value.length > 0) payload[key] = value;
+    } else if (value.from || value.to) {
+      payload[key] = { from: value.from || null, to: value.to || null };
+    }
+  }
+  return payload;
+}
+
+function becauseText(b: PlanBecause): string {
+  const n = b.count.toLocaleString();
+  return b.kind === "owner" ? `${n} because they contain deleted ${b.label}` : `${n} because they belong to deleted ${b.label}`;
+}
+
+/* ── Select ─────────────────────────────────────────────────────────────── */
+
+function FilterInput({ spec, value, onChange }: { spec: FilterSpec; value: FilterValue | undefined; onChange: (v: FilterValue) => void }) {
+  if (spec.type === "lookup") {
+    const picked = Array.isArray(value) ? value : [];
+    return (
+      <div className="flex flex-wrap gap-1.5">
+        {(spec.options ?? []).map((o) => {
+          const on = picked.includes(o.id);
+          return (
+            <button key={o.id} type="button" aria-pressed={on}
+              className={clsx("rounded-full border px-2.5 py-0.5 text-xs font-medium transition",
+                on ? "border-brand-500 bg-brand-100 text-brand-800" : "border-slate-200 bg-white text-slate-600 hover:border-slate-300")}
+              onClick={() => onChange(on ? picked.filter((id) => id !== o.id) : [...picked, o.id])}>
+              {o.name}
+            </button>
+          );
+        })}
+      </div>
+    );
+  }
+
+  const range = isRange(value) ? value : EMPTY_RANGE;
+  const inputType = spec.type === "month" ? "month" : "date";
+  return (
+    <div className="flex items-center gap-1.5">
+      <input type={inputType} aria-label={`${spec.label} from`} className="input !py-1 text-xs" value={range.from}
+        max={range.to || undefined} onChange={(e) => onChange({ ...range, from: e.target.value })} />
+      <span className="text-xs text-slate-400">to</span>
+      <input type={inputType} aria-label={`${spec.label} to`} className="input !py-1 text-xs" value={range.to}
+        min={range.from || undefined} onChange={(e) => onChange({ ...range, to: e.target.value })} />
+    </div>
+  );
+}
+
 function CategoryCard({ cat, selected, filters, onChange, onFilterChange }: {
-  cat: CategoryRow; selected: boolean; filters: Record<string, string>;
-  onChange: (checked: boolean) => void; onFilterChange: (key: string, value: string) => void;
+  cat: CategoryRow; selected: boolean; filters: Record<string, FilterValue>;
+  onChange: (checked: boolean) => void; onFilterChange: (key: string, value: FilterValue) => void;
 }) {
   return (
     <div className={clsx("rounded-xl border p-3 transition", selected ? "border-brand-400 bg-brand-50 shadow-sm" : "border-slate-200 bg-white hover:border-slate-300")}>
@@ -52,42 +124,42 @@ function CategoryCard({ cat, selected, filters, onChange, onFilterChange }: {
             {cat.master && (<Badge color="red"><ShieldAlert size={10} className="mr-0.5" />Master data</Badge>)}
             <span className="ml-auto text-xs font-semibold text-slate-400">{cat.count.toLocaleString()} rows</span>
           </div>
+          <p className="mt-0.5 text-xs leading-snug text-slate-500">{cat.description}</p>
         </div>
       </label>
       {selected && cat.filters.length > 0 && (
-        <div className="mt-2 grid gap-2 pl-7 sm:grid-cols-2">
-          {cat.filters.map((f) => (
-            <div key={f.key}>
-              <label className="label text-[11px]">{f.label}</label>
-              {f.type === "lookup" ? (
-                <select className="input !py-1 text-xs" value={filters[f.key] ?? ""} onChange={(e) => onFilterChange(f.key, e.target.value)}>
-                  <option value="">All</option>
-                  {f.options?.map((o) => (<option key={o.value} value={o.value}>{o.label}</option>))}
-                </select>
-              ) : (
-                <input type={f.type === "month" ? "month" : "date"} className="input !py-1 text-xs" value={filters[f.key] ?? ""} onChange={(e) => onFilterChange(f.key, e.target.value)} />
-              )}
-            </div>
-          ))}
+        <div className="mt-2 space-y-2 pl-7">
+          <div className="grid gap-2 sm:grid-cols-2">
+            {cat.filters.map((f) => (
+              <div key={f.key} className={clsx(f.type === "lookup" && "sm:col-span-2")}>
+                <label className="label text-[11px]">{f.label}</label>
+                <FilterInput spec={f} value={filters[f.key]} onChange={(v) => onFilterChange(f.key, v)} />
+              </div>
+            ))}
+          </div>
+          <p className="text-[11px] text-slate-400">Leave a filter empty to include everything.</p>
         </div>
       )}
     </div>
   );
 }
 
+/* ── Preview ────────────────────────────────────────────────────────────── */
+
 function PlanPreview({ plan }: { plan: PlanSummary }) {
   const [expanded, setExpanded] = useState(false);
+  const repairs = plan.reconcile ?? [];
   return (
     <div className="space-y-4">
       {plan.warnings.map((w, i) => (
         <div key={i} className="flex items-start gap-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
-          <AlertTriangle size={16} className="mt-0.5 shrink-0 text-amber-500" />{w.message}
+          <AlertTriangle size={16} className="mt-0.5 shrink-0 text-amber-500" />{w}
         </div>
       ))}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {Object.values(plan.categories).map((cat) => (
-          <div key={cat.label} className="rounded-lg bg-slate-100 px-3 py-2 text-center">
-            <div className="text-lg font-black text-slate-900">{cat.total.toLocaleString()}</div>
+        {plan.categories.map((cat) => (
+          <div key={cat.key} className="rounded-lg bg-slate-100 px-3 py-2 text-center">
+            <div className="text-lg font-black text-slate-900">{cat.count.toLocaleString()}</div>
             <div className="text-[11px] text-slate-500">{cat.label}</div>
           </div>
         ))}
@@ -95,44 +167,49 @@ function PlanPreview({ plan }: { plan: PlanSummary }) {
       <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-2">
         <span className="text-sm font-bold text-red-700">Total: {plan.total_rows.toLocaleString()} records will be permanently deleted</span>
       </div>
-      {plan.auto_included.length > 0 && (
+      {plan.also_deleted.length > 0 && (
         <div>
           <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400">Also deleted automatically</p>
           <div className="space-y-1">
-            {plan.auto_included.map((a, i) => (
-              <div key={i} className="flex items-center gap-2 text-xs text-slate-600">
+            {plan.also_deleted.map((a) => (
+              <div key={a.table} className="flex flex-wrap items-center gap-x-2 text-xs text-slate-600">
                 <span className="font-semibold">{a.label}</span><span className="text-slate-400">({a.count.toLocaleString()})</span>
-                <span className="text-slate-400">—</span><span>{a.reason}</span>
+                <span className="text-slate-400">—</span><span>{a.because.map(becauseText).join("; ")}</span>
               </div>
             ))}
           </div>
         </div>
       )}
-      {plan.nullify.length > 0 && (
+      {plan.unlinked.length > 0 && (
         <div>
-          <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400">Links that will be cleared (not deleted)</p>
+          <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400">Records kept, but unlinked</p>
           <div className="space-y-1">
-            {plan.nullify.map((n, i) => (
-              <div key={i} className="text-xs text-slate-600">
+            {plan.unlinked.map((n) => (
+              <div key={`${n.table}.${n.column}`} className="text-xs text-slate-600">
                 <span className="font-semibold">{n.label}</span>
-                <span className="text-slate-400"> · {n.column} set to NULL on {n.count.toLocaleString()} row(s)</span>
+                <span className="text-slate-400"> · “{n.column.replace(/_/g, " ")}” cleared on {n.count.toLocaleString()} record(s)</span>
               </div>
             ))}
           </div>
         </div>
       )}
-      {plan.reconcile.length > 0 && (
+      {repairs.length > 0 && (
         <div>
-          <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400">State repairs</p>
-          <div className="space-y-1">{plan.reconcile.map((r, i) => <div key={i} className="text-xs text-slate-600">{r.description}</div>)}</div>
+          <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400">Automatic repairs</p>
+          <div className="space-y-1">{repairs.map((r) => <div key={r.kind} className="text-xs text-slate-600">{r.description}</div>)}</div>
         </div>
       )}
       <button className="flex items-center gap-1 text-xs font-semibold text-brand-600 hover:text-brand-800" onClick={() => setExpanded((x) => !x)}>
         {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}{expanded ? "Hide" : "Show"} per-table breakdown
       </button>
       {expanded && (
-        <SimpleTable<PlanTableRow>
-          columns={[{ key: "label", label: "Table" }, { key: "count", label: "Rows", align: "right", render: (r) => r.count.toLocaleString() }, { key: "reason", label: "Included because" }]}
+        <SimpleTable<PlanTable>
+          columns={[
+            { key: "label", label: "Table" },
+            { key: "count", label: "Rows deleted", align: "right", render: (r) => r.count.toLocaleString() },
+            { key: "selected", label: "Selected", align: "right", render: (r) => r.selected.toLocaleString() },
+            { key: "pulled", label: "Pulled in", align: "right", render: (r) => (r.count - r.selected).toLocaleString() },
+          ]}
           rows={plan.tables} rowKey={(r) => r.table}
         />
       )}
@@ -140,9 +217,44 @@ function PlanPreview({ plan }: { plan: PlanSummary }) {
   );
 }
 
+/* ── Restore ────────────────────────────────────────────────────────────── */
+
+function RestoreReportView({ report }: { report: RestoreReport }) {
+  const renumberedTotal = report.renumbered?.total ?? 0;
+  const skippedTotal = report.skipped?.total ?? 0;
+  return (
+    <>
+      <div className="rounded-lg bg-brand-50 px-4 py-2 text-brand-800">
+        <span className="font-bold">{report.total_restored.toLocaleString()}</span> records would be restored.
+        {renumberedTotal > 0 && <span> {renumberedTotal.toLocaleString()} document number(s) will be renumbered because the numbers were reused since the purge.</span>}
+        {skippedTotal > 0 && <span className="text-amber-700"> {skippedTotal.toLocaleString()} record(s) cannot be restored.</span>}
+      </div>
+      {renumberedTotal > 0 && (
+        <details><summary className="cursor-pointer text-xs font-semibold text-slate-500">Renumbered ({renumberedTotal.toLocaleString()})</summary>
+          <ul className="mt-1 space-y-0.5 pl-4">
+            {report.renumbered.samples.slice(0, 20).map((r, i) => (
+              <li key={i} className="text-xs text-slate-600"><code>{r.from}</code> → <code>{r.to}</code></li>
+            ))}
+          </ul>
+        </details>
+      )}
+      {skippedTotal > 0 && (
+        <details><summary className="cursor-pointer text-xs font-semibold text-amber-700">Cannot be restored ({skippedTotal.toLocaleString()})</summary>
+          <ul className="mt-1 space-y-0.5 pl-4">
+            {report.skipped.samples.slice(0, 20).map((s, i) => (
+              <li key={i} className="text-xs text-slate-600">{s.reason}</li>
+            ))}
+          </ul>
+        </details>
+      )}
+      <p className="text-xs text-slate-400">Anything the tenant has entered since the purge is left exactly as it is.</p>
+    </>
+  );
+}
+
 function RestorePreviewModal({ open, onClose, purge, tenantId }: { open: boolean; onClose: () => void; purge: PurgeRow; tenantId: number }) {
   const [loading, setLoading] = useState(false);
-  const [report, setReport] = useState<Record<string, unknown> | null>(null);
+  const [report, setReport] = useState<RestoreReport | null>(null);
   const [token, setToken] = useState("");
   const [minSeconds, setMinSeconds] = useState(3);
   const [password, setPassword] = useState("");
@@ -155,8 +267,8 @@ function RestorePreviewModal({ open, onClose, purge, tenantId }: { open: boolean
   useEffect(() => {
     if (!open) { setReport(null); setToken(""); setPassword(""); setPwError(""); setError(""); setConfirming(false); return; }
     setLoading(true);
-    api<{ report: Record<string, unknown>; token: string; min_confirm_seconds: number }>(
-      /central/tenants//data/purges//restore-preview, { method: "POST", body: {} },
+    api<{ report: RestoreReport; token: string; min_confirm_seconds: number }>(
+      `/central/tenants/${tenantId}/data/purges/${purge.id}/restore-preview`, { method: "POST", body: {} },
     ).then((d) => { setReport(d.report); setToken(d.token); setMinSeconds(d.min_confirm_seconds); })
       .catch((e) => setError((e as Error).message)).finally(() => setLoading(false));
   }, [open, purge.id, tenantId]);
@@ -164,63 +276,88 @@ function RestorePreviewModal({ open, onClose, purge, tenantId }: { open: boolean
   const doRestore = async () => {
     setPwError(""); setBusy(true);
     try {
-      const res = await post<{ message: string }>(/central/tenants//data/purges//restore, { token, password });
+      const res = await post<{ message: string }>(`/central/tenants/${tenantId}/data/purges/${purge.id}/restore`, { token, password });
       toast.success(res.message ?? "Restored"); onClose();
     } catch (e: unknown) {
       const err = e as { errors?: Record<string, string[]>; message?: string };
-      if (err.errors?.password) setPwError(err.errors.password[0]);
-      else setError(err.message ?? "Restore failed");
+      setPwError(err.errors?.password?.[0] ?? err.message ?? "Restore failed");
     } finally { setBusy(false); }
   };
 
-  const renumbered = (report?.renumbered as unknown[]) ?? [];
-  const skipped = (report?.skipped as unknown[]) ?? [];
-  const totalRestored = (report?.total_restored as number) ?? 0;
+  const totalRestored = report?.total_restored ?? 0;
 
   return (
-    <Modal open={open} onClose={onClose} title={Restore backup — …} wide>
-      <div className="space-y-4 text-sm">
-        {loading && <p className="py-4 text-center text-slate-400">Analysing backup…</p>}
-        <ErrorText error={error} />
-        {report && !loading && (
-          <>
-            <div className="rounded-lg bg-brand-50 px-4 py-2 text-brand-800">
-              <span className="font-bold">{totalRestored.toLocaleString()}</span> records would be restored.
-              {renumbered.length > 0 && <span> {renumbered.length} document number(s) will be renumbered.</span>}
-              {skipped.length > 0 && <span className="text-amber-700"> {skipped.length} document(s) cannot be restored.</span>}
-            </div>
-            {renumbered.length > 0 && (
-              <details><summary className="cursor-pointer text-xs font-semibold text-slate-500">Renumbered ({renumbered.length})</summary>
-                <ul className="mt-1 space-y-0.5 pl-4">
-                  {renumbered.slice(0, 20).map((r: unknown, i) => { const item = r as { old: string; new: string }; return <li key={i} className="text-xs text-slate-600"><code>{item.old}</code> → <code>{item.new}</code></li>; })}
-                </ul>
-              </details>
-            )}
-            {skipped.length > 0 && (
-              <details><summary className="cursor-pointer text-xs font-semibold text-amber-700">Skipped ({skipped.length})</summary>
-                <ul className="mt-1 space-y-0.5 pl-4">
-                  {skipped.slice(0, 20).map((s: unknown, i) => { const item = s as { table: string; id: number; reason: string }; return <li key={i} className="text-xs text-slate-600">{item.table}#{item.id}: {item.reason}</li>; })}
-                </ul>
-              </details>
-            )}
-            {!confirming && (
+    <>
+      <Modal open={open && !confirming} onClose={onClose} title={`Restore backup — ${fmtDate(purge.created_at)}`} wide>
+        <div className="space-y-4 text-sm">
+          {loading && <p className="py-4 text-center text-slate-400">Analysing backup…</p>}
+          <ErrorText error={error} />
+          {report && !loading && (
+            <>
+              <RestoreReportView report={report} />
               <div className="flex justify-end gap-2">
                 <button className="btn-secondary" onClick={onClose}>Cancel</button>
-                <button className="btn-primary" onClick={() => setConfirming(true)}><Undo2 size={14} /> Proceed to restore</button>
+                <button className="btn-primary" onClick={() => { setPassword(""); setPwError(""); setConfirming(true); }}><Undo2 size={14} /> Proceed to restore</button>
               </div>
-            )}
-            {confirming && (
-              <DangerConfirmDialog open title="Confirm restore"
-                message={<span>This will restore <strong>{totalRestored.toLocaleString()}</strong> records for this tenant. Data added since the purge will not be touched.</span>}
-                confirmLabel="Restore backup" minSeconds={minSeconds} countdownKey={purge.id}
-                password={password} onPasswordChange={setPassword} passwordError={pwError}
-                busy={busy} onConfirm={doRestore} onClose={() => setConfirming(false)}
-              />
-            )}
-          </>
-        )}
-      </div>
-    </Modal>
+            </>
+          )}
+        </div>
+      </Modal>
+      {confirming && (
+        <DangerConfirmDialog open title="Confirm restore"
+          message={<span>This will restore <strong>{totalRestored.toLocaleString()}</strong> records for this tenant. Data added since the purge will not be touched.</span>}
+          confirmLabel="Restore backup" minSeconds={minSeconds} countdownKey={purge.id}
+          password={password} onPasswordChange={setPassword} passwordError={pwError}
+          busy={busy} onConfirm={doRestore} onClose={() => setConfirming(false)}
+        />
+      )}
+    </>
+  );
+}
+
+/* ── History ────────────────────────────────────────────────────────────── */
+
+const purgeStatusColor = (s: string) => ({ completed: "green", restored: "blue", expired: "slate" }[s] ?? "slate");
+
+function HistoryTable({ purges, tenantId, onRestore }: { purges: PurgeRow[]; tenantId: number; onRestore: (purge: PurgeRow) => void }) {
+  return (
+    <div className="card overflow-x-auto">
+      <table className="w-full min-w-[860px] text-sm">
+        <thead className="border-b border-slate-100 text-left text-[11px] font-bold uppercase tracking-wide text-slate-400">
+          <tr><th className="px-3 py-2">Date</th><th className="px-3 py-2">Operator</th><th className="px-3 py-2">What</th><th className="px-3 py-2">Status</th>
+            <th className="px-3 py-2 text-right">Rows</th><th className="px-3 py-2">Backup</th><th className="px-3 py-2">Expires</th><th className="px-3 py-2" /></tr>
+        </thead>
+        <tbody className="divide-y divide-slate-50">
+          {purges.map((p) => (
+            <tr key={p.id} className="hover:bg-slate-50">
+              <td className="px-3 py-2 text-xs text-slate-500">{fmtDate(p.created_at)}</td>
+              <td className="px-3 py-2 text-xs">{p.operator?.name ?? "—"}</td>
+              <td className="max-w-[260px] px-3 py-2 text-xs text-slate-600" title={p.note ?? undefined}>
+                {p.summary?.categories?.map((c) => c.label).join(", ") || "—"}
+              </td>
+              <td className="px-3 py-2">
+                <Badge color={purgeStatusColor(p.status)}>{p.status}</Badge>
+                {p.restored_at && <span className="ml-1 text-[10px] text-slate-400">by {p.restored_by?.name} {fmtDate(p.restored_at)}</span>}
+              </td>
+              <td className="px-3 py-2 text-right tabular-nums text-xs">{p.total_rows.toLocaleString()}</td>
+              <td className="px-3 py-2 text-xs text-slate-400">{p.backup_bytes ? fmtBytes(p.backup_bytes) : "—"}</td>
+              <td className="px-3 py-2 text-xs text-slate-400">{p.expires_at ? new Date(p.expires_at).toLocaleDateString() : "—"}</td>
+              <td className="px-3 py-2">
+                <div className="flex items-center justify-end gap-1">
+                  {p.status !== "expired" && p.backup_bytes > 0 && (
+                    <a href={`/api/central/tenants/${tenantId}/data/purges/${p.id}/download`} target="_blank" rel="noreferrer"
+                      className="btn-secondary !py-1 !px-2 text-xs" title="Download backup"><Download size={12} /></a>
+                  )}
+                  {p.restorable && (
+                    <button className="btn-secondary !py-1 !px-2 text-xs" onClick={() => onRestore(p)}><Undo2 size={12} /> Restore…</button>
+                  )}
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -229,63 +366,27 @@ function HistoryTab({ tenantId }: { tenantId: number }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [restoreFor, setRestoreFor] = useState<PurgeRow | null>(null);
-  const toast = useToast();
 
   const load = useCallback(() => {
     setLoading(true);
-    api<{ purges: PurgeRow[] }>(/central/tenants//data/purges)
+    api<{ purges: PurgeRow[] }>(`/central/tenants/${tenantId}/data/purges`)
       .then((d) => setPurges(d.purges)).catch((e) => setError((e as Error).message)).finally(() => setLoading(false));
   }, [tenantId]);
 
   useEffect(() => { load(); }, [load]);
-
-  const purgeStatusColor = (s: string) => ({ completed: "green", restored: "blue", expired: "slate" }[s] ?? "slate");
 
   return (
     <div className="space-y-3">
       <ErrorText error={error} />
       {loading ? <p className="py-8 text-center text-sm text-slate-400">Loading…</p>
         : purges.length === 0 ? <Empty text="No purges yet for this tenant" />
-        : (
-          <div className="card overflow-x-auto">
-            <table className="w-full min-w-[700px] text-sm">
-              <thead className="border-b border-slate-100 text-left text-[11px] font-bold uppercase tracking-wide text-slate-400">
-                <tr><th className="px-3 py-2">Date</th><th className="px-3 py-2">Operator</th><th className="px-3 py-2">Status</th>
-                  <th className="px-3 py-2 text-right">Rows</th><th className="px-3 py-2">Backup</th><th className="px-3 py-2">Expires</th><th className="px-3 py-2" /></tr>
-              </thead>
-              <tbody className="divide-y divide-slate-50">
-                {purges.map((p) => (
-                  <tr key={p.id} className="hover:bg-slate-50">
-                    <td className="px-3 py-2 text-xs text-slate-500">{fmtDate(p.created_at)}</td>
-                    <td className="px-3 py-2 text-xs">{p.operator?.name ?? "—"}</td>
-                    <td className="px-3 py-2">
-                      <Badge color={purgeStatusColor(p.status)}>{p.status}</Badge>
-                      {p.restored_at && <span className="ml-1 text-[10px] text-slate-400">by {p.restored_by?.name} {fmtDate(p.restored_at)}</span>}
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums text-xs">{p.total_rows.toLocaleString()}</td>
-                    <td className="px-3 py-2 text-xs text-slate-400">{p.backup_bytes ? fmtBytes(p.backup_bytes) : "—"}</td>
-                    <td className="px-3 py-2 text-xs text-slate-400">{p.expires_at ? new Date(p.expires_at).toLocaleDateString() : "—"}</td>
-                    <td className="px-3 py-2">
-                      <div className="flex items-center gap-1 justify-end">
-                        {p.status !== "expired" && p.backup_bytes > 0 && (
-                          <a href={/api/central/tenants//data/purges//download} target="_blank" rel="noreferrer"
-                            className="btn-secondary !py-1 !px-2 text-xs" title="Download backup"><Download size={12} /></a>
-                        )}
-                        {p.restorable && (
-                          <button className="btn-secondary !py-1 !px-2 text-xs" onClick={() => setRestoreFor(p)}><Undo2 size={12} /> Restore…</button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+        : <HistoryTable purges={purges} tenantId={tenantId} onRestore={setRestoreFor} />}
       {restoreFor && <RestorePreviewModal open purge={restoreFor} tenantId={tenantId} onClose={() => { setRestoreFor(null); load(); }} />}
     </div>
   );
 }
+
+/* ── Data tab ───────────────────────────────────────────────────────────── */
 
 type DataView = "select" | "preview" | "history";
 
@@ -295,7 +396,7 @@ export function DataTab({ tenantId, tenantName }: { tenantId: number; tenantName
   const [catalogError, setCatalogError] = useState("");
   const [catalogLoading, setCatalogLoading] = useState(true);
   const [selections, setSelections] = useState<Record<string, boolean>>({});
-  const [filterValues, setFilterValues] = useState<Record<string, Record<string, string>>>({});
+  const [filterValues, setFilterValues] = useState<Record<string, Record<string, FilterValue>>>({});
   const [planSummary, setPlanSummary] = useState<PlanSummary | null>(null);
   const [planToken, setPlanToken] = useState("");
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -309,20 +410,23 @@ export function DataTab({ tenantId, tenantName }: { tenantId: number; tenantName
   const [minSeconds, setMinSeconds] = useState(3);
   const toast = useToast();
 
-  useEffect(() => {
+  const loadCatalog = useCallback(() => {
     setCatalogLoading(true);
-    api<CatalogResponse>(/central/tenants//data/catalog)
-      .then((d) => setCatalog(d)).catch((e) => setCatalogError((e as Error).message)).finally(() => setCatalogLoading(false));
+    api<CatalogResponse>(`/central/tenants/${tenantId}/data/catalog`)
+      .then((d) => { setCatalog(d); setCatalogError(""); })
+      .catch((e) => setCatalogError((e as Error).message)).finally(() => setCatalogLoading(false));
   }, [tenantId]);
 
+  useEffect(() => { loadCatalog(); }, [loadCatalog]);
+
   const selectedKeys = Object.entries(selections).filter(([, v]) => v).map(([k]) => k);
-  const buildSelections = () => selectedKeys.map((key) => ({ key, filters: filterValues[key] ?? {} }));
+  const buildSelections = () => selectedKeys.map((key) => ({ key, filters: filtersPayload(filterValues[key] ?? {}) }));
 
   const preview = async () => {
     setPreviewError(""); setPreviewLoading(true);
     try {
       const res = await post<{ plan: PlanSummary; token: string; min_confirm_seconds: number }>(
-        /central/tenants//data/preview, { selections: buildSelections() },
+        `/central/tenants/${tenantId}/data/preview`, { selections: buildSelections() },
       );
       setPlanSummary(res.plan); setPlanToken(res.token); setMinSeconds(res.min_confirm_seconds); setView("preview");
     } catch (e) { setPreviewError((e as Error).message); } finally { setPreviewLoading(false); }
@@ -331,9 +435,10 @@ export function DataTab({ tenantId, tenantName }: { tenantId: number; tenantName
   const purge = async () => {
     setPwError(""); setBusy(true);
     try {
-      const res = await post<{ message: string }>(/central/tenants//data/purge, { token: planToken, password, continue_numbering: continueNumbering, note: note || null });
+      const res = await post<{ message: string }>(`/central/tenants/${tenantId}/data/purge`, { token: planToken, password, continue_numbering: continueNumbering, note: note || null });
       toast.success(res.message ?? "Purge completed");
-      setConfirming(false); setView("history"); setSelections({}); setFilterValues({}); setPlanSummary(null);
+      setConfirming(false); setView("history"); setSelections({}); setFilterValues({}); setPlanSummary(null); setPassword("");
+      loadCatalog();
     } catch (e: unknown) {
       const err = e as { status?: number; errors?: Record<string, string[]>; message?: string };
       if (err.errors?.password) setPwError(err.errors.password[0]);
@@ -418,7 +523,7 @@ export function DataTab({ tenantId, tenantName }: { tenantId: number; tenantName
             open={confirming}
             title={<span className="flex items-center gap-2 text-red-700"><ShieldAlert size={18} /> Delete {planSummary.total_rows.toLocaleString()} records from {tenantName}</span>}
             message={<span>This will permanently delete <strong>{planSummary.total_rows.toLocaleString()}</strong> records from <strong>{tenantName}</strong>. A backup is kept for <strong>{catalog?.retention_days ?? 90} days</strong> and can be restored from the History tab.</span>}
-            confirmLabel={Delete  records}
+            confirmLabel={`Delete ${planSummary.total_rows.toLocaleString()} records`}
             minSeconds={minSeconds} countdownKey={planToken}
             password={password} onPasswordChange={setPassword} passwordError={pwError}
             busy={busy} onConfirm={purge} onClose={() => setConfirming(false)}
@@ -428,7 +533,7 @@ export function DataTab({ tenantId, tenantName }: { tenantId: number; tenantName
                   <input type="checkbox" className="mt-0.5 accent-brand-600" checked={continueNumbering} onChange={(e) => setContinueNumbering(e.target.checked)} />
                   <div>
                     <span className="font-semibold">Continue numbering</span>
-                    <p className="text-xs text-slate-400">If checked, the next invoice number will be higher than the deleted ones. If unchecked, numbering restarts from 1.</p>
+                    <p className="text-xs text-slate-400">If checked, the next invoice and booking numbers continue after the deleted ones. If unchecked (default), numbering restarts from 1.</p>
                   </div>
                 </label>
                 <Field label="Optional note (for audit log)">

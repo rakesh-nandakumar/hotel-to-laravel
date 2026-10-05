@@ -13,6 +13,7 @@ import ReservationDetail from "./pages/ReservationDetail";
 import Rooms from "./pages/Rooms";
 import POS from "./pages/POS";
 import KOT from "./pages/KOT";
+import BOT from "./pages/BOT";
 import Tables from "./pages/Tables";
 import QrOrdering from "./pages/QrOrdering";
 import QrOrder from "./pages/QrOrder";
@@ -98,6 +99,7 @@ export default function App({ basename }: { basename: string }) {
           <Route path="/rooms" element={<Guard permission="hotel_rooms.access"><Rooms /></Guard>} />
           <Route path="/pos" element={<Guard permission="hotel_orders.access"><POS /></Guard>} />
           <Route path="/kot" element={<Guard permission="hotel_orders.access"><KOT /></Guard>} />
+          <Route path="/bot" element={<Guard permission="hotel_orders.access"><BOT /></Guard>} />
           <Route path="/tables" element={<Guard permission="hotel_dining_tables.access"><Tables /></Guard>} />
           <Route path="/qr-ordering" element={<Guard permission="hotel_qr_ordering.access"><QrOrdering /></Guard>} />
           <Route path="/menu" element={<Guard permission="hotel_menu_items.access"><MenuAdmin /></Guard>} />

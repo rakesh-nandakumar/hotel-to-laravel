@@ -46,7 +46,7 @@ export default function ProductsTab() {
 function NewProduct({ onClose }: { onClose: () => void }) {
   const { data } = useFetch<{ menu_categories: MenuCategoryLite[] }>("/menu/categories");
   const categories = data?.menu_categories ?? [];
-  const [f, setF] = useState({ name: "", unit: "pcs", stockQty: "0", lowStockThreshold: "0", sellingPrice: "", menuCategoryId: "", image: "" });
+  const [f, setF] = useState({ name: "", unit: "pcs", stockQty: "0", lowStockThreshold: "0", sellingPrice: "", menuCategoryId: "", kotTarget: "kitchen", image: "" });
   const [error, setError] = useState("");
 
   return (
@@ -65,6 +65,12 @@ function NewProduct({ onClose }: { onClose: () => void }) {
             {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         </Field>
+        <Field label="KOT Target" hint="Where this product appears: Kitchen (KOT) or Bar (BOT)">
+          <select className="input" value={f.kotTarget} onChange={(e) => setF({ ...f, kotTarget: e.target.value })}>
+            <option value="kitchen">Kitchen (KOT)</option>
+            <option value="bar">Bar (BOT)</option>
+          </select>
+        </Field>
         <Field label="Opening stock"><input className="input" value={f.stockQty} onChange={(e) => setF({ ...f, stockQty: e.target.value })} /></Field>
         <Field label="Low-stock threshold"><input className="input" value={f.lowStockThreshold} onChange={(e) => setF({ ...f, lowStockThreshold: e.target.value })} /></Field>
       </div>
@@ -81,7 +87,7 @@ function NewProduct({ onClose }: { onClose: () => void }) {
           post("/products", {
             name: f.name.trim(), unit: f.unit, stock_qty: parseFloat(f.stockQty) || 0, low_stock_threshold: parseFloat(f.lowStockThreshold) || 0,
             kind: "product", selling_price: toCents(f.sellingPrice), menu_category_id: f.menuCategoryId ? Number(f.menuCategoryId) : null,
-            image: f.image || null,
+            kot_target: f.kotTarget, image: f.image || null,
           })
             .then(onClose)
             .catch((e) => setError(e.message))

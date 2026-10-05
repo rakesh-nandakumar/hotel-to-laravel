@@ -2,6 +2,7 @@
 
 namespace Tests\Support;
 
+use App\Services\Tenancy\DataPurge\PurgeGraph;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -9,8 +10,8 @@ use Illuminate\Support\Str;
 
 /**
  * Inserts a valid row into ANY table by reading its schema: required columns
- * get a generated value, required foreign keys get a freshly created parent,
- * optional ones stay NULL unless a test links them explicitly.
+ * get a generated value, required foreign keys get a parent, optional ones stay
+ * NULL unless a test links them explicitly.
  *
  * Purge tests use it so they keep working (and keep covering every table)
  * when the schema grows, instead of hand-maintaining per-table inserts.
@@ -75,6 +76,39 @@ final class PurgeFixtures
     }
 
     /**
+     * One row in EVERY table that carries a tenant_id, with every optional
+     * link to another such table filled in — a tenant whose data is fully
+     * connected, so a purge or restore has to get every edge right.
+     *
+     * @return array<string, int> table => id of that tenant's row
+     */
+    public function populate(int $tenantId): array
+    {
+        $graph = app(PurgeGraph::class);
+        $anchors = [];
+
+        foreach ($graph->tenantTables() as $table) {
+            $anchors[$table] = $this->anchor($table, $tenantId);
+        }
+
+        foreach ($anchors as $table => $id) {
+            $links = [];
+
+            foreach ($graph->foreignKeys($table) as $fk) {
+                if ($fk['nullable'] && isset($anchors[$fk['parent']])) {
+                    $links[$fk['column']] = $anchors[$fk['parent']];
+                }
+            }
+
+            if ($links !== []) {
+                DB::table($table)->where('id', $id)->update($links);
+            }
+        }
+
+        return $anchors;
+    }
+
+    /**
      * A lookup row for (type, code), created on first use.
      */
     public function lookup(string $type, string $code): int
@@ -96,18 +130,30 @@ final class PurgeFixtures
         ]);
     }
 
-    private function parentId(string $table, ?int $tenantId): int
+    private function anchor(string $table, int $tenantId): int
     {
-        return match ($table) {
-            'lookups' => $this->genericLookup(),
-            'users' => $this->user((int) $tenantId),
-            default => $this->row($table, $tenantId),
-        };
+        if ($table === 'users') {
+            return $this->user($tenantId);
+        }
+
+        return $this->memo["anchor:{$tenantId}:{$table}"] ??= $this->row($table, $tenantId);
     }
 
-    private function genericLookup(): int
+    private function parentId(string $table, ?int $tenantId): int
     {
-        return $this->memo['lookup:generic'] ??= $this->lookup('generic', 'generic');
+        if ($table === 'lookups') {
+            return $this->memo['lookup:generic'] ??= $this->lookup('generic', 'generic');
+        }
+
+        if ($table === 'users') {
+            return $this->user((int) $tenantId);
+        }
+
+        if ($tenantId !== null && app(PurgeGraph::class)->columns($table) !== []) {
+            return $this->anchor($table, $tenantId);
+        }
+
+        return $this->memo["global:{$table}"] ??= $this->row($table, null);
     }
 
     /**

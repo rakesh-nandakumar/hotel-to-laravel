@@ -231,7 +231,7 @@ export function DangerConfirmDialog({
             disabled={!ready}
           >
             {busy
-              ? "Deleting…"
+              ? "Working…"
               : remaining > 0
                 ? `${confirmLabel} (${remaining}s…)`
                 : confirmLabel}

@@ -7,6 +7,7 @@ import {
   useState,
 } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
+import { useSettings } from "../lib/util";
 import {
   LayoutDashboard,
   BedDouble,
@@ -14,6 +15,7 @@ import {
   CalendarRange,
   UtensilsCrossed,
   ChefHat,
+  Beer,
   ClipboardList,
   Wrench,
   Users,
@@ -65,6 +67,7 @@ type Item = {
   icon: ReactNode;
   permission?: string | string[];
   fullAdminOnly?: boolean;
+  condition?: string;
 };
 type Section = { title: string; items: Item[] };
 
@@ -123,6 +126,13 @@ const SECTIONS: Section[] = [
         label: "Kitchen (KOT)",
         icon: <ChefHat size={18} />,
         permission: "hotel_orders.access",
+      },
+      {
+        to: "/bot",
+        label: "Bar (BOT)",
+        icon: <Beer size={18} />,
+        permission: "hotel_orders.access",
+        condition: "bot.enabled",
       },
       {
         to: "/tables",
@@ -561,10 +571,11 @@ function SidebarSearch({
 export default function Layout({ children }: { children: ReactNode }) {
   const { me, can, logout } = useAuth();
   const { branding } = useBranding();
+  const settings = useSettings();
   const nav = useNavigate();
   const { pathname } = useLocation();
   // Kitchen Display System needs the full screen width/height — no centering, no padding.
-  const isKotBoard = pathname === "/kot";
+  const isKotBoard = pathname === "/kot" || pathname === "/bot";
   const [open, setOpen] = useState(false);
   // Desktop-only icon-collapse (leolanka-inertia's collapsible="icon" behaviour), persisted per device.
   const [collapsed, setCollapsed] = useState(
@@ -605,6 +616,7 @@ export default function Layout({ children }: { children: ReactNode }) {
   const visible = (items: Item[]) =>
     items.filter((i) => {
       if (i.fullAdminOnly) return me.is_full_admin;
+      if (i.condition && settings?.bool(i.condition) !== true) return false;
       if (!i.permission) return true;
       return Array.isArray(i.permission)
         ? i.permission.some(can)

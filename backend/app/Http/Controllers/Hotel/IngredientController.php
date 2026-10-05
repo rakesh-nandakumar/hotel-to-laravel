@@ -98,6 +98,7 @@ class IngredientController extends Controller
     {
         $data = $request->validated();
         $data['inventory_kind_id'] = Lookup::id(LookupType::INVENTORY_KIND, $data['kind']);
+        $data['kot_target'] = $data['kot_target'] ?? 'kitchen';
         unset($data['kind']);
 
         $ingredient = Ingredient::create($data);
@@ -113,6 +114,9 @@ class IngredientController extends Controller
         if (array_key_exists('kind', $data)) {
             $data['inventory_kind_id'] = Lookup::id(LookupType::INVENTORY_KIND, $data['kind']);
             unset($data['kind']);
+        }
+        if (array_key_exists('kot_target', $data)) {
+            $data['kot_target'] = $data['kot_target'] ?? 'kitchen';
         }
 
         $ingredient->update($data);

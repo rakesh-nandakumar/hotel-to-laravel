@@ -19,6 +19,7 @@ use App\Support\Lookups\LookupType;
 use App\Support\Lookups\PaymentKind;
 use App\Support\Lookups\VenueBookingStatus;
 use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -40,41 +41,47 @@ class VenueBookingService
      */
     public function createBooking(array $data, int $staffId): VenueBooking
     {
-        $venue = Venue::query()->findOrFail($data['venue_id']);
+        $venueIds = $data['venue_ids'] ?? [$data['venue_id']];
+        $venues = Venue::query()->whereIn('id', $venueIds)->get();
+        $primaryVenue = $venues->first();
+        $isSingleVenue = count($venueIds) === 1;
 
-        if (($data['guest_count'] ?? 0) > $venue->max_capacity) {
-            throw ValidationException::withMessages(['guest_count' => "Capacity of {$venue->name} is {$venue->max_capacity}."]);
+        if (($data['guest_count'] ?? 0) > $primaryVenue->max_capacity) {
+            throw ValidationException::withMessages(['guest_count' => "Capacity of {$primaryVenue->name} is {$primaryVenue->max_capacity}."]);
         }
 
         $confirm = $data['confirm'] ?? false;
-        $usePackagePricing = $data['use_package_pricing'] ?? $venue->usesPackagePricing();
+        $usePackagePricing = $data['use_package_pricing'] ?? $primaryVenue->usesPackagePricing();
 
         // Double-booking guard: same venue, same date, another CONFIRMED booking —
         // only blocks when this booking is itself being confirmed, not on inquiry.
         if ($confirm) {
-            $clash = $this->confirmedClash($venue->id, $data['date']);
-            if ($clash) {
-                throw ValidationException::withMessages([
-                    'date' => "{$venue->name} already has a confirmed booking on {$data['date']} ({$clash->code}).",
-                ]);
+            foreach ($venueIds as $venueId) {
+                $clash = $this->confirmedClash($venueId, $data['date']);
+                if ($clash) {
+                    $venue = $venues->firstWhere('id', $venueId);
+                    throw ValidationException::withMessages([
+                        'date' => "{$venue->name} already has a confirmed booking on {$data['date']} ({$clash->code}).",
+                    ]);
+                }
             }
         }
 
         // Calculate pricing based on model (legacy vs package)
         if ($usePackagePricing) {
-            $pricing = $this->calculatePackagePricing($venue, $data);
+            $pricing = $this->calculatePackagePricing($venues, $data);
         } else {
-            $pricing = $this->calculateLegacyPricing($venue, $data);
+            $pricing = $this->calculateLegacyPricing($primaryVenue, $data);
         }
 
         $extras = $data['extras'] ?? [];
         $extrasTotal = (int) collect($extras)->sum('amount');
         $depositDue = Settings::depositAmount($pricing['total'] + $extrasTotal, 'billing.venue_deposit_mode', 'billing.venue_deposit_pct', 'billing.venue_deposit_fixed', 25);
 
-        $booking = DB::transaction(function () use ($data, $venue, $confirm, $pricing, $extras, $depositDue, $staffId, $usePackagePricing) {
+        $booking = DB::transaction(function () use ($data, $venues, $primaryVenue, $confirm, $pricing, $extras, $depositDue, $staffId, $usePackagePricing, $isSingleVenue) {
             $bookingData = [
                 'code' => $this->documentNumbers->next(VenueBooking::class, 'code', 'VNB-'),
-                'venue_id' => $venue->id,
+                'venue_id' => $primaryVenue->id,
                 'guest_id' => $data['guest_id'] ?? null,
                 'client_name' => $data['client_name'],
                 'client_phone' => $data['client_phone'] ?? null,
@@ -92,6 +99,11 @@ class VenueBookingService
                 'venue_booking_status_id' => Lookup::id(LookupType::VENUE_BOOKING_STATUS, $confirm ? VenueBookingStatus::CONFIRMED : VenueBookingStatus::INQUIRY),
                 'deposit_due' => $depositDue,
             ];
+
+            // Only set venue_ids if multiple venues selected
+            if (! $isSingleVenue) {
+                $bookingData['venue_ids'] = $venues->pluck('id')->toArray();
+            }
 
             // Legacy fields for backward compatibility
             if (! $usePackagePricing) {
@@ -253,10 +265,11 @@ class VenueBookingService
     /**
      * Calculate pricing using the new package model
      *
+     * @param  Collection<int, Venue>  $venues
      * @param  array<string, mixed>  $data
      * @return array{total: int, hall_charge: int, per_plate_price: int|null, service_charge_pct: int, folio_lines: array<array{description: string, qty: int, unit_price: int, amount: int}>}
      */
-    private function calculatePackagePricing(Venue $venue, array $data): array
+    private function calculatePackagePricing($venues, array $data): array
     {
         $guestCount = $data['guest_count'] ?? 0;
         $packageType = $data['package_type'] ?? 'hall_food';
@@ -270,11 +283,12 @@ class VenueBookingService
 
         if ($packageType === 'hall_only') {
             // Hall only: 500 per person (or venue-specific rate)
-            $hallOnlyRate = $venue->hall_only_per_person;
+            $hallOnlyRate = $venues->first()->hall_only_per_person;
             $hallCharge = $hallOnlyRate * $guestCount;
 
+            $venueNames = $venues->pluck('name')->join(' + ');
             $folioLines[] = [
-                'description' => "{$venue->name} — Hall Only ({$guestCount} persons)",
+                'description' => "{$venueNames} — Hall Only ({$guestCount} persons)",
                 'qty' => $guestCount,
                 'unit_price' => $hallOnlyRate,
                 'amount' => $hallCharge,
@@ -283,12 +297,18 @@ class VenueBookingService
             $total = $hallCharge;
         } else {
             // Hall + Food: Hall charge + per plate price
-            $hallCharge = $venue->getHallCharge();
-            $perPlatePrice = $data['per_plate_price'] ?? $venue->per_plate_starting_price;
+            // Use combined hall charge if provided, otherwise sum of venue charges
+            if (isset($data['hall_charge_used']) && $data['hall_charge_used'] > 0) {
+                $hallCharge = $data['hall_charge_used'];
+            } else {
+                $hallCharge = $venues->sum(fn ($v) => $v->getHallCharge());
+            }
+            $perPlatePrice = $data['per_plate_price'] ?? $venues->first()->per_plate_starting_price;
             $foodCost = $perPlatePrice * $guestCount;
 
+            $venueNames = $venues->pluck('name')->join(' + ');
             $folioLines[] = [
-                'description' => "{$venue->name} — Hall Charge",
+                'description' => "{$venueNames} — Hall Charge",
                 'qty' => 1,
                 'unit_price' => $hallCharge,
                 'amount' => $hallCharge,

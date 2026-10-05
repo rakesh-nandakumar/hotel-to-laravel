@@ -19,6 +19,7 @@ class VenueBooking extends Model
 
         'code',
         'venue_id',
+        'venue_ids',
         'guest_id',
         'client_name',
         'client_phone',
@@ -74,6 +75,7 @@ class VenueBooking extends Model
             'advance_paid_at' => 'datetime',
             'advance_payment_method' => 'array',
             'profit_margin' => 'integer',
+            'venue_ids' => 'array',
         ];
     }
 

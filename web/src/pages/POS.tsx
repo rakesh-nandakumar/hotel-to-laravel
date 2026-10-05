@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Minus, Plus, Printer, Send, PauseCircle, PlayCircle, BedDouble, User, RefreshCw,
   Search, StickyNote, Trash2, UtensilsCrossed, Timer, ShoppingBag, Bike, Split, Combine,
-  ChefHat, HandPlatter, ScanBarcode, X,
+  ChefHat, Beer, ScanBarcode, X,
 } from "lucide-react";
 import { api, printDocument, post, put } from "../lib/api";
 import { posRequest } from "../lib/offline";
@@ -30,9 +30,10 @@ type MenuItem = {
   image?: string | null;
   modifier_groups?: ModifierGroup[];
   addons?: AddOn[];
+  kot_target?: "kitchen" | "bar";
 };
 
-/** Directly-sellable, non-recipe stock item (bottled drink, packaged snack) — never routes to the kitchen. */
+/** Directly-sellable, non-recipe stock item (bottled drink, packaged snack) — routes to kitchen or bar based on kot_target. */
 type Product = {
   id: number;
   name: string;
@@ -42,6 +43,7 @@ type Product = {
   unit?: string | null;
   available?: boolean;
   availability_reason?: string | null;
+  kot_target?: "kitchen" | "bar";
 };
 
 type MenuCat = { id: number; name: string; is_minibar: boolean; items: MenuItem[]; products: Product[] };
@@ -104,12 +106,12 @@ type GridEntry =
       product: Product;
     };
 
-/** Small routing indicator — kitchen ticket vs front-of-house pickup. */
+/** Small routing indicator — kitchen ticket vs bar ticket vs front-of-house pickup. */
 function RouteIcon({ sendToKot, className }: { sendToKot: boolean; className?: string }) {
   return sendToKot ? (
     <ChefHat size={12} className={className} />
   ) : (
-    <HandPlatter size={12} className={className} />
+    <Beer size={12} className={className} />
   );
 }
 
@@ -481,7 +483,7 @@ function NewOrder({ categories, rooms, tables, usdRate, scPct, vatPct, onDone }:
     setCart((c) => {
       const existing = c.find((l) => l.key === key);
       if (existing) return c.map((l) => (l.key === key ? { ...l, qty: l.qty + 1 } : l));
-      return [...c, { key, kind: "item", menuItemId: item.id, name: modLabel ? `${item.name} (${modLabel})` : item.name, price, qty: 1, modifierIds, sendToKot: true }];
+      return [...c, { key, kind: "item", menuItemId: item.id, name: modLabel ? `${item.name} (${modLabel})` : item.name, price, qty: 1, modifierIds, sendToKot: item.kot_target !== "bar" }];
     });
     for (const addOn of (item.addons ?? []).filter((a) => addOnIds.includes(a.id))) {
       setCart((c) => {
@@ -497,7 +499,7 @@ function NewOrder({ categories, rooms, tables, usdRate, scPct, vatPct, onDone }:
     setCart((c) => {
       const existing = c.find((l) => l.key === key);
       if (existing) return c.map((l) => (l.key === key ? { ...l, qty: l.qty + 1 } : l));
-      return [...c, { key, kind: "product", productId: product.id, name: product.name, price: product.selling_price, qty: 1, modifierIds: [], sendToKot: false }];
+      return [...c, { key, kind: "product", productId: product.id, name: product.name, price: product.selling_price, qty: 1, modifierIds: [], sendToKot: product.kot_target !== "bar" }];
     });
   };
   const tryAdd = (item: MenuItem) => ((item.modifier_groups?.length ?? 0) > 0 || (item.addons?.length ?? 0) > 0 ? setPickerItem(item) : add(item));
@@ -771,7 +773,7 @@ function NewOrder({ categories, rooms, tables, usdRate, scPct, vatPct, onDone }:
                       <span className="min-w-0 truncate">{l.name}</span>
                       <span
                         className={clsx("shrink-0 rounded px-1 py-0.5", l.sendToKot ? "bg-orange-100 text-orange-600" : "bg-sky-100 text-sky-600")}
-                        title={l.sendToKot ? "Sent to kitchen" : "Picked from counter stock"}
+                        title={l.sendToKot ? "Sent to kitchen (KOT)" : "Sent to bar (BOT)"}
                       >
                         <RouteIcon sendToKot={l.sendToKot} />
                       </span>
@@ -1112,7 +1114,7 @@ function OrderModal({ orderId, usdRate, mergeCandidates, onClose }: { orderId: n
               {i.product_id != null && <Badge color="blue">product</Badge>}
               <span
                 className={clsx("shrink-0 rounded px-1 py-0.5", i.send_to_kot ? "bg-orange-100 text-orange-600" : "bg-sky-100 text-sky-600")}
-                title={i.send_to_kot ? "Sent to kitchen" : "Picked from counter stock"}
+                title={i.send_to_kot ? "Sent to kitchen (KOT)" : "Sent to bar (BOT)"}
               >
                 <RouteIcon sendToKot={i.send_to_kot ?? true} />
               </span>

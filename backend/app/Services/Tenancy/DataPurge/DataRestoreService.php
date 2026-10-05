@@ -21,7 +21,9 @@ use Throwable;
  *  - a link to a row that no longer exists is cleared when the link is optional;
  *  - a row that cannot exist without a missing parent is skipped, and so is
  *    everything that hangs off it;
- *  - a row whose id or a unique value is taken is skipped.
+ *  - a row whose id or a unique value is taken is skipped;
+ *  - a document (an order, a stay, a GRN…) is all or nothing: if one of its
+ *    lines cannot come back, the rest of it is removed again.
  *
  * Everything skipped, renumbered or unlinked is reported. {@see check()} runs
  * the exact same logic and then rolls back, so the preview cannot disagree
@@ -48,11 +50,21 @@ final class DataRestoreService
     /** @var array<string, int> */
     private array $allocated = [];
 
+    /** @var array<string, array<int, true>> table => ids inserted by this restore */
+    private array $inserted = [];
+
+    /** @var array<string, array<int, true>> owning table => ids that lost one of their lines */
+    private array $partialOwners = [];
+
+    /** @var array<string, array<int, true>> table => backup ids now held by a different, newer record */
+    private array $takenIds = [];
+
     /** @var array<string, mixed> */
     private array $report = [];
 
     public function __construct(
         private readonly PurgeGraph $graph,
+        private readonly PurgePlanner $planner,
         private readonly TenantStateReconciler $reconciler,
     ) {}
 
@@ -73,7 +85,7 @@ final class DataRestoreService
     {
         $report = $this->run($purge, $admin);
 
-        Cache::forget('pos.menu_categories');
+        PurgeCaches::flush();
 
         DataPurgeAudit::record(
             $purge->tenant()->withTrashed()->firstOrFail(),
@@ -172,6 +184,9 @@ final class DataRestoreService
         $this->known = [];
         $this->deferred = [];
         $this->allocated = [];
+        $this->inserted = [];
+        $this->partialOwners = [];
+        $this->takenIds = [];
         $this->report = [
             'restored' => [],
             'total_restored' => 0,
@@ -225,6 +240,7 @@ final class DataRestoreService
             throw new PurgeAbortedException('The backup file is incomplete and cannot be restored.');
         }
 
+        $this->undoPartialDocuments($tenantId);
         $this->applyDeferred();
         $this->reapplyNullified($tenantId, $nullify);
 
@@ -280,7 +296,9 @@ final class DataRestoreService
 
         return array_values(array_filter($rows, function (array $row) use ($table, $taken): bool {
             if ($taken->has((int) $row['id'])) {
-                $this->skip($table, (int) $row['id'], 'its id was taken by a newer record');
+                // Whatever holds this id now is a different record: nothing from the backup may attach to it.
+                $this->takenIds[$table][(int) $row['id']] = true;
+                $this->skip($table, (int) $row['id'], 'its id was taken by a newer record', $row);
 
                 return false;
             }
@@ -325,7 +343,7 @@ final class DataRestoreService
                 } while ($new !== null && (isset($inBatch[(string) $new]) || isset($taken[(string) $new])));
 
                 if ($new === null) {
-                    $this->skip($table, (int) $row['id'], "its number \"{$old}\" is in use and cannot be renumbered");
+                    $this->skip($table, (int) $row['id'], "its number \"{$old}\" is in use and cannot be renumbered", $row);
                     unset($rows[$i]);
 
                     continue;
@@ -442,7 +460,7 @@ final class DataRestoreService
             }
 
             if ($skipReason !== null) {
-                $this->skip($table, (int) $row['id'], $skipReason);
+                $this->skip($table, (int) $row['id'], $skipReason, $row);
 
                 continue;
             }
@@ -485,13 +503,13 @@ final class DataRestoreService
             $message = $e->getMessage();
 
             if (str_contains($message, 'UNIQUE constraint failed') || str_contains($message, 'Duplicate entry') || str_contains($message, 'Integrity constraint violation: 1062')) {
-                $this->skip($table, (int) $row['id'], 'a record with the same unique value already exists');
+                $this->skip($table, (int) $row['id'], 'a record with the same unique value already exists', $row);
 
                 return;
             }
 
             if (str_contains($message, 'FOREIGN KEY constraint failed') || str_contains($message, '1452')) {
-                $this->skip($table, (int) $row['id'], 'a record it depends on no longer exists');
+                $this->skip($table, (int) $row['id'], 'a record it depends on no longer exists', $row);
 
                 return;
             }
@@ -507,20 +525,97 @@ final class DataRestoreService
     {
         foreach ($rows as $row) {
             $this->known[$table][(int) $row['id']] = true;
+            $this->inserted[$table][(int) $row['id']] = true;
         }
 
         $this->report['restored'][$table] = ($this->report['restored'][$table] ?? 0) + count($rows);
         $this->report['total_restored'] += count($rows);
     }
 
-    private function skip(string $table, int $id, string $reason): void
+    /**
+     * @param  array<string, mixed>|null  $row  the skipped row; lets its owning document be noted as incomplete
+     */
+    private function skip(string $table, int $id, string $reason, ?array $row = null): void
     {
-        $this->report['skipped']['total']++;
-        $this->report['skipped']['by_table'][$table] = ($this->report['skipped']['by_table'][$table] ?? 0) + 1;
+        $this->countSkipped($table, 1);
+        $this->sampleSkipped($table, $id, $reason);
 
+        foreach ($row === null ? [] : $this->graph->ownersOf($table) as $owner) {
+            if (($row[$owner['column']] ?? null) !== null) {
+                $this->partialOwners[$owner['parent']][(int) $row[$owner['column']]] = true;
+            }
+        }
+    }
+
+    private function countSkipped(string $table, int $count): void
+    {
+        $this->report['skipped']['total'] += $count;
+        $this->report['skipped']['by_table'][$table] = ($this->report['skipped']['by_table'][$table] ?? 0) + $count;
+    }
+
+    private function sampleSkipped(string $table, int $id, string $reason): void
+    {
         if (count($this->report['skipped']['samples']) < self::SAMPLE_LIMIT) {
             $this->report['skipped']['samples'][] = ['table' => $table, 'id' => $id, 'reason' => "Skipped {$this->graph->label($table)} #{$id}: {$reason}."];
         }
+    }
+
+    /**
+     * A document is all or nothing, as in a purge. Where one of an owned line
+     * could not be restored, whatever of the document did come back is removed
+     * again — with everything hanging off it — and the document is reported as
+     * skipped. Only rows this very restore inserted are ever removed.
+     */
+    private function undoPartialDocuments(int $tenantId): void
+    {
+        $seeds = [];
+
+        foreach ($this->partialOwners as $table => $ids) {
+            $restored = array_values(array_filter(array_keys($ids), fn (int $id): bool => isset($this->inserted[$table][$id])));
+
+            if ($restored !== []) {
+                $seeds[$table] = $restored;
+            }
+        }
+
+        if ($seeds === []) {
+            return;
+        }
+
+        $doomed = $this->planner->closure($tenantId, $seeds);
+
+        foreach ($doomed as $table => $ids) {
+            foreach ($ids as $id) {
+                if (! isset($this->inserted[$table][$id])) {
+                    throw new PurgeAbortedException(sprintf(
+                        'A partly restored %s is linked to data that is not part of this restore, so it cannot be undone safely. Nothing was restored.',
+                        $this->graph->label($table),
+                    ));
+                }
+            }
+        }
+
+        foreach ($this->graph->deletionOrder() as $table) {
+            foreach (array_chunk($doomed[$table] ?? [], 500) as $chunk) {
+                DB::table($table)->where('tenant_id', $tenantId)->whereIn('id', $chunk)->delete();
+
+                foreach ($chunk as $id) {
+                    unset($this->inserted[$table][$id], $this->known[$table][$id]);
+                }
+
+                $this->report['restored'][$table] -= count($chunk);
+                $this->report['total_restored'] -= count($chunk);
+                $this->countSkipped($table, count($chunk));
+            }
+        }
+
+        foreach ($seeds as $table => $ids) {
+            foreach ($ids as $id) {
+                $this->sampleSkipped($table, $id, 'part of it could not be restored, so the whole record was left out');
+            }
+        }
+
+        $this->report['restored'] = array_filter($this->report['restored']);
     }
 
     /**
@@ -538,6 +633,10 @@ final class DataRestoreService
 
         foreach (array_chunk($need, 1000) as $chunk) {
             foreach (DB::table($table)->whereIn('id', $chunk)->pluck('id') as $id) {
+                if (isset($this->takenIds[$table][(int) $id])) {
+                    continue;
+                }
+
                 $found[(int) $id] = true;
                 $this->known[$table][(int) $id] = true;
             }

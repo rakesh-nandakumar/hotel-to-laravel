@@ -52,6 +52,9 @@ final class PurgePlan
     /**
      * Operator-facing summary (also stored on the purge history row).
      *
+     * `tables` lists every table that loses rows (with how many were selected
+     * directly); `also_deleted` is the part that was pulled in as a dependent.
+     *
      * @return array<string, mixed>
      */
     public function toSummary(PurgeGraph $graph): array
@@ -101,6 +104,17 @@ final class PurgePlan
             ];
         }
 
+        $tables = [];
+        foreach ($this->ids as $table => $ids) {
+            $tables[] = [
+                'table' => $table,
+                'label' => $graph->label($table),
+                'count' => count($ids),
+                'selected' => $this->seeded[$table] ?? 0,
+            ];
+        }
+        usort($tables, fn (array $a, array $b): int => strcmp($a['label'], $b['label']));
+
         return [
             'total_rows' => $this->totalRows(),
             'categories' => $categories,
@@ -108,7 +122,7 @@ final class PurgePlan
             'unlinked' => $unlinked,
             'warnings' => $this->warnings,
             'zero_stock' => $this->zeroStock,
-            'tables' => $this->counts(),
+            'tables' => $tables,
             'fingerprint' => $this->fingerprint,
         ];
     }

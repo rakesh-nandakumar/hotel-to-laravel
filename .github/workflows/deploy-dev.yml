@@ -84,9 +84,9 @@ jobs:
           cp backend/.env.production backend/.env.staging
           sed -i "s/htl\.vellixglobal\.com/${DEV_HOST}/g" backend/.env.staging
           # TODO: replace with the DEV database credentials.
-          sed -i "s/^DB_DATABASE=.*/DB_DATABASE=REPLACE_ME/" backend/.env.staging
-          sed -i "s/^DB_USERNAME=.*/DB_USERNAME=REPLACE_ME/" backend/.env.staging
-          sed -i "s/^DB_PASSWORD=.*/DB_PASSWORD=REPLACE_ME/" backend/.env.staging
+          sed -i "s/^DB_DATABASE=.*/DB_DATABASE=your_database_name/" backend/.env.staging
+          sed -i "s/^DB_USERNAME=.*/DB_USERNAME=your_database_username/" backend/.env.staging
+          sed -i "s/^DB_PASSWORD=.*/DB_PASSWORD=your_database_password/" backend/.env.staging
           grep -E "^(APP_URL|TENANCY_BASE_DOMAIN|FRONTEND_URL|SANCTUM_STATEFUL_DOMAINS|DB_DATABASE|DB_USERNAME)=" backend/.env.staging
 
       - name: Build single-domain release zip

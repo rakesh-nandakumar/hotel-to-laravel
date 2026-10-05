@@ -32,6 +32,7 @@ class MenuItem extends Model
         'item_no',
         'name',
         'menu_category_id',
+        'kot_target',
         'price',
         'description',
         'image',
@@ -49,6 +50,7 @@ class MenuItem extends Model
             'price' => 'integer',
             'sold_out' => 'boolean',
             'active' => 'boolean',
+            'kot_target' => 'string',
         ];
     }
 

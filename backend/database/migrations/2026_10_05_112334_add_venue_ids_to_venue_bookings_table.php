@@ -12,10 +12,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('venue_bookings', function (Blueprint $table) {
-            if (Schema::hasColumn('venue_bookings', 'advance_payment_method')) {
-                $table->dropColumn('advance_payment_method');
-            }
-            $table->json('advance_payment_method')->nullable()->after('advance_paid_at');
+            $table->json('venue_ids')->nullable()->after('venue_id');
         });
     }
 
@@ -25,10 +22,7 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('venue_bookings', function (Blueprint $table) {
-            if (Schema::hasColumn('venue_bookings', 'advance_payment_method')) {
-                $table->dropColumn('advance_payment_method');
-            }
-            $table->string('advance_payment_method')->nullable()->after('advance_paid_at');
+            $table->dropColumn('venue_ids');
         });
     }
 };

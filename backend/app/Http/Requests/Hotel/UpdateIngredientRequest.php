@@ -27,6 +27,7 @@ class UpdateIngredientRequest extends FormRequest
             'kind' => ['sometimes', 'string', Rule::in([InventoryKind::INGREDIENT, InventoryKind::PRODUCT])],
             'selling_price' => ['sometimes', 'nullable', 'integer', 'min:0'],
             'menu_category_id' => ['sometimes', 'nullable', 'integer', 'exists:pos_menu_categories,id'],
+            'kot_target' => ['sometimes', 'nullable', 'string', 'in:kitchen,bar'],
             'image' => ['sometimes', 'nullable', 'string', 'max:5000000'],
             'active' => ['sometimes', 'boolean'],
         ];

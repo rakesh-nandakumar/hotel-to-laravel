@@ -19,7 +19,9 @@ class StoreVenueBookingRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'venue_id' => ['required', 'integer', 'exists:venues,id'],
+            'venue_ids' => ['required_without:venue_id', 'array', 'min:1'],
+            'venue_ids.*' => ['required', 'integer', 'exists:venues,id'],
+            'venue_id' => ['required_without:venue_ids', 'integer', 'exists:venues,id'],
             'client_name' => ['required', 'string', 'max:150'],
             'client_phone' => ['nullable', 'string', 'max:30'],
             'client_email' => ['nullable', 'string', 'email', 'max:255'],
@@ -44,6 +46,7 @@ class StoreVenueBookingRequest extends FormRequest
             'use_package_pricing' => ['nullable', 'boolean'],
             'package_type' => ['nullable', 'string', 'in:hall_only,hall_food'],
             'per_plate_price' => ['nullable', 'integer', 'min:0'],
+            'hall_charge_used' => ['nullable', 'integer', 'min:0'],
             'service_charge_pct' => ['nullable', 'integer', 'min:0', 'max:100'],
             'byod_selected' => ['nullable', 'boolean'],
             'dj_required' => ['nullable', 'boolean'],

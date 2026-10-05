@@ -35,4 +35,4 @@ Schedule::call(fn () => app(ApartmentSalesService::class)->releaseExpiredHolds()
 // Removes data-purge backups past their retention window (90 days by default,
 // TENANT_PURGE_RETENTION_DAYS) — they hold customer personal data, so they must
 // not pile up. See App\Console\Commands\PruneTenantDataBackups.
-Schedule::command('tenant-data:prune-backups')->dailyAt('03:30');
+Schedule::command('tenant-data:prune-backups')->dailyAt('03:30')->withoutOverlapping();

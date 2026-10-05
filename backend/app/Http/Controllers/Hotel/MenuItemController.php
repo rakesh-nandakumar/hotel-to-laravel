@@ -152,6 +152,7 @@ class MenuItemController extends Controller
             $item = MenuItem::create([
                 'name' => $data['name'],
                 'menu_category_id' => $data['menu_category_id'],
+                'kot_target' => $data['kot_target'] ?? 'kitchen',
                 'price' => $data['price'],
                 'item_no' => $itemNo,
                 'description' => $data['description'] ?? '',
@@ -192,6 +193,9 @@ class MenuItemController extends Controller
             $payload = collect($data)->except('recipe')->all();
             if (array_key_exists('description', $payload)) {
                 $payload['description'] = $payload['description'] ?? '';
+            }
+            if (array_key_exists('kot_target', $payload)) {
+                $payload['kot_target'] = $payload['kot_target'] ?? 'kitchen';
             }
 
             $menuItem->update($payload);
@@ -412,11 +416,10 @@ class MenuItemController extends Controller
                 && ! $availability['ok']
             ) {
                 $reason = collect($availability['missing'])->contains(
-                    fn ($message) =>
-                        str_contains(
-                            strtolower($message),
-                            'expired'
-                        )
+                    fn ($message) => str_contains(
+                        strtolower($message),
+                        'expired'
+                    )
                 )
                     ? 'ingredient_expired'
                     : 'out_of_stock';
