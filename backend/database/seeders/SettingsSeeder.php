@@ -113,6 +113,7 @@ class SettingsSeeder extends Seeder
             ['key' => 'notifications.whatsapp_group_link', 'value' => '', 'type' => SettingType::URL, 'category' => 'notifications', 'label' => 'WhatsApp Group Link', 'hint' => 'Invite link of the staff WhatsApp group (https://chat.whatsapp.com/…) that confirmed bookings are shared to. Adds a WhatsApp button to every confirmed reservation; leave blank to hide it.'],
 
             // ── Payroll (Sri Lanka statutory defaults) ──────────────────────
+            ['key' => 'payroll.enabled', 'value' => false, 'type' => SettingType::BOOLEAN, 'category' => 'payroll', 'label' => 'Enable Payroll Module', 'hint' => 'When enabled, the Payroll section appears in the sidebar.'],
             ['key' => 'payroll.epf_employee_pct', 'value' => 8, 'type' => SettingType::PERCENT, 'category' => 'payroll', 'label' => 'EPF — Employee %'],
             ['key' => 'payroll.epf_employer_pct', 'value' => 12, 'type' => SettingType::PERCENT, 'category' => 'payroll', 'label' => 'EPF — Employer %'],
             ['key' => 'payroll.etf_pct', 'value' => 3, 'type' => SettingType::PERCENT, 'category' => 'payroll', 'label' => 'ETF — Employer %'],
@@ -141,6 +142,7 @@ class SettingsSeeder extends Seeder
             ['key' => 'inventory.expiry_warn_days', 'value' => 3, 'type' => SettingType::NUMBER, 'category' => 'inventory', 'label' => 'Expiry Warning Window (days)'],
 
             // ── Apartments ───────────────────────────────────────────────────
+            ['key' => 'apartments.enabled', 'value' => false, 'type' => SettingType::BOOLEAN, 'category' => 'apartments', 'label' => 'Enable Apartments Module', 'hint' => 'When enabled, the Apartments section appears in the sidebar.'],
             ['key' => 'apartment.deposit_mode', 'value' => 'percentage', 'type' => SettingType::TEXT, 'category' => 'apartments', 'label' => 'Booking Deposit Mode', 'hint' => '"percentage" or "fixed".'],
             ['key' => 'apartment.deposit_pct', 'value' => 20, 'type' => SettingType::PERCENT, 'category' => 'apartments', 'label' => 'Booking Deposit %', 'hint' => 'Used when the deposit mode is "percentage".'],
             ['key' => 'apartment.deposit_fixed', 'value' => 0, 'type' => SettingType::MONEY, 'category' => 'apartments', 'label' => 'Booking Deposit — Fixed Amount (LKR cents)', 'hint' => 'Used when the deposit mode is "fixed"; capped to the stay total.'],

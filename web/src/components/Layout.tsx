@@ -69,7 +69,7 @@ type Item = {
   fullAdminOnly?: boolean;
   condition?: string;
 };
-type Section = { title: string; items: Item[] };
+type Section = { title: string; items: Item[]; condition?: string };
 
 const SECTIONS: Section[] = [
   {
@@ -249,11 +249,13 @@ const SECTIONS: Section[] = [
         label: "Payroll",
         icon: <Wallet size={18} />,
         permission: "hotel_payroll.view",
+        condition: "payroll.enabled",
       },
     ],
   },
   {
     title: "Apartments",
+    condition: "apartments.enabled",
     items: [
       {
         to: "/apartments/properties",
@@ -628,7 +630,10 @@ export default function Layout({ children }: { children: ReactNode }) {
     items: visible(s.items).map((i) =>
       i.to === "/inventory" ? { ...i, to: inventoryTarget(can) } : i,
     ),
-  })).filter((s) => s.items.length > 0);
+  })).filter((s) => {
+    if (s.condition && settings?.bool(s.condition) !== true) return false;
+    return s.items.length > 0;
+  });
 
   /**
    * The sidebar contents. `mini` renders the icon-only collapsed rail (desktop);
