@@ -53,15 +53,26 @@ class IdentifyTenant
 
         $hostContext = $this->resolver->resolveRequest($request);
 
-        $tenant = $hostContext->isTenant()
-            ? $this->findBySlug($hostContext->slug())
-            : null;
-
-        if ($hostContext->isCentral() && ! $tenant) {
+        // For central routes, always mark as central and skip tenant resolution
+        // even if there's a stale tenant session. This allows users to switch
+        // from tenant to master control without clearing cookies.
+        if ($hostContext->isCentral()) {
             $this->context->markCentral();
 
             return $next($request);
         }
+
+        // Also treat /api/central/* routes as central regardless of host context
+        // This ensures central routes work even when accessed from a tenant domain
+        if ($request->is('api/central/*')) {
+            $this->context->markCentral();
+
+            return $next($request);
+        }
+
+        $tenant = $hostContext->isTenant()
+            ? $this->findBySlug($hostContext->slug())
+            : null;
 
         if (! $tenant || ! TenantReachability::check($tenant)) {
             throw new NotFoundHttpException('Unknown host.');

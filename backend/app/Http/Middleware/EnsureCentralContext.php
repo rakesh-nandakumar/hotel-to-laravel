@@ -20,6 +20,12 @@ class EnsureCentralContext
 
     public function handle(Request $request, Closure $next): Response
     {
+        // Allow central routes even if there's a stale tenant session
+        // This allows users to switch from tenant to master control without clearing cookies
+        if ($this->context->isCentral()) {
+            return $next($request);
+        }
+
         if ($this->context->tenantId() !== null) {
             throw new NotFoundHttpException;
         }

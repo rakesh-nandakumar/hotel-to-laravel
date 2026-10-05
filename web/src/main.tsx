@@ -30,6 +30,17 @@ if (pathname === "/" || pathname === "") {
   window.location.replace(`/${CENTRAL_PREFIX}`);
 }
 
+// Clear stale tenant session cookies when visiting central routes to prevent 404s
+if (pathname.startsWith(`/${CENTRAL_PREFIX}`)) {
+  document.cookie.split(";").forEach((c) => {
+    const eqPos = c.indexOf("=");
+    const name = eqPos > -1 ? c.slice(0, eqPos).trim() : c.trim();
+    if (name === "laravel_session" || name.startsWith("XSRF-")) {
+      document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`;
+    }
+  });
+}
+
 /**
  * The slug this URL names, passed as X-Tenant-Slug so the boot gate and every
  * API call resolve the tenant from it regardless of the Host header — the

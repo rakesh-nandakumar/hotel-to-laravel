@@ -50,6 +50,8 @@ final class PurgePlanner
 
         $categories = [];
         $zeroStock = false;
+        $resetRooms = false;
+        $resetTill = false;
 
         foreach ($selections as $selection) {
             $category = config("tenancy-purge.categories.{$selection['key']}");
@@ -79,6 +81,14 @@ final class PurgePlanner
             if (in_array('zero_stock', $category['reconcile'] ?? [], true)) {
                 $zeroStock = true;
             }
+
+            if (in_array('reset_rooms', $category['reconcile'] ?? [], true)) {
+                $resetRooms = true;
+            }
+
+            if (in_array('reset_till', $category['reconcile'] ?? [], true)) {
+                $resetTill = true;
+            }
         }
 
         $this->close($tenantId);
@@ -96,7 +106,9 @@ final class PurgePlanner
             nullify: $nullify,
             warnings: $this->warnings($ids),
             zeroStock: $zeroStock,
-            fingerprint: $this->fingerprint($ids, $nullify, $zeroStock),
+            resetRooms: $resetRooms,
+            resetTill: $resetTill,
+            fingerprint: $this->fingerprint($ids, $nullify, $zeroStock, $resetRooms, $resetTill),
         );
     }
 
@@ -482,7 +494,7 @@ final class PurgePlanner
      * @param  array<string, list<int>>  $ids
      * @param  list<array{table: string, column: string, loose: bool, rows: array<int, mixed>}>  $nullify
      */
-    private function fingerprint(array $ids, array $nullify, bool $zeroStock): string
+    private function fingerprint(array $ids, array $nullify, bool $zeroStock, bool $resetRooms, bool $resetTill): string
     {
         $hash = hash_init('sha256');
 
@@ -495,6 +507,8 @@ final class PurgePlanner
         }
 
         hash_update($hash, 'z:'.(int) $zeroStock);
+        hash_update($hash, 'r:'.(int) $resetRooms);
+        hash_update($hash, 't:'.(int) $resetTill);
 
         return hash_final($hash);
     }

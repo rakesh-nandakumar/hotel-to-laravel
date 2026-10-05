@@ -52,6 +52,7 @@ return [
         'apartments' => 'Apartments',
         'payroll' => 'Payroll & attendance',
         'till' => 'Till & cash',
+        'reset' => 'Tenant Reset',
     ],
 
     /*
@@ -337,6 +338,29 @@ return [
             'filters' => [
                 ['key' => 'opened', 'label' => 'Opened date', 'type' => 'date', 'column' => 'opened_at'],
             ],
+        ],
+
+        // ── Tenant Reset ────────────────────────────────────────────────────
+        'tenant_reset' => [
+            'module' => 'reset',
+            'label' => 'Full tenant reset',
+            'description' => 'Delete reservations, guests, POS orders, tables, menu, inventory, till records, QR codes, and reset rooms to available. Tills will open with zero balance tomorrow.',
+            'master' => true,
+            'roots' => [
+                'reservations',
+                'guests',
+                'orders',
+                'dining_areas',
+                'dining_tables',
+                'pos_menu_categories',
+                'pos_menu_items',
+                'add_ons',
+                'ingredient_batches',
+                'till_sessions',
+                'qr_ordering_points',
+            ],
+            'reconcile' => ['reset_rooms', 'reset_till'],
+            'filters' => [],
         ],
     ],
 

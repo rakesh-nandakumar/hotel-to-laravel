@@ -51,8 +51,12 @@ class AuthenticatedSessionController extends Controller
 
         RateLimiter::clear($key);
 
+        // Clear any existing tenant session before logging in as central admin
+        Auth::guard('web')->logout();
         Auth::guard('central')->login($admin);
         $request->session()->regenerate();
+
+        \Log::info('Central login successful', ['email' => $email, 'admin_id' => $admin->id]);
 
         return response()->json(['admin' => $admin->only(['id', 'name', 'email'])]);
     }
