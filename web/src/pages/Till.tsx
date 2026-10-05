@@ -42,6 +42,8 @@ type Summary = {
   movement_count: number;
 };
 
+type CloseResponse = { session: { id: number } };
+
 const plural = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : "s"}`;
 const signed = (cents: number) => `${cents > 0 ? "+" : ""}${lkr(cents)}`;
 
@@ -482,9 +484,11 @@ function CloseTill({ sessionId, onClose }: { sessionId: number; onClose: () => v
   const variance = counted === null ? 0 : counted - expected;
   const needsReason = variance !== 0;
 
+type CloseResponse = { session: { id: number } };
+
   const submit = () => {
     setBusy(true);
-    post(`/till/${sessionId}/close`, {
+    post<CloseResponse>(`/till/${sessionId}/close`, {
       closing_cash: counted ?? undefined,
       reason: reason || undefined,
       notes: notes || undefined,
