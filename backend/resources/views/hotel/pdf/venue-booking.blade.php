@@ -138,7 +138,13 @@
         </div>
         <div class="info-row">
             <div class="info-label">Venue:</div>
-            <div class="info-value">{{ $booking->venue->name }}</div>
+            <div class="info-value">
+                @if($booking->venue_ids && is_array($booking->venue_ids) && count($booking->venue_ids) > 1)
+                    {{ \App\Models\Hotel\Venue::query()->whereIn('id', $booking->venue_ids)->pluck('name')->join(' + ') }}
+                @else
+                    {{ $booking->venue->name }}
+                @endif
+            </div>
         </div>
         <div class="info-row">
             <div class="info-label">Event Date:</div>

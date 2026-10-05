@@ -31,6 +31,7 @@ type Booking = {
   start_time?: string | null; end_time?: string | null; guest_count: number; status: Lookup;
   seating?: string | null; av_needs?: string | null; decoration?: string | null; catering_by_hotel: boolean; deposit_due: number;
   venue: { id: number; name: string; max_capacity: number };
+  venue_name?: string;
   folio?: { id: number; invoice_no?: string | null } | null;
   total: number; paid: number; balance: number;
   // Enhanced booking fields
@@ -123,8 +124,8 @@ function VenueCalendar() {
                     <button
                       key={b.id}
                       onClick={canView ? () => setSelected(b) : undefined}
-                      className={`block w-full truncate rounded px-1 py-0.5 text-left text-[9px] font-bold leading-tight ${venueColor(b.venue.name)} ${b.status.code === "inquiry" ? "opacity-50" : ""}`}
-                      title={`${b.code} · ${b.venue.name} · ${b.client_name} (${b.status.code.toUpperCase()})`}
+                      className={`block w-full truncate rounded px-1 py-0.5 text-left text-[9px] font-bold leading-tight ${venueColor(b.venue_name || b.venue.name)} ${b.status.code === "inquiry" ? "opacity-50" : ""}`}
+                      title={`${b.code} · ${b.venue_name || b.venue.name} · ${b.client_name} (${b.status.code.toUpperCase()})`}
                     >
                       {b.client_name}
                     </button>
@@ -367,7 +368,7 @@ function Bookings() {
                       {b.code}
                     </span>
                   </td>
-                  <td className="px-4 py-3 font-medium text-slate-700">{b.venue.name}</td>
+                  <td className="px-4 py-3 font-medium text-slate-700">{b.venue_name || b.venue.name}</td>
                   <td className="px-4 py-3 text-slate-600">{b.client_name}</td>
                   <td className="px-4 py-3">
                     <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-700">
@@ -961,13 +962,13 @@ function BookingModal({ b, onClose }: { b: Booking; onClose: () => void }) {
   const act = (fn: () => Promise<unknown>, successMsg?: string) =>
     fn()
       .then(() => {
-        if (successMsg) toast.success(successMsg, `${state.code} — ${state.venue.name}`);
+        if (successMsg) toast.success(successMsg, `${state.code} — ${state.venue_name || state.venue.name}`);
         onClose();
       })
       .catch((e) => setError((e as Error).message));
 
   return (
-    <Modal open onClose={onClose} title={`${state.code} — ${state.venue.name}`} wide>
+    <Modal open onClose={onClose} title={`${state.code} — ${state.venue_name || state.venue.name}`} wide>
       <div className="grid gap-2 text-sm sm:grid-cols-2">
         <div><b>Client:</b> {state.client_name} {state.client_phone && `· ${state.client_phone}`}</div>
         <div><b>Event:</b> {state.event_type ?? "—"} on {fmtDate(state.date)} {state.start_time && `(${state.start_time}–${state.end_time})`}</div>
