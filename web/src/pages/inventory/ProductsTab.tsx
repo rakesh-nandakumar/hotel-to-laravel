@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Plus, ShoppingBasket } from "lucide-react";
 import { post } from "../../lib/api";
-import { useFetch, toCents } from "../../lib/util";
+import { useFetch, toCents, useSettings } from "../../lib/util";
 import { useAuth } from "../../lib/auth";
 import { Field, Modal, ErrorText } from "../../components/ui";
 import { ImageDropUpload } from "../../components/ImageUpload";
@@ -12,6 +12,8 @@ import { MenuCategoryLite } from "./types";
 export default function ProductsTab() {
   const { can } = useAuth();
   const canCreate = can("hotel_products.create");
+  const { bool } = useSettings();
+  const botEnabled = bool("bot.enabled", false);
   const [openNew, setOpenNew] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -36,14 +38,15 @@ export default function ProductsTab() {
         canWriteOff={false}
         canEdit={can("hotel_products.edit")}
         refreshKey={refreshKey}
+        kotTargetFilter={botEnabled ? "kitchen" : undefined}
       />
 
-      {openNew && <NewProduct onClose={() => { setOpenNew(false); setRefreshKey((k) => k + 1); }} />}
+      {openNew && <NewProduct onClose={() => { setOpenNew(false); setRefreshKey((k) => k + 1); }} botEnabled={botEnabled} />}
     </div>
   );
 }
 
-function NewProduct({ onClose }: { onClose: () => void }) {
+function NewProduct({ onClose, botEnabled }: { onClose: () => void; botEnabled: boolean }) {
   const { data } = useFetch<{ menu_categories: MenuCategoryLite[] }>("/menu/categories");
   const categories = data?.menu_categories ?? [];
   const [f, setF] = useState({ name: "", unit: "pcs", stockQty: "0", lowStockThreshold: "0", sellingPrice: "", menuCategoryId: "", kotTarget: "kitchen", image: "" });
@@ -65,12 +68,14 @@ function NewProduct({ onClose }: { onClose: () => void }) {
             {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         </Field>
-        <Field label="KOT Target" hint="Where this product appears: Kitchen (KOT) or Bar (BOT)">
-          <select className="input" value={f.kotTarget} onChange={(e) => setF({ ...f, kotTarget: e.target.value })}>
-            <option value="kitchen">Kitchen (KOT)</option>
-            <option value="bar">Bar (BOT)</option>
-          </select>
-        </Field>
+        {botEnabled && (
+          <Field label="KOT Target" hint="Where this product appears: Kitchen (KOT) or Bar (BOT)">
+            <select className="input" value={f.kotTarget} onChange={(e) => setF({ ...f, kotTarget: e.target.value })}>
+              <option value="kitchen">Kitchen (KOT)</option>
+              <option value="bar">Bar (BOT)</option>
+            </select>
+          </Field>
+        )}
         <Field label="Opening stock"><input className="input" value={f.stockQty} onChange={(e) => setF({ ...f, stockQty: e.target.value })} /></Field>
         <Field label="Low-stock threshold"><input className="input" value={f.lowStockThreshold} onChange={(e) => setF({ ...f, lowStockThreshold: e.target.value })} /></Field>
       </div>
@@ -87,7 +92,7 @@ function NewProduct({ onClose }: { onClose: () => void }) {
           post("/products", {
             name: f.name.trim(), unit: f.unit, stock_qty: parseFloat(f.stockQty) || 0, low_stock_threshold: parseFloat(f.lowStockThreshold) || 0,
             kind: "product", selling_price: toCents(f.sellingPrice), menu_category_id: f.menuCategoryId ? Number(f.menuCategoryId) : null,
-            kot_target: f.kotTarget, image: f.image || null,
+            kot_target: botEnabled ? f.kotTarget : "kitchen", image: f.image || null,
           })
             .then(onClose)
             .catch((e) => setError(e.message))
