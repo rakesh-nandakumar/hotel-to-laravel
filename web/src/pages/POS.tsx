@@ -30,7 +30,7 @@ type MenuItem = {
   image?: string | null;
   modifier_groups?: ModifierGroup[];
   addons?: AddOn[];
-  kot_target?: "kitchen" | "bar";
+  kot_target?: "kitchen" | "bar" | null;
 };
 
 /** Directly-sellable, non-recipe stock item (bottled drink, packaged snack) — routes to kitchen or bar based on kot_target. */
@@ -43,7 +43,7 @@ type Product = {
   unit?: string | null;
   available?: boolean;
   availability_reason?: string | null;
-  kot_target?: "kitchen" | "bar";
+  kot_target?: "kitchen" | "bar" | null;
 };
 
 type MenuCat = { id: number; name: string; is_minibar: boolean; items: MenuItem[]; products: Product[] };
@@ -158,16 +158,17 @@ export default function POS() {
   const canCreate = can("hotel_orders.create");
   const [view, setView] = useState<"new" | "open">(canCreate ? "new" : "open");
   // Load only categories (lightweight) - items/products loaded on demand via search
-  const { data: categoriesData, reload: reloadCategories } = useFetch<{ categories: { id: number; name: string; is_minibar: boolean }[] }>("/menu/categories");
+  const { data: categoriesData, reload: reloadCategories } = useFetch<{ menu_categories: { id: number; name: string; is_minibar: boolean }[] }>("/menu/categories");
   const { data: roomsData } = useFetch<{ rooms: BoardRoom[] }>("/rooms");
   const { data: tablesData, reload: reloadTables } = useFetch<{ dining_tables: DiningTable[] }>("/dining-tables");
   const { data: activeData, reload: reloadActive } = useFetch<{ orders: Order[] }>("/orders?scope=active");
   const { data: todaysData, reload: reloadToday } = useFetch<{ orders: Order[] }>("/orders?scope=today");
-  const categories = categoriesData?.categories ?? [];
+  const categories = categoriesData?.menu_categories ?? [];
   const active = activeData?.orders;
   const todays = todaysData?.orders;
-  const { num } = useSettings();
+  const { num, bool } = useSettings();
   const usdRate = num("currency.usd_rate", 0);
+  const botEnabled = bool("bot.enabled", false);
 
   // Realtime: menu sold-out changes + order/KOT updates
   useEffect(() => {
@@ -225,6 +226,7 @@ export default function POS() {
           usdRate={usdRate}
           scPct={num("billing.service_charge_pct", 0)}
           vatPct={num("billing.vat_pct", 0)}
+          botEnabled={botEnabled}
           onDone={() => {
             reloadActive();
             reloadToday();
@@ -245,12 +247,13 @@ export default function POS() {
 }
 
 // ── New order ─────────────────────────────────────────────────────────────────
-function NewOrder({ categories, rooms, tables, usdRate, scPct, vatPct, onDone }: {
+function NewOrder({ categories, rooms, tables, usdRate, scPct, vatPct, onDone, botEnabled }: {
   categories: { id: number; name: string; is_minibar: boolean }[];
-  rooms: BoardRoom[]; tables: DiningTable[]; usdRate: number; scPct: number; vatPct: number; onDone: () => void;
+  rooms: BoardRoom[]; tables: DiningTable[]; usdRate: number; scPct: number; vatPct: number; onDone: () => void; botEnabled: boolean;
 }) {
   const toast = useToast();
   const [catId, setCatId] = useState<string>("ALL");
+  const [activeTab, setActiveTab] = useState<"kitchen" | "bar">("kitchen");
   const [searchQuery, setSearchQuery] = useState("");
   const [cart, setCart] = useState<CartLine[]>([]);
   const [type, setType] = useState<"walkin" | "room_guest" | "delivery">("walkin");
@@ -372,14 +375,26 @@ function NewOrder({ categories, rooms, tables, usdRate, scPct, vatPct, onDone }:
           };
         }),
       ];
-      setGridEntries(entries);
+
+      // Filter by active tab (KOT/BOT)
+      const filtered = entries.filter((e) => {
+        const target = e.kind === "item" ? e.item.kot_target : e.product.kot_target;
+        // If target is null/undefined, show in both tabs (backward compatibility)
+        // If BOT is disabled, only show kitchen items
+        if (!botEnabled) {
+          return !target || target === "kitchen";
+        }
+        return !target || target === activeTab;
+      });
+
+      setGridEntries(filtered);
     } catch (e) {
       console.error("Failed to fetch grid entries:", e);
       setGridEntries([]);
     } finally {
       setSearchLoading(false);
     }
-  }, [catId, debouncedSearchQuery]);
+  }, [catId, debouncedSearchQuery, activeTab, botEnabled]);
 
   // Fetch grid entries when category or search changes
   useEffect(() => {
@@ -593,6 +608,24 @@ function NewOrder({ categories, rooms, tables, usdRate, scPct, vatPct, onDone }:
   return (
     <div className="grid gap-4 lg:grid-cols-[1fr_370px]">
       <div className="space-y-3">
+        {/* KOT/BOT tabs - only show if BOT is enabled */}
+        {botEnabled && (
+          <div className="flex gap-1 rounded-xl bg-slate-200/70 p-1">
+            <button
+              onClick={() => setActiveTab("kitchen")}
+              className={clsx("rounded-lg px-4 py-2 text-sm font-semibold transition", activeTab === "kitchen" ? "bg-white shadow-sm" : "text-slate-500 hover:text-slate-800")}
+            >
+              Kitchen (KOT)
+            </button>
+            <button
+              onClick={() => setActiveTab("bar")}
+              className={clsx("rounded-lg px-4 py-2 text-sm font-semibold transition", activeTab === "bar" ? "bg-white shadow-sm" : "text-slate-500 hover:text-slate-800")}
+            >
+              Bar (BOT)
+            </button>
+          </div>
+        )}
+
         {/* Search + categories */}
         <div className="flex flex-wrap items-center gap-1.5">
           <div className="relative">
