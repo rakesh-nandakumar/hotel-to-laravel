@@ -252,7 +252,7 @@ function ReserveModal({ saleId, onClose, onDone }: { saleId: number; onClose: ()
       {deposit.take && (
         <div className="mt-2 flex gap-2">
           <select className="input !w-40" value={deposit.method} onChange={(e) => setDeposit({ ...deposit, method: e.target.value })}>
-            {["cash", "card", "lankaqr", "bank_transfer"].map((m) => <option key={m} value={m}>{m.toUpperCase()}</option>)}
+            {["cash", "card", "lankaqr", "bank_transfer", "credit"].map((m) => <option key={m} value={m}>{m.toUpperCase()}</option>)}
           </select>
           <input className="input" placeholder="Amount (LKR)" value={deposit.amount} onChange={(e) => setDeposit({ ...deposit, amount: e.target.value })} />
         </div>

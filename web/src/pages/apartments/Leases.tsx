@@ -9,7 +9,7 @@ import { useAuth } from "../../lib/auth";
 
 type Lookup = { id: number; code: string; name: string };
 const STATUS_OPTIONS = ["draft", "active", "renewed", "terminated", "ended"];
-const PAY_METHOD_OPTIONS = ["cash", "card", "lankaqr", "bank_transfer"];
+const PAY_METHOD_OPTIONS = ["cash", "card", "lankaqr", "bank_transfer", "credit"];
 
 type LeaseRow = {
   id: number; code: string; start_date: string; end_date: string | null; monthly_rent: number;

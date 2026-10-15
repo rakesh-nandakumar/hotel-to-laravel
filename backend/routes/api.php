@@ -73,6 +73,7 @@ use App\Http\Controllers\Hotel\VenueBookingController;
 use App\Http\Controllers\Hotel\VenueController;
 use App\Http\Controllers\Hotel\VenueExtraChargeController;
 use App\Http\Controllers\Hotel\VisitorLogController;
+use App\Http\Controllers\Money\PendingPaymentsController;
 use App\Http\Controllers\Profile\TwoFactorController;
 use App\Http\Controllers\Settings\BrowserSessionsController;
 use App\Http\Controllers\Settings\PasswordController;
@@ -949,6 +950,17 @@ Route::middleware(['auth', 'check_active'])->group(function () {
         Route::get('{session}/daily-sales-report', [TillController::class, 'dailySalesReport'])
             ->middleware('can_do:till.access')
             ->name('dailySalesReport');
+    });
+
+    // ── Money ───────────────────────────────────────────────────────────────────
+    Route::prefix('money')->name('money.')->group(function () {
+        Route::get('pending-payments', [PendingPaymentsController::class, 'index'])
+            ->middleware('can_do:money_pending_payments.access')
+            ->name('pending-payments.index');
+        Route::get('credit-payments-count', [PendingPaymentsController::class, 'creditPaymentsCount'])
+            ->name('credit-payments-count');
+        Route::post('fulfill-credit-payment', [PendingPaymentsController::class, 'fulfillCreditPayment'])
+            ->name('fulfill-credit-payment');
     });
 
     // ── Attendance ────────────────────────────────────────────────────────────

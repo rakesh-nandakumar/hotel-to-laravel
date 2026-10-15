@@ -45,7 +45,7 @@ class ReservationAvailabilityService
         return Room::query()
             ->where('room_status_id', '!=', $maintenanceId)
             ->whereNotIn('id', $busyRoomIds)
-            ->with(['seasonalRates'])
+            ->with(['seasonalRates', 'roomType'])
             ->orderBy('number')
             ->get()
             ->values();

@@ -181,7 +181,6 @@ function Board() {
             <div className="mt-0.5 truncate text-xs text-slate-500">{catName}{r.floor && ` · floor ${r.floor}`}</div>
             <div className="mt-1 flex flex-wrap gap-2 text-[11px] text-slate-500">
               <span className="flex items-center gap-1"><Users size={11} /> sleeps {r.max_occupancy ?? "—"}</span>
-              {r.bed_config && <span className="flex items-center gap-1"><BedDouble size={11} /> {r.bed_config}</span>}
             </div>
             <div className="mt-1 flex flex-wrap gap-1 text-[11px]">
               <Badge color="slate">{lkr(r.weekday_rate ?? 0)} wkday</Badge>
@@ -310,7 +309,7 @@ function RoomEditor({ room, onClose }: { room: BoardRoom | null; onClose: () => 
         <Field label="Weekday rate (LKR/night) *"><input className="input" value={f.weekdayRate} onChange={(e) => setF({ ...f, weekdayRate: e.target.value })} placeholder="e.g. 12000" /></Field>
         <Field label="Weekend/peak rate (LKR/night) *"><input className="input" value={f.weekendRate} onChange={(e) => setF({ ...f, weekendRate: e.target.value })} placeholder="e.g. 15000" /></Field>
         <Field label="Max occupancy *"><input className="input" value={f.maxOccupancy} onChange={(e) => setF({ ...f, maxOccupancy: e.target.value })} /></Field>
-        <Field label="Bed configuration"><input className="input" value={f.bedConfig} onChange={(e) => setF({ ...f, bedConfig: e.target.value })} placeholder="e.g. 1 King + 1 Single, TBC" /></Field>
+        <Field label="Bed configuration"><input className="input" value={f.bedConfig} onChange={(e) => setF({ ...f, bedConfig: e.target.value })} placeholder="e.g. 1 King + 1 Single" /></Field>
         <Field label="Floor"><input className="input" value={f.floor} onChange={(e) => setF({ ...f, floor: e.target.value })} placeholder="e.g. Ground, 2nd" /></Field>
         <Field label="View"><input className="input" value={f.view} onChange={(e) => setF({ ...f, view: e.target.value })} placeholder="e.g. Garden, Mountain" /></Field>
       </div>

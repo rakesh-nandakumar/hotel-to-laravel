@@ -138,7 +138,7 @@ function availabilityBadgeColor(reason: string | null | undefined): "red" | "amb
   return "red";
 }
 
-const PAY_METHODS = ["cash", "card", "lankaqr", "bank_transfer"] as const;
+const PAY_METHODS = ["cash", "card", "lankaqr", "bank_transfer", "credit"] as const;
 const DELIVERY_STEPS = ["pending", "out_for_delivery", "delivered", "failed"] as const;
 
 const minsAgo = (iso: string) => Math.max(0, Math.round((Date.now() - +new Date(iso)) / 60000));

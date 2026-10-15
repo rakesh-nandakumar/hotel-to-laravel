@@ -23,6 +23,7 @@ class CheckoutReservationRequest extends FormRequest
         return [
             'apply_late_surcharge' => ['nullable', 'boolean'],
             'apply_early_departure' => ['nullable', 'boolean'],
+            'service_charge_pct' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'payments' => ['nullable', 'array'],
             'payments.*.method' => ['required', 'string', $paymentMethod],
             'payments.*.amount' => ['required', 'integer', 'min:1'],

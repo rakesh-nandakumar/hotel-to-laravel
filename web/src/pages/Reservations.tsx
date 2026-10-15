@@ -32,6 +32,7 @@ const PAY_METHOD_OPTIONS = [
   { code: "card", label: "CARD" },
   { code: "lankaqr", label: "LANKAQR" },
   { code: "bank_transfer", label: "BANK_TRANSFER" },
+  { code: "credit", label: "CREDIT" },
 ];
 
 type ResRow = {
@@ -47,7 +48,7 @@ type AvailRoom = {
   id: number; number: string;
   name: string | null; max_occupancy: number; bed_config: string | null;
   // legacy shape kept for backward compat
-  room_type?: { id: number; name: string; max_occupancy: number };
+  room_type?: { id: number; name: string; max_occupancy: number; ac_price: number | null };
   stay_total: number;
   nights: { date: string; rate: number }[];
 };
@@ -277,7 +278,8 @@ export function NewBooking({
   const [guestId, setGuestId] = useState("");
   const [guestPicked, setGuestPicked] = useState<GuestLite | null>(null);
   const [newGuest, setNewGuest] = useState({ name: "", phone: "", email: "", idNumber: "" });
-  const [form, setForm] = useState({ channel: "walkin", adults: "2", children: "0", packageId: "", corporateAccountId: "", notes: "" });
+  const [form, setForm] = useState({ channel: "walkin", adults: "2", children: "0", packageId: "", corporateAccountId: "", notes: "", serviceChargePct: "0" });
+  const [acEnabled, setAcEnabled] = useState(false);
   const [isGroup, setIsGroup] = useState(false);
   const [group, setGroup] = useState({ name: "", contactName: "", contactPhone: "" });
   const [deposit, setDeposit] = useState({ take: false, method: "cash", amount: "" });
@@ -288,13 +290,26 @@ export function NewBooking({
   const nightsCount = chosen[0]?.nights.length ?? 0;
   const pkg = (packages ?? []).find((p) => p.id === Number(form.packageId));
   const corp = (corps ?? []).find((c) => c.id === Number(form.corporateAccountId));
-  let estTotal = chosen.reduce((s, r) => s + r.stay_total, 0);
-  if (corp) estTotal = Math.round(estTotal * (1 - corp.discount_pct / 100));
-  if (pkg) estTotal += pkg.price_per_person_per_night * parseInt(form.adults || "1") * nightsCount;
   const depositMode = str("billing.room_deposit_mode", "percentage");
   const depositPct = num("billing.room_deposit_pct", 20);
   const depositFixed = num("billing.room_deposit_fixed", 0);
-  const suggestedDeposit = depositAmount(estTotal, depositMode, depositPct, depositFixed);
+
+  const { estTotal, serviceCharge, suggestedDeposit, acCharge } = useMemo(() => {
+    let total = chosen.reduce((s, r) => s + r.stay_total, 0);
+    if (corp) total = Math.round(total * (1 - corp.discount_pct / 100));
+    if (pkg) total += pkg.price_per_person_per_night * parseInt(form.adults || "1") * nightsCount;
+    // Calculate AC charge based on room types (per night × number of nights)
+    const ac = acEnabled ? chosen.reduce((sum, r) => {
+      const acPrice = r.room_type?.ac_price ?? 0;
+      return sum + (acPrice * nightsCount);
+    }, 0) : 0;
+    total += ac;
+    const scPct = parseFloat(form.serviceChargePct) || 0;
+    const sc = Math.round(total * scPct / 100);
+    total += sc;
+    const deposit = depositAmount(total, depositMode, depositPct, depositFixed);
+    return { estTotal: total, serviceCharge: sc, suggestedDeposit: deposit, acCharge: ac };
+  }, [chosen, corp, pkg, form.adults, form.serviceChargePct, nightsCount, depositMode, depositPct, depositFixed, acEnabled]);
 
   const create = async () => {
     setError("");
@@ -314,6 +329,8 @@ export function NewBooking({
         children: parseInt(form.children) || 0,
         package_id: form.packageId ? Number(form.packageId) : undefined,
         corporate_account_id: form.corporateAccountId ? Number(form.corporateAccountId) : undefined,
+        service_charge_pct: form.serviceChargePct ? parseFloat(form.serviceChargePct) : 0,
+        ac_enabled: acEnabled,
         rooms: selRooms.map((roomId) => ({ room_id: roomId })),
         notes: form.notes || undefined,
         group: isGroup && group.name ? { name: group.name, contact_name: group.contactName || undefined, contact_phone: group.contactPhone || undefined } : undefined,
@@ -414,8 +431,22 @@ export function NewBooking({
             ))}
           </select>
         </Field>
+        <Field label="Service Charge %"><input className="input" type="number" value={form.serviceChargePct} onChange={(e) => {
+          let val = e.target.value;
+          if (val !== "") {
+            const num = parseFloat(val);
+            if (num < 0) val = "0";
+            if (num > 100) val = "100";
+          }
+          setForm({ ...form, serviceChargePct: val });
+        }} onFocus={() => { if (form.serviceChargePct === "0") setForm({ ...form, serviceChargePct: "" }); }} onBlur={() => { if (form.serviceChargePct === "") setForm({ ...form, serviceChargePct: "0" }); }} placeholder="0" min="0" max="100" /></Field>
         <Field label="Notes"><input className="input" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} /></Field>
       </div>
+
+      <label className="mt-3 flex items-center gap-2 text-sm font-semibold">
+        <input type="checkbox" checked={acEnabled} onChange={(e) => setAcEnabled(e.target.checked)} />
+        AC enabled (room-type charge added to room charge)
+      </label>
 
       <label className="mt-3 flex items-center gap-2 text-sm font-semibold">
         <input type="checkbox" checked={isGroup} onChange={(e) => setIsGroup(e.target.checked)} />
@@ -434,6 +465,18 @@ export function NewBooking({
           <span className="font-semibold">Estimated stay total</span>
           <span className="text-lg font-extrabold text-brand-700">{lkr(estTotal)}</span>
         </div>
+        {acCharge > 0 && (
+          <div className="mt-1 flex items-center justify-between text-xs text-slate-500">
+            <span>AC charge</span>
+            <span>{lkr(acCharge)}</span>
+          </div>
+        )}
+        {serviceCharge > 0 && (
+          <div className="mt-1 flex items-center justify-between text-xs text-slate-500">
+            <span>Service charge ({form.serviceChargePct || 0}%)</span>
+            <span>{lkr(serviceCharge)}</span>
+          </div>
+        )}
         <div className="mt-1 text-xs text-slate-500">
           Advance deposit ({depositMode === "fixed" ? "fixed" : `${depositPct}%`}): <b>{lkr(suggestedDeposit)}</b>
         </div>

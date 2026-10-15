@@ -20,6 +20,7 @@ class RoomType extends Model
         'amenities',
         'weekday_rate',
         'weekend_rate',
+        'ac_price',
         'item_checklist',
         'cleaning_checklist',
         'created_by',
@@ -35,6 +36,7 @@ class RoomType extends Model
             'max_occupancy' => 'integer',
             'weekday_rate' => 'integer',
             'weekend_rate' => 'integer',
+            'ac_price' => 'integer',
         ];
     }
 
