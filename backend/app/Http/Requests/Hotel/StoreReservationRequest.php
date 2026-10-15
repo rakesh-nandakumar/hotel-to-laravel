@@ -35,6 +35,8 @@ class StoreReservationRequest extends FormRequest
             'package_id' => ['nullable', 'integer', 'exists:packages,id'],
             'corporate_account_id' => ['nullable', 'integer', 'exists:corporate_accounts,id'],
             'notes' => ['nullable', 'string', 'max:2000'],
+            'service_charge_pct' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'ac_enabled' => ['nullable', 'boolean'],
 
             'rooms' => ['required', 'array', 'min:1'],
             'rooms.*.room_id' => ['required', 'integer', 'exists:rooms,id'],

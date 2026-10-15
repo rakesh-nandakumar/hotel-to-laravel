@@ -74,7 +74,7 @@ class BillingService
      */
     public function calcTax(int $base, ?float $scPct = null, ?float $vatPct = null): array
     {
-        $scPct ??= Settings::num('billing.service_charge_pct', 0);
+        $scPct ??= 0;
         $vatPct ??= Settings::num('billing.vat_pct', 0);
 
         $serviceCharge = (int) round($base * $scPct / 100);
@@ -154,6 +154,7 @@ class BillingService
                 'idempotency_key' => $opts['idempotency_key'] ?? null,
             ]);
 
+            // Only record till movements for CASH payments - CREDIT and other methods don't affect the till
             if ($opts['method'] === PaymentMethod::CASH) {
                 $this->till->recordMovement(
                     $tillSession,

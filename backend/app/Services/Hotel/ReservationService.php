@@ -9,6 +9,7 @@ use App\Models\Hotel\FolioLine;
 use App\Models\Hotel\GroupBooking;
 use App\Models\Hotel\Guest;
 use App\Models\Hotel\HousekeepingTask;
+use App\Models\Hotel\Notification;
 use App\Models\Hotel\Package;
 use App\Models\Hotel\Payment;
 use App\Models\Hotel\Reservation;
@@ -45,6 +46,7 @@ class ReservationService
         private readonly RoomPricingService $pricing,
         private readonly BillingService $billing,
         private readonly DocumentNumberService $documentNumbers,
+        private readonly NotificationService $notification,
     ) {}
 
     /**
@@ -119,6 +121,8 @@ class ReservationService
                 'corporate_account_id' => $data['corporate_account_id'] ?? null,
                 'group_booking_id' => $group?->id,
                 'notes' => $data['notes'] ?? null,
+                'service_charge_pct' => $data['service_charge_pct'] ?? 0,
+                'ac_enabled' => $data['ac_enabled'] ?? false,
                 'deposit_due' => $depositDue,
             ]);
 
@@ -183,6 +187,7 @@ class ReservationService
 
         $folio = $reservation->folio;
         $nightList = $this->pricing->nights($reservation->check_in, $reservation->check_out);
+        $reservation->loadMissing(['rooms.room.roomType']);
 
         DB::transaction(function () use ($reservation, $folio, $nightList, $data, $staffId) {
             $roomSourceId = Lookup::id(LookupType::LINE_SOURCE, LineSource::ROOM);
@@ -205,6 +210,22 @@ class ReservationService
                         'folio_id' => $folio->id, 'line_source_id' => $packageSourceId,
                         'description' => "{$reservation->package->name} × {$reservation->adults} pax — {$date}",
                         'qty' => $reservation->adults, 'unit_price' => $price, 'amount' => $price * $reservation->adults,
+                        'staff_id' => $staffId,
+                    ]);
+                }
+            }
+
+            if ($reservation->ac_enabled) {
+                $acSourceId = Lookup::id(LookupType::LINE_SOURCE, LineSource::SURCHARGE);
+                $totalAcCharge = 0;
+                foreach ($reservation->rooms as $rr) {
+                    $acPrice = $rr->room->roomType->ac_price ?? 0;
+                    $totalAcCharge += $acPrice * count($nightList);
+                }
+                if ($totalAcCharge > 0) {
+                    FolioLine::create([
+                        'folio_id' => $folio->id, 'line_source_id' => $acSourceId,
+                        'description' => 'AC charge', 'qty' => 1, 'unit_price' => $totalAcCharge, 'amount' => $totalAcCharge,
                         'staff_id' => $staffId,
                     ]);
                 }
@@ -249,8 +270,15 @@ class ReservationService
     /**
      * @return array<string, mixed>
      */
-    public function checkoutQuote(Reservation $reservation, bool $applyLate, bool $applyEarlyDeparture = false): array
+    public function checkoutQuote(Reservation $reservation, bool $applyLate, bool $applyEarlyDeparture = false, ?float $serviceChargePct = null): array
     {
+        // If service_charge_pct is explicitly passed (even as 0), use it. Otherwise use reservation's value or 0.
+        if ($serviceChargePct !== null) {
+            // Use the passed value (could be 0)
+        } else {
+            $serviceChargePct = $reservation->service_charge_pct ?? 0;
+        }
+
         $folio = $reservation->folio;
         if (! $folio) {
             throw ValidationException::withMessages(['reservation' => 'Reservation has no folio.']);
@@ -275,7 +303,7 @@ class ReservationService
         // non-order lines feed the folio-level tax base (they still count
         // toward the grand total below).
         $base = (int) $cleanLines->whereNull('order_id')->sum('amount') + $lateAmt + $earlyAdjustment;
-        $tax = $this->billing->calcTax($base);
+        $tax = $this->billing->calcTax($base, $serviceChargePct ?? $reservation->service_charge_pct ?? 0);
 
         $grandTotal = (int) $cleanLines->sum('amount') + $lateAmt + $earlyAdjustment + $tax['service_charge'] + $tax['vat'];
 
@@ -321,8 +349,9 @@ class ReservationService
         $lateAmt = ! empty($data['apply_late_surcharge']) ? (int) Settings::num('billing.late_checkout_surcharge', 0) : 0;
         $earlyDeparture = $this->earlyDepartureQuote($reservation);
         $applyEarlyDeparture = $earlyDeparture !== null && ! empty($data['apply_early_departure']);
+        $serviceChargePct = $data['service_charge_pct'] ?? null;
 
-        $result = DB::transaction(function () use ($folioId, $lateAmt, $payments, $staffId, $earlyDeparture, $applyEarlyDeparture) {
+        $result = DB::transaction(function () use ($reservation, $folioId, $lateAmt, $payments, $staffId, $earlyDeparture, $applyEarlyDeparture, $serviceChargePct) {
             $scId = Lookup::id(LookupType::LINE_SOURCE, LineSource::SERVICE_CHARGE);
             $vatId = Lookup::id(LookupType::LINE_SOURCE, LineSource::VAT);
             $surchargeId = Lookup::id(LookupType::LINE_SOURCE, LineSource::SURCHARGE);
@@ -379,7 +408,7 @@ class ReservationService
             // from the folio-level base (they still count toward grand total).
             $base = (int) FolioLine::where('folio_id', $folioId)->where('voided', false)->whereNull('order_id')
                 ->whereNotIn('line_source_id', [$scId, $vatId])->sum('amount');
-            $tax = $this->billing->calcTax($base);
+            $tax = $this->billing->calcTax($base, $serviceChargePct ?? $reservation->service_charge_pct ?? 0);
 
             if ($tax['service_charge'] > 0) {
                 FolioLine::create([
@@ -387,6 +416,11 @@ class ReservationService
                     'description' => "Service charge {$tax['service_charge_pct']}%", 'qty' => 1,
                     'unit_price' => $tax['service_charge'], 'amount' => $tax['service_charge'], 'staff_id' => $staffId,
                 ]);
+            }
+
+            // Update reservation with the service charge percentage used at checkout
+            if ($serviceChargePct !== null) {
+                $reservation->update(['service_charge_pct' => $serviceChargePct]);
             }
             if ($tax['vat'] > 0) {
                 FolioLine::create([
@@ -418,9 +452,10 @@ class ReservationService
         // A net overpay with no new payment at all (newTotal === 0) is the
         // separate, pre-existing "large deposit exceeds the final bill" case,
         // which keeps following refund_method below.
+        // CREDIT payments are also allowed to exceed (for tracking purposes).
         $newTotal = (int) collect($payments)->sum('amount');
         $isChangeFromTender = $result['overpaid'] > 0 && $newTotal > 0;
-        if ($isChangeFromTender && ! collect($payments)->contains(fn ($p) => $p['method'] === PaymentMethod::CASH)) {
+        if ($isChangeFromTender && ! collect($payments)->contains(fn ($p) => $p['method'] === PaymentMethod::CASH || $p['method'] === PaymentMethod::CREDIT)) {
             throw ValidationException::withMessages([
                 'payments' => 'Only cash payments may exceed the amount due — reduce the tendered amount to match the balance.',
             ]);
@@ -432,6 +467,19 @@ class ReservationService
                 'reference' => $p['reference'] ?? null, 'staff_id' => $staffId,
                 'guest_id_for_loyalty' => $reservation->guest_id,
             ]);
+
+            // Create notification for CREDIT payments
+            if ($p['method'] === PaymentMethod::CREDIT) {
+                $this->notification->send([
+                    'type' => 'credit_payment',
+                    'channel' => 'console',
+                    'to' => 'admin',
+                    'subject' => 'Credit Payment Received',
+                    'body' => "Reservation {$reservation->code}: Credit payment of LKR ".number_format($p['amount'] / 100, 2).' received at checkout.',
+                    'ref_type' => 'reservation',
+                    'ref_id' => $reservation->id,
+                ]);
+            }
         }
         if ($result['overpaid'] > 0) {
             $this->billing->recordPayment([

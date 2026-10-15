@@ -66,7 +66,12 @@ class ReservationController extends Controller
                 'bed_config' => $room->bed_config,
                 // Keep legacy room_type shape for backward compat with older SPA builds,
                 // but new SPA should use the top-level fields above.
-                'room_type' => ['id' => $room->id, 'name' => $room->name ?? 'Standard', 'max_occupancy' => $room->max_occupancy],
+                'room_type' => [
+                    'id' => $room->id,
+                    'name' => $room->name ?? 'Standard',
+                    'max_occupancy' => $room->max_occupancy,
+                    'ac_price' => $room->roomType?->ac_price ?? null,
+                ],
                 'nights' => $perNight,
                 'stay_total' => $perNight->sum('rate'),
             ];
@@ -227,10 +232,13 @@ class ReservationController extends Controller
     /** Preview: consolidated bill incl. VAT + service charge as separate lines. */
     public function checkoutQuote(Request $request, Reservation $reservation): JsonResponse
     {
+        $scPct = $request->has('service_charge_pct') ? (float) $request->input('service_charge_pct') : null;
+
         return response()->json($this->reservations->checkoutQuote(
             $reservation,
             $request->boolean('late'),
             $request->boolean('early_departure', true),
+            $scPct,
         ));
     }
 

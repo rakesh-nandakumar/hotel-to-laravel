@@ -6,8 +6,15 @@ import {
   useRef,
   useState,
 } from "react";
+
+declare global {
+  interface WindowEventMap {
+    'credit-payments-updated': CustomEvent<void>;
+  }
+}
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useSettings } from "../lib/util";
+import { api } from "../lib/api";
 import {
   LayoutDashboard,
   BedDouble,
@@ -68,6 +75,7 @@ type Item = {
   permission?: string | string[];
   fullAdminOnly?: boolean;
   condition?: string;
+  countKey?: string;
 };
 type Section = { title: string; items: Item[]; condition?: string };
 
@@ -242,6 +250,7 @@ const SECTIONS: Section[] = [
         label: "Notifications",
         icon: <Bell size={18} />,
         permission: "hotel_notifications.access",
+        countKey: "credit_payments",
       },
       // Payroll is Owner-only server-side (Managers never see salaries).
       {
@@ -585,6 +594,7 @@ export default function Layout({ children }: { children: ReactNode }) {
   );
   const [online, setOnline] = useState(navigator.onLine);
   const [queued, setQueued] = useState(0);
+  const [creditPayments, setCreditPayments] = useState(0);
   const [confirmLogout, setConfirmLogout] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
 
@@ -607,6 +617,30 @@ export default function Layout({ children }: { children: ReactNode }) {
       window.removeEventListener("online", on);
       window.removeEventListener("offline", off);
       unsub();
+    };
+  }, []);
+
+  useEffect(() => {
+    const fetchCreditPayments = async () => {
+      try {
+        const res = await api<{ count: number }>("/money/credit-payments-count");
+        setCreditPayments(res.count || 0);
+      } catch (err) {
+        setCreditPayments(0);
+      }
+    };
+    fetchCreditPayments();
+    const interval = setInterval(fetchCreditPayments, 60000); // Refresh every minute
+    
+    // Listen for custom event when credit payments are updated
+    const handleCreditPaymentsUpdate = () => {
+      fetchCreditPayments();
+    };
+    window.addEventListener('credit-payments-updated', handleCreditPaymentsUpdate);
+    
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('credit-payments-updated', handleCreditPaymentsUpdate);
     };
   }, []);
 
@@ -694,7 +728,7 @@ export default function Layout({ children }: { children: ReactNode }) {
                   title={mini ? i.label : undefined}
                   className={({ isActive }) =>
                     clsx(
-                      "flex items-center rounded-lg text-sm font-medium transition-all",
+                      "flex items-center rounded-lg text-sm font-medium transition-all relative",
                       mini ? "justify-center px-0 py-2.5" : "gap-2.5 px-3 py-2",
                       isActive
                         ? "bg-brand-600 text-white shadow-sm"
@@ -707,6 +741,11 @@ export default function Layout({ children }: { children: ReactNode }) {
                 >
                   {i.icon}
                   {!mini && i.label}
+                  {!mini && i.countKey === "credit_payments" && creditPayments > 0 && (
+                    <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold w-5 h-5 flex items-center justify-center rounded-full">
+                      {creditPayments}
+                    </span>
+                  )}
                 </NavLink>
               ))}
             </div>

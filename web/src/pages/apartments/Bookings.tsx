@@ -17,7 +17,7 @@ const CHANNEL_OPTIONS = [
   { code: "agent", label: "Agent" },
   { code: "walk_in", label: "Walk-in" },
 ];
-const PAY_METHOD_OPTIONS = ["cash", "card", "lankaqr", "bank_transfer"];
+const PAY_METHOD_OPTIONS = ["cash", "card", "lankaqr", "bank_transfer", "credit"];
 
 type BookingRow = {
   id: number; code: string; check_in: string; check_out: string;

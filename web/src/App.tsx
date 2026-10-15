@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { ReactNode } from "react";
+import { ReactNode, useEffect } from "react";
 import { AuthProvider, useAuth } from "./lib/auth";
 import { BrandingProvider } from "./lib/branding";
 import { landingPath } from "./lib/landing";
@@ -37,6 +37,7 @@ import Staff from "./pages/Staff";
 import UserDetail from "./pages/UserDetail";
 import Roles from "./pages/Roles";
 import Payroll from "./pages/Payroll";
+import PendingPayments from "./pages/PendingPayments";
 import AuditLog from "./pages/AuditLog";
 import PreCheckIn from "./pages/PreCheckIn";
 import VenueInquiry from "./pages/VenueInquiry";
@@ -72,6 +73,22 @@ function Guard({ children, permission, fullAdminOnly }: { children: ReactNode; p
   return <Layout>{children}</Layout>;
 }
 
+function WheelScrollPreventer() {
+  useEffect(() => {
+    const handleWheel = (e: WheelEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' && target.getAttribute('type') === 'number') {
+        e.preventDefault();
+      }
+    };
+
+    document.addEventListener('wheel', handleWheel, { passive: false });
+    return () => document.removeEventListener('wheel', handleWheel);
+  }, []);
+
+  return null;
+}
+
 /**
  * The tenant-facing SPA tree. basename is the tenant's URL prefix (e.g.
  * "/wasana") — the boot gate in main.tsx derives it from the path, and every
@@ -84,6 +101,7 @@ export default function App({ basename }: { basename: string }) {
       <BrandingProvider>
       <ToastProvider>
         <BrowserRouter basename={basename} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+          <WheelScrollPreventer />
           <Routes>
           <Route path="/login" element={<Login />} />
           {/* Public guest-facing pages (no login) */}
@@ -142,6 +160,7 @@ export default function App({ basename }: { basename: string }) {
           <Route path="/apartments/reports" element={<Guard permission="apartment_reports.dashboard"><ApartmentReports /></Guard>} />
           <Route path="/apartments/reports/:reportKey" element={<Guard permission="apartment_reports.dashboard"><ApartmentReports /></Guard>} />
           <Route path="/payroll" element={<Guard permission="hotel_payroll.view"><Payroll /></Guard>} />
+          <Route path="/money/pending-payments" element={<Guard permission="money_pending_payments.access"><PendingPayments /></Guard>} />
           <Route path="/audit-log" element={<Guard permission="audit_logs.access"><AuditLog /></Guard>} />
           <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

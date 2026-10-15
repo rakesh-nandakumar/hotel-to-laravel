@@ -47,6 +47,26 @@ class MenuDefinition
                 'actions' => ['access', 'view', 'export'],
             ],
             [
+                'name' => 'Money',
+                'icon' => 'banknote',
+                'children' => [
+                    [
+                        'name' => 'Till',
+                        'icon' => 'clock',
+                        'route_name' => 'till.current',
+                        'module_key' => 'till',
+                        'actions' => ['access', 'open', 'close', 'close_any', 'cash_in', 'cash_out'],
+                    ],
+                    [
+                        'name' => 'Pending Payments',
+                        'icon' => 'bell',
+                        'route_name' => 'money.pending-payments.index',
+                        'module_key' => 'money_pending_payments',
+                        'actions' => ['access', 'view', 'mark_paid'],
+                    ],
+                ],
+            ],
+            [
                 'name' => 'Rooms',
                 'icon' => 'bed-double',
                 'children' => [
@@ -197,13 +217,6 @@ class MenuDefinition
                         'actions' => ['access', 'view', 'create', 'edit', 'confirm', 'complete', 'cancel'],
                     ],
                 ],
-            ],
-            [
-                'name' => 'Till',
-                'icon' => 'clock',
-                'route_name' => 'till.current',
-                'module_key' => 'till',
-                'actions' => ['access', 'open', 'close', 'close_any', 'cash_in', 'cash_out'],
             ],
             [
                 'name' => 'Attendance',
