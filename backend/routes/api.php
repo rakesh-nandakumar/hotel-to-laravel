@@ -32,6 +32,7 @@ use App\Http\Controllers\Central\MeController as CentralMeController;
 use App\Http\Controllers\Central\TenantController;
 use App\Http\Controllers\Central\TenantDataPurgeController;
 use App\Http\Controllers\Central\TenantModuleController;
+use App\Http\Controllers\Central\TenantResetController;
 use App\Http\Controllers\Central\TenantRoleController;
 use App\Http\Controllers\Central\TenantSettingController;
 use App\Http\Controllers\Central\TenantTillController;
@@ -72,6 +73,7 @@ use App\Http\Controllers\Hotel\VenueBookingController;
 use App\Http\Controllers\Hotel\VenueController;
 use App\Http\Controllers\Hotel\VenueExtraChargeController;
 use App\Http\Controllers\Hotel\VisitorLogController;
+use App\Http\Controllers\Money\PendingPaymentsController;
 use App\Http\Controllers\Profile\TwoFactorController;
 use App\Http\Controllers\Settings\BrowserSessionsController;
 use App\Http\Controllers\Settings\PasswordController;
@@ -221,6 +223,7 @@ Route::prefix('central')->name('central.')->middleware('central_only')->group(fu
             Route::get('purges/{purge}/download', [TenantDataPurgeController::class, 'download'])->name('purges.download');
             Route::post('purges/{purge}/restore-preview', [TenantDataPurgeController::class, 'restorePreview'])->middleware('throttle:10,1,tenant-data-restore-preview')->name('purges.restore-preview');
             Route::post('purges/{purge}/restore', [TenantDataPurgeController::class, 'restore'])->middleware('throttle:5,1,tenant-data-restore')->name('purges.restore');
+            Route::post('reset', [TenantResetController::class, 'reset'])->middleware('throttle:2,1,tenant-data-reset')->name('reset');
         });
     });
 });
@@ -944,6 +947,20 @@ Route::middleware(['auth', 'check_active'])->group(function () {
         Route::get('sessions', [TillController::class, 'sessions'])
             ->middleware('can_do:till.access')
             ->name('sessions.index');
+        Route::get('{session}/daily-sales-report', [TillController::class, 'dailySalesReport'])
+            ->middleware('can_do:till.access')
+            ->name('dailySalesReport');
+    });
+
+    // ── Money ───────────────────────────────────────────────────────────────────
+    Route::prefix('money')->name('money.')->group(function () {
+        Route::get('pending-payments', [PendingPaymentsController::class, 'index'])
+            ->middleware('can_do:money_pending_payments.access')
+            ->name('pending-payments.index');
+        Route::get('credit-payments-count', [PendingPaymentsController::class, 'creditPaymentsCount'])
+            ->name('credit-payments-count');
+        Route::post('fulfill-credit-payment', [PendingPaymentsController::class, 'fulfillCreditPayment'])
+            ->name('fulfill-credit-payment');
     });
 
     // ── Attendance ────────────────────────────────────────────────────────────

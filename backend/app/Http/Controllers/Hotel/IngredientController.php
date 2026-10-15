@@ -52,6 +52,7 @@ class IngredientController extends Controller
                 $row['low'] = $ingredient->isLow();
                 $row['next_expiry'] = $ingredient->batches->first()?->expiry_date;
                 $row['has_expired'] = $ingredient->batches->contains(fn (IngredientBatch $b) => $b->expiry_date && $b->expiry_date->lt($today));
+                $row['kot_target'] = $ingredient->kot_target ?? 'kitchen';
                 // What's actually sellable/usable right now — total minus any
                 // not-yet-written-off expired batch quantity (the hourly sweep
                 // normally clears this gap; see Ingredient::sellableQty()).
@@ -205,7 +206,7 @@ class IngredientController extends Controller
             ->where('stock_qty', '>', 0)
             ->whereNotNull('selling_price')
             ->where('selling_price', '>', 0)
-            ->select('id', 'name', 'selling_price', 'stock_qty', 'image', 'menu_category_id', 'unit')
+            ->select('id', 'name', 'selling_price', 'stock_qty', 'image', 'menu_category_id', 'unit', 'kot_target')
             // select() must come before withSum() — select() replaces the
             // column list wholesale, which would otherwise wipe out the
             // aggregate subquery column withSum() adds.
@@ -237,6 +238,7 @@ class IngredientController extends Controller
                 'stock_qty' => $p->stock_qty,
                 'image' => $p->image,
                 'unit' => $p->unit,
+                'kot_target' => $p->kot_target,
             ]);
 
         return response()->json(['products' => $products]);

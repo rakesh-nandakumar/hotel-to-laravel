@@ -102,7 +102,7 @@ function elapsedMins(iso: string, now: number) {
 /** Bar Order Ticket screen — a full-screen Bar Display System for the shared bar monitor. */
 export default function BOT() {
   const { can } = useAuth();
-  const { data: kotData, reload } = useFetch<{ orders: KotOrder[] }>("/api/hotel/orders/kot?target=bar");
+  const { data: kotData, reload } = useFetch<{ orders: KotOrder[] }>("/orders/kot?target=bar");
   const { data: todaysData, reload: reloadToday } = useFetch<{ orders: RecentOrder[] }>("/orders?scope=today");
   const orders = kotData?.orders;
   const todays = todaysData?.orders;

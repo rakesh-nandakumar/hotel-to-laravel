@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from "react";
-import { api, post, ensureCsrfCookie } from "./api";
+import { api, post, ensureCsrfCookie, ApiFail } from "./api";
 
 export type CentralAdmin = { id: number; name: string; email: string };
 
@@ -26,14 +26,40 @@ export function CentralAuthProvider({ children }: { children: ReactNode }) {
     try {
       const data = await api<{ admin: CentralAdmin | null }>("/central/me", { silent401: true });
       setAdmin(data.admin);
-    } catch {
-      setAdmin(null);
+    } catch (e) {
+      // If we get a 404, it means there's a stale tenant session in the browser
+      // Clear it and retry once
+      if ((e as ApiFail).status === 404) {
+        document.cookie.split(";").forEach((c) => {
+          const eqPos = c.indexOf("=");
+          const name = eqPos > -1 ? c.slice(0, eqPos).trim() : c.trim();
+          if (name === "laravel_session" || name.startsWith("XSRF-")) {
+            document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`;
+          }
+        });
+        try {
+          const data = await api<{ admin: CentralAdmin | null }>("/central/me", { silent401: true });
+          setAdmin(data.admin);
+        } catch {
+          setAdmin(null);
+        }
+      } else {
+        setAdmin(null);
+      }
     }
   }, []);
 
   useEffect(() => {
     refresh().finally(() => setLoading(false));
   }, [refresh]);
+
+  // Auto-refresh session every 10 minutes to prevent timeout
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (admin) refresh();
+    }, 10 * 60 * 1000); // 10 minutes
+    return () => clearInterval(interval);
+  }, [admin, refresh]);
 
   return (
     <Ctx.Provider

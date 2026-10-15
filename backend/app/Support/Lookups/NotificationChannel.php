@@ -9,4 +9,6 @@ class NotificationChannel
     public const WHATSAPP = 'whatsapp';
 
     public const SMS = 'sms';
+
+    public const CONSOLE = 'console';
 }

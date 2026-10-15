@@ -24,6 +24,7 @@ export type StockItem = {
   image: string | null;
   active: boolean;
   kind?: { id: number; code: string };
+  kot_target: "kitchen" | "bar";
   next_expiry?: string | null;
   has_expired: boolean;
   /** What's actually sellable/usable right now — stock_qty minus any not-yet-written-off expired batch qty (0 if inactive). This is what POS/menus show, not stock_qty. */
@@ -32,7 +33,7 @@ export type StockItem = {
   batches: Batch[];
 };
 
-export type ExpiryBatch = Batch & { days_left: number; expired: boolean; ingredient: { name: string; unit: string } };
+export type ExpiryBatch = Batch & { days_left: number; expired: boolean; ingredient: { id: number; name: string; unit: string } };
 
 export type StockItemsPage = {
   ingredients: StockItem[];

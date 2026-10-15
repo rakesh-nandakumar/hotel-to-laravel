@@ -410,6 +410,12 @@ export function DataTab({ tenantId, tenantName }: { tenantId: number; tenantName
   const [minSeconds, setMinSeconds] = useState(3);
   const toast = useToast();
 
+  // Tenant reset modal state
+  const [resetConfirming, setResetConfirming] = useState(false);
+  const [resetPassword, setResetPassword] = useState("");
+  const [resetPwError, setResetPwError] = useState("");
+  const [resetBusy, setResetBusy] = useState(false);
+
   const loadCatalog = useCallback(() => {
     setCatalogLoading(true);
     api<CatalogResponse>(`/central/tenants/${tenantId}/data/catalog`)
@@ -447,6 +453,19 @@ export function DataTab({ tenantId, tenantName }: { tenantId: number; tenantName
     } finally { setBusy(false); }
   };
 
+  const tenantReset = async () => {
+    setResetPwError(""); setResetBusy(true);
+    try {
+      const res = await post<{ message: string }>(`/central/tenants/${tenantId}/data/reset`, { password: resetPassword });
+      toast.success(res.message ?? "Tenant reset completed");
+      setResetConfirming(false); setResetPassword("");
+      loadCatalog();
+    } catch (e: unknown) {
+      const err = e as { status?: number; errors?: Record<string, string[]>; message?: string };
+      setResetPwError(err.errors?.password?.[0] ?? err.message ?? "Reset failed");
+    } finally { setResetBusy(false); }
+  };
+
   const selectAllTransactional = (moduleKey: string) => {
     if (!catalog) return;
     const mod = catalog.modules.find((m) => m.key === moduleKey);
@@ -470,6 +489,7 @@ export function DataTab({ tenantId, tenantName }: { tenantId: number; tenantName
           <div className="flex gap-2">
             <button className={clsx("btn-secondary !py-1.5 text-sm", view === "select" && "bg-slate-200")} onClick={() => setView("select")}><Database size={14} /> Select data</button>
             <button className={clsx("btn-secondary !py-1.5 text-sm", view === "history" && "bg-slate-200")} onClick={() => setView("history")}><Clock size={14} /> History</button>
+            <button className="btn-danger !py-1.5 text-sm" onClick={() => { setResetPassword(""); setResetPwError(""); setResetConfirming(true); }}><Trash2 size={14} /> Full reset</button>
           </div>
         </div>
       </Card>
@@ -545,6 +565,37 @@ export function DataTab({ tenantId, tenantName }: { tenantId: number; tenantName
         </>
       )}
       {view === "history" && <HistoryTab tenantId={tenantId} />}
+
+      {/* Tenant Reset Confirmation Dialog */}
+      <DangerConfirmDialog
+        open={resetConfirming}
+        title={<span className="flex items-center gap-2 text-red-700"><ShieldAlert size={18} /> Full tenant reset — {tenantName}</span>}
+        message={
+          <div className="space-y-2 text-sm">
+            <p>This will <strong>permanently delete</strong> all data for <strong>{tenantName}</strong>:</p>
+            <ul className="list-inside list-disc space-y-1 text-slate-600">
+              <li>All reservations, guests, and hotel invoices</li>
+              <li>All POS orders, bills, and payments</li>
+              <li>All dining tables and QR codes</li>
+              <li>Complete menu (categories, items, add-ons)</li>
+              <li>All inventory items and stock</li>
+              <li>All till sessions and cash movements</li>
+              <li>All QR ordering points</li>
+            </ul>
+            <p className="font-semibold text-red-600">All rooms will be set to Available.</p>
+            <p className="text-xs text-slate-400">This action cannot be undone. No backup will be created.</p>
+          </div>
+        }
+        confirmLabel="Reset tenant"
+        minSeconds={5}
+        countdownKey="tenant-reset"
+        password={resetPassword}
+        onPasswordChange={setResetPassword}
+        passwordError={resetPwError}
+        busy={resetBusy}
+        onConfirm={tenantReset}
+        onClose={() => setResetConfirming(false)}
+      />
     </div>
   );
 }

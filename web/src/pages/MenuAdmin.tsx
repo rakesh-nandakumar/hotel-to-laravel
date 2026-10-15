@@ -1,14 +1,14 @@
 import { useState } from "react";
 import { Plus, Search, ClipboardList, Trash2, ArchiveRestore, ImageOff, ListPlus } from "lucide-react";
 import { api, post, put } from "../lib/api";
-import { useFetch, lkr, toCents, centsToRupees } from "../lib/util";
+import { useFetch, lkr, toCents, centsToRupees, useSettings } from "../lib/util";
 import { Badge, Empty, ErrorText, Field, Modal, Pagination } from "../components/ui";
 import { ImageDropUpload } from "../components/ImageUpload";
 import { useAuth } from "../lib/auth";
 import clsx from "clsx";
 
 type Cat = { id: number; name: string; sort_order: number; is_minibar: boolean; active: boolean; items_count: number; kitchen_station: { code: string; name: string } | null };
-type Ingredient = { id: number; name: string; unit: string };
+type Ingredient = { id: number; name: string; unit: string; kot_target: "kitchen" | "bar" };
 type Modifier = { id: number; name: string; price_delta: number };
 type ModifierGroup = { id: number; name: string; is_required: boolean; max_select: number; modifiers: Modifier[] };
 type AddOnLink = { id: number; menu_item_id?: number | null; menu_item?: { id: number; name: string } | null; menu_category_id?: number | null; menu_category?: { id: number; name: string } | null };
@@ -34,6 +34,7 @@ type Item = {
     name: string;
     unit: string;
   } | null;
+  menu_category_id: number;
   category: {
     id: number;
     name: string;
@@ -53,6 +54,90 @@ type Item = {
 const KITCHEN_STATIONS = ["kitchen", "bar", "dessert"] as const;
 type ItemsPage = { menu_items: { data: Item[]; current_page: number; per_page: number; total: number }; stats: { on_menu: number; sold_out: number; archived: number } };
 
+function renderMenuItem(
+  i: Item,
+  canEdit: boolean,
+  canDelete: boolean,
+  canSoldOut: boolean,
+  toggleSoldOut: (i: Item) => void,
+  setEdit: (item: Item | "new" | null) => void,
+  setRemoving: (item: Item | null) => void,
+  setFlash: (msg: string) => void,
+  reload: () => void,
+) {
+  return (
+    <div key={i.id} className="flex flex-wrap items-center gap-3 px-4 py-2.5 transition hover:bg-slate-50/60">
+      {i.image ? (
+        <img src={i.image} alt="" className="h-10 w-10 shrink-0 rounded-lg object-cover" />
+      ) : (
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-300">
+          <ImageOff size={16} />
+        </div>
+      )}
+      <span className="w-12 shrink-0 rounded-lg bg-slate-100 px-2 py-1 text-center font-mono text-xs font-black text-slate-600">
+        #{i.item_no ?? "—"}
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className={clsx("truncate text-sm font-bold", !i.active && "text-slate-400 line-through")}>{i.name}</div>
+        <div className="flex items-center gap-1 text-[11px] text-slate-400">
+          <span>{i.category.name}</span>
+          {i.recipe.length > 0 && <span>· BOM: {i.recipe.length} ingredient{i.recipe.length === 1 ? "" : "s"}</span>}
+          {i.stock_ingredient && <span className="rounded bg-slate-100 px-1 py-px font-semibold text-slate-500">unit stock</span>}
+        </div>
+      </div>
+      <span className="text-sm font-extrabold text-brand-700">{lkr(i.price)}</span>
+      {i.active ? (
+        i.sold_out ? (
+          canSoldOut ? (
+            <button
+              className="rounded-full bg-red-100 px-2.5 py-1 text-xs font-bold text-red-700 transition hover:bg-red-200"
+              onClick={() => toggleSoldOut(i)}
+            >
+              SOLD OUT
+            </button>
+          ) : (
+            <Badge color="red">SOLD OUT</Badge>
+          )
+        ) : i.available === false ? (
+          <Badge color="amber">
+            {i.availability_reason === "ingredient_expired"
+              ? "Ingredient expired"
+              : "Out of stock"}
+          </Badge>
+        ) : canSoldOut ? (
+          <button
+            className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-bold text-emerald-700 transition hover:bg-emerald-200"
+            onClick={() => toggleSoldOut(i)}
+          >
+            Available
+          </button>
+        ) : (
+          <Badge color="green">Available</Badge>
+        )
+      ) : (
+        canEdit && (
+          <button
+            className="btn-secondary !py-1 text-xs"
+            onClick={() => put(`/menu/items/${i.id}`, { active: true }).then(() => { setFlash(`"${i.name}" restored to the menu.`); reload(); })}
+          >
+            <ArchiveRestore size={13} /> Restore
+          </button>
+        )
+      )}
+      {i.active && (
+        <>
+          {canEdit && <button className="btn-ghost !py-1 text-xs" onClick={() => setEdit(i)}>Edit</button>}
+          {canDelete && (
+            <button className="btn-ghost !p-1.5 text-red-400 hover:!bg-red-50 hover:text-red-600" title="Remove item" onClick={() => setRemoving(i)}>
+              <Trash2 size={15} />
+            </button>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function MenuAdmin() {
   const { can } = useAuth();
   const canCreate = can("hotel_menu_items.create");
@@ -64,12 +149,15 @@ export default function MenuAdmin() {
   const [showArchived, setShowArchived] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
-  const params = `active=${!showArchived}&category_id=${catFilter}&q=${encodeURIComponent(q)}&page=${page}&page_size=${pageSize}`;
-  const { data, reload, error } = useFetch<ItemsPage>(`/menu/items?${params}`, [q, catFilter, showArchived, page, pageSize]);
+  const [activeTab, setActiveTab] = useState<"kitchen" | "bar">("kitchen");
+  const params = `active=${!showArchived}&q=${encodeURIComponent(q)}&page=${page}&page_size=${pageSize}`;
+  const { data, reload, error } = useFetch<ItemsPage>(`/menu/items?${params}`, [q, showArchived, page, pageSize]);
   const { data: catsData, reload: reloadCats } = useFetch<{ menu_categories: Cat[] }>("/menu/categories");
   const { data: ingredientsData } = useFetch<{ ingredients: Ingredient[] }>("/ingredients");
   const cats = catsData?.menu_categories;
   const ingredients = ingredientsData?.ingredients;
+  const { bool } = useSettings();
+  const botEnabled = bool("bot.enabled", false);
   const [edit, setEdit] = useState<Item | "new" | null>(null);
   const [addOnsOpen, setAddOnsOpen] = useState(false);
   const [removing, setRemoving] = useState<Item | null>(null);
@@ -77,8 +165,19 @@ export default function MenuAdmin() {
   const [err, setErr] = useState("");
 
   const shown = data?.menu_items.data ?? [];
+  const filteredByTab = botEnabled ? shown.filter((i) => i.kot_target === activeTab) : shown;
+  const filteredByCat = catFilter ? filteredByTab.filter((i) => i.menu_category_id === parseInt(catFilter)) : filteredByTab;
+  const filteredShown = q !== '' 
+    ? filteredByCat.filter((i) => i.name.toLowerCase().includes(q.toLowerCase()) || String(i.item_no).includes(q))
+    : filteredByCat;
   const soldOutCount = data?.stats.sold_out ?? 0;
   const archivedCount = data?.stats.archived ?? 0;
+
+  // Calculate category counts based on active tab
+  const catsWithCounts = (cats ?? []).map((c) => ({
+    ...c,
+    items_count: botEnabled ? filteredByTab.filter((i) => i.menu_category_id === c.id).length : shown.filter((i) => i.menu_category_id === c.id).length,
+  }));
 
   const toggleSoldOut = (i: Item) =>
     put(`/menu/items/${i.id}/sold-out`, { sold_out: !i.sold_out })
@@ -106,17 +205,36 @@ export default function MenuAdmin() {
       <div className="grid grid-cols-3 gap-3">
         <div className="card p-4">
           <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">Items on menu</div>
-          <div className="mt-1 text-2xl font-extrabold">{data?.stats.on_menu ?? 0}</div>
+          <div className="mt-1 text-2xl font-extrabold">{filteredShown.length}</div>
         </div>
         <div className="card p-4">
           <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">Sold out now</div>
-          <div className={clsx("mt-1 text-2xl font-extrabold", soldOutCount > 0 ? "text-red-600" : "text-emerald-600")}>{soldOutCount}</div>
+          <div className={clsx("mt-1 text-2xl font-extrabold", filteredShown.filter((i) => i.sold_out).length > 0 ? "text-red-600" : "text-emerald-600")}>{filteredShown.filter((i) => i.sold_out).length}</div>
         </div>
         <button className="card p-4 text-left transition hover:shadow-md" onClick={() => { setShowArchived(!showArchived); setPage(1); }}>
           <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">Archived</div>
           <div className="mt-1 text-2xl font-extrabold text-slate-500">{archivedCount}</div>
         </button>
       </div>
+
+      {/* KOT/BOT tabs - only show if BOT is enabled */}
+      {botEnabled && (
+        <div className="flex gap-1 rounded-xl bg-slate-200/70 p-1">
+          <button
+            onClick={() => setActiveTab("kitchen")}
+            className={clsx("rounded-lg px-4 py-2 text-sm font-semibold transition", activeTab === "kitchen" ? "bg-white shadow-sm" : "text-slate-500 hover:text-slate-800")}
+          >
+            Kitchen (KOT)
+          </button>
+          <button
+            onClick={() => setActiveTab("bar")}
+            className={clsx("rounded-lg px-4 py-2 text-sm font-semibold transition", activeTab === "bar" ? "bg-white shadow-sm" : "text-slate-500 hover:text-slate-800")}
+          >
+            Bar (BOT)
+          </button>
+        </div>
+      )}
+
 
       {/* Search + category chips */}
       <div className="flex flex-wrap items-center gap-2">
@@ -130,7 +248,7 @@ export default function MenuAdmin() {
         >
           All
         </button>
-        {(cats ?? []).map((c) => (
+        {catsWithCounts.map((c) => (
           <button
             key={c.id}
             onClick={() => { setCatFilter(catFilter === String(c.id) ? "" : String(c.id)); setPage(1); }}
@@ -161,79 +279,9 @@ export default function MenuAdmin() {
 
       {/* Item list */}
       <div className="card divide-y divide-slate-50">
-        {shown.map((i) => (
-          <div key={i.id} className="flex flex-wrap items-center gap-3 px-4 py-2.5 transition hover:bg-slate-50/60">
-            {i.image ? (
-              <img src={i.image} alt="" className="h-10 w-10 shrink-0 rounded-lg object-cover" />
-            ) : (
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-300">
-                <ImageOff size={16} />
-              </div>
-            )}
-            <span className="w-12 shrink-0 rounded-lg bg-slate-100 px-2 py-1 text-center font-mono text-xs font-black text-slate-600">
-              #{i.item_no ?? "—"}
-            </span>
-            <div className="min-w-0 flex-1">
-              <div className={clsx("truncate text-sm font-bold", !i.active && "text-slate-400 line-through")}>{i.name}</div>
-              <div className="flex items-center gap-1 text-[11px] text-slate-400">
-                <span>{i.category.name}</span>
-                {i.recipe.length > 0 && <span>· BOM: {i.recipe.length} ingredient{i.recipe.length === 1 ? "" : "s"}</span>}
-                {i.stock_ingredient && <span className="rounded bg-slate-100 px-1 py-px font-semibold text-slate-500">unit stock</span>}
-              </div>
-            </div>
-            <span className="text-sm font-extrabold text-brand-700">{lkr(i.price)}</span>
-            {i.active ? (
-              i.sold_out ? (
-                canSoldOut ? (
-                  <button
-                    className="rounded-full bg-red-100 px-2.5 py-1 text-xs font-bold text-red-700 transition hover:bg-red-200"
-                    onClick={() => toggleSoldOut(i)}
-                  >
-                    SOLD OUT
-                  </button>
-                ) : (
-                  <Badge color="red">SOLD OUT</Badge>
-                )
-              ) : i.available === false ? (
-                <Badge color="amber">
-                  {i.availability_reason === "ingredient_expired"
-                    ? "Ingredient expired"
-                    : "Out of stock"}
-                </Badge>
-              ) : canSoldOut ? (
-                <button
-                  className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-bold text-emerald-700 transition hover:bg-emerald-200"
-                  onClick={() => toggleSoldOut(i)}
-                >
-                  Available
-                </button>
-              ) : (
-                <Badge color="green">Available</Badge>
-              )
-            ) : (
-              canEdit && (
-                <button
-                  className="btn-secondary !py-1 text-xs"
-                  onClick={() => put(`/menu/items/${i.id}`, { active: true }).then(() => { setFlash(`"${i.name}" restored to the menu.`); reload(); })}
-                >
-                  <ArchiveRestore size={13} /> Restore
-                </button>
-              )
-            )}
-            {i.active && (
-              <>
-                {canEdit && <button className="btn-ghost !py-1 text-xs" onClick={() => setEdit(i)}>Edit</button>}
-                {canDelete && (
-                  <button className="btn-ghost !p-1.5 text-red-400 hover:!bg-red-50 hover:text-red-600" title="Remove item" onClick={() => setRemoving(i)}>
-                    <Trash2 size={15} />
-                  </button>
-                )}
-              </>
-            )}
-          </div>
-        ))}
-        {shown.length === 0 && <Empty text={showArchived ? "Nothing archived" : "No items match"} />}
-        {data && <Pagination page={data.menu_items.current_page} pageSize={data.menu_items.per_page} total={data.menu_items.total} onPage={setPage} onPageSize={(n) => { setPageSize(n); setPage(1); }} />}
+        {filteredShown.length === 0 && <Empty text={showArchived ? "Nothing archived" : "No items match"} />}
+        {filteredShown.map((i) => renderMenuItem(i, canEdit, canDelete, canSoldOut, toggleSoldOut, setEdit, setRemoving, setFlash, reload))}
+        {data && <Pagination page={data.menu_items.current_page} pageSize={data.menu_items.per_page} total={filteredShown.length} onPage={setPage} onPageSize={(n) => { setPageSize(n); setPage(1); }} />}
       </div>
 
       {edit && (
@@ -428,7 +476,7 @@ function ItemEditor({ item, cats, ingredients, onClose }: { item: Item | null; c
         <Field label="Unit stock ingredient" hint="A shortcut for a one-line recipe (1 unit = 1 portion, deducted FEFO from expiry batches) that still routes to the kitchen. Ignored when a recipe is set. Directly-sellable items with no kitchen ticket are Products, not menu items.">
           <select className="input" value={f.stockIngredientId} onChange={(e) => setF({ ...f, stockIngredientId: e.target.value })}>
             <option value="">No unit stock (recipe only)</option>
-            {ingredients.map((ing) => <option key={ing.id} value={ing.id}>{ing.name} ({ing.unit})</option>)}
+            {ingredients.filter((ing) => ing.kot_target === f.kotTarget).map((ing) => <option key={ing.id} value={ing.id}>{ing.name} ({ing.unit})</option>)}
           </select>
         </Field>
       </div>
@@ -446,6 +494,7 @@ function ItemEditor({ item, cats, ingredients, onClose }: { item: Item | null; c
                 {ingredients
                   .filter(
                     (ing) =>
+                      ing.kot_target === f.kotTarget &&
                       !recipe.some(
                         (existing, j) =>
                           j !== i &&

@@ -130,6 +130,7 @@ class LookupSeeder extends Seeder
             [NotificationChannel::EMAIL, 'Email', 'blue'],
             [NotificationChannel::WHATSAPP, 'WhatsApp', 'green'],
             [NotificationChannel::SMS, 'SMS', 'purple'],
+            [NotificationChannel::CONSOLE, 'Console', 'gray'],
         ]);
 
         $this->seedType(LookupType::PAYMENT_METHOD, [
@@ -137,6 +138,7 @@ class LookupSeeder extends Seeder
             [PaymentMethod::CARD, 'Card', 'blue'],
             [PaymentMethod::LANKAQR, 'LankaQR', 'purple'],
             [PaymentMethod::BANK_TRANSFER, 'Bank Transfer', 'slate'],
+            [PaymentMethod::CREDIT, 'Credit', 'amber'],
             [PaymentMethod::CORPORATE_CREDIT, 'Corporate Credit', 'orange'],
             [PaymentMethod::LOYALTY_POINTS, 'Loyalty Points', 'pink'],
         ]);

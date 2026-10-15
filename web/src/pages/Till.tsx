@@ -1,5 +1,5 @@
 import { ReactNode, useEffect, useState } from "react";
-import { post } from "../lib/api";
+import { post, printDocument } from "../lib/api";
 import { useFetch, usePagedFetch, lkr, toCents, centsToRupees, fmtDateTime } from "../lib/util";
 import { Badge, Card, Empty, ErrorText, Field, Modal, Pagination, Stat } from "../components/ui";
 import { useToast } from "../lib/toast";
@@ -41,6 +41,8 @@ type Summary = {
   expected_balance: number;
   movement_count: number;
 };
+
+type CloseResponse = { session: { id: number } };
 
 const plural = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : "s"}`;
 const signed = (cents: number) => `${cents > 0 ? "+" : ""}${lkr(cents)}`;
@@ -482,17 +484,21 @@ function CloseTill({ sessionId, onClose }: { sessionId: number; onClose: () => v
   const variance = counted === null ? 0 : counted - expected;
   const needsReason = variance !== 0;
 
+type CloseResponse = { session: { id: number } };
+
   const submit = () => {
     setBusy(true);
-    post(`/till/${sessionId}/close`, {
+    post<CloseResponse>(`/till/${sessionId}/close`, {
       closing_cash: counted ?? undefined,
       reason: reason || undefined,
       notes: notes || undefined,
     })
-      .then(() => {
+      .then((res) => {
         if (variance === 0) toast.success("Till closed — balanced", `Closing balance ${lkr(expected)}`);
         else toast.warning("Till closed — variance found", signed(variance));
         onClose();
+        // Trigger thermal print with the daily sales report
+        printDocument(`/till/${res.session.id}/daily-sales-report`);
       })
       .catch((e) => setError(e.message))
       .finally(() => setBusy(false));

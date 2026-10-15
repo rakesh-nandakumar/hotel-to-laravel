@@ -16,7 +16,7 @@ type Lookup = { id: number; code: string; name: string };
 type Detail = {
   id: number; code: string; status: Lookup; channel: Lookup;
   check_in: string; check_out: string;
-  adults: number; children: number; deposit_due: number; notes: string | null; package_id: number | null;
+  adults: number; children: number; deposit_due: number; notes: string | null; package_id: number | null; service_charge_pct: number | null; ac_enabled: boolean | null;
   pre_check_in: Record<string, string> | null;
   guest: { id: number; name: string; phone: string | null; email: string | null; id_number: string | null; loyalty_points: number; preferences: string | null };
   package: { id: number; name: string; code: string } | null;
@@ -73,6 +73,7 @@ export default function ReservationDetail() {
   const [shareOpen, setShareOpen] = useState(false);
   const whatsapp = useWhatsAppShare();
   const nav = useNavigate();
+  const fromNotifications = new URLSearchParams(window.location.search).get('from') === 'notifications';
 
   if (error) return <ErrorText error={error} />;
   if (!data) return <Empty text="Loading…" />;
@@ -240,7 +241,7 @@ export default function ReservationDetail() {
       )}
 
       {checkinOpen && <CheckInModal r={r} onClose={() => setCheckinOpen(false)} onDone={() => { setCheckinOpen(false); reload(); }} />}
-      {checkoutOpen && <CheckOutModal r={r} usdRate={usdRate} onClose={() => setCheckoutOpen(false)} onDone={() => { setCheckoutOpen(false); reload(); }} />}
+      {checkoutOpen && <CheckOutModal r={r} usdRate={usdRate} onClose={() => setCheckoutOpen(false)} onDone={() => { setCheckoutOpen(false); reload(); window.dispatchEvent(new CustomEvent('credit-payments-updated')); }} />}
       {cancelOpen && (
         <ReasonModal
           title="Cancel booking — policy refund applied automatically"
@@ -339,6 +340,13 @@ export default function ReservationDetail() {
       {shareOpen && <WhatsAppShareModal reservationId={r.id} code={r.code} onClose={() => setShareOpen(false)} />}
       {editStayOpen && <EditStayModal r={r} onClose={() => setEditStayOpen(false)} onDone={() => { setEditStayOpen(false); reload(); }} />}
       {editGuestOpen && <EditGuestModal guest={r.guest} onClose={() => setEditGuestOpen(false)} onDone={() => { setEditGuestOpen(false); reload(); }} />}
+      {fromNotifications && (
+        <div className="flex justify-center pt-4">
+          <button className="btn-secondary" onClick={() => nav("/notifications")}>
+            ← Back to Notifications
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -553,9 +561,12 @@ function CheckOutModal({ r, usdRate, onClose, onDone }: { r: Detail; usdRate: nu
   // Default on — guest shouldn't get the unused nights free with no
   // adjustment; staff can uncheck to bill the original amount in full.
   const [applyEarlyDeparture, setApplyEarlyDeparture] = useState(true);
+  // Service charge: use reservation's value if set, otherwise default to 0
+  const defaultScPct = r.service_charge_pct ?? 0;
+  const [serviceChargePct, setServiceChargePct] = useState(String(defaultScPct));
   const { data: quote } = useFetch<CheckoutQuote>(
-    `/reservations/${r.id}/checkout-quote?late=${applyLate ? "1" : "0"}&early_departure=${applyEarlyDeparture ? "1" : "0"}`,
-    [applyLate, applyEarlyDeparture]
+    `/reservations/${r.id}/checkout-quote?late=${applyLate ? "1" : "0"}&early_departure=${applyEarlyDeparture ? "1" : "0"}&service_charge_pct=${serviceChargePct || 0}`,
+    [applyLate, applyEarlyDeparture, serviceChargePct]
   );
   const [payments, setPayments] = useState<{ method: string; amount: string; reference: string }[]>([]);
   const [error, setError] = useState("");
@@ -603,6 +614,7 @@ function CheckOutModal({ r, usdRate, onClose, onDone }: { r: Detail; usdRate: nu
       const res = await post<{ invoice_no: string; change_due: number }>(`/reservations/${r.id}/checkout`, {
         apply_late_surcharge: applyLate,
         apply_early_departure: applyEarlyDeparture,
+        service_charge_pct: serviceChargePct ? parseFloat(serviceChargePct) : 0,
         payments: payments.filter((p) => toCents(p.amount) > 0).map((p) => ({ method: p.method, amount: toCents(p.amount), reference: p.reference || undefined })),
       });
       setDone({ invoiceNo: res.invoice_no, changeDue: res.change_due ?? 0, tendered: newSum });
@@ -650,6 +662,21 @@ function CheckOutModal({ r, usdRate, onClose, onDone }: { r: Detail; usdRate: nu
           </label>
         </div>
       )}
+      <div className="mt-3">
+        <label className="label">Service Charge %</label>
+        <input className="input" type="number" value={serviceChargePct} onChange={(e) => {
+          let val = e.target.value;
+          if (val !== "") {
+            const num = parseFloat(val);
+            if (num < 0) val = "0";
+            if (num > 100) val = "100";
+          }
+          setServiceChargePct(val);
+        }} onFocus={() => { if (serviceChargePct === "0") setServiceChargePct(""); }} onBlur={() => { if (serviceChargePct === "") setServiceChargePct("0"); }} step="0.01" min="0" max="100" />
+        <div className="mt-1 text-xs text-slate-500">
+          {r.service_charge_pct !== null ? `Original booking: ${r.service_charge_pct}%` : "Not set at booking (defaulted to 0%)"}
+        </div>
+      </div>
       <div className="mt-3 space-y-1 rounded-xl bg-slate-50 p-3 text-sm">
         <div className="flex justify-between font-extrabold"><span>Grand total</span><span>{lkr(quote.grand_total)} {usdRate > 0 && <span className="text-xs font-normal text-slate-400">{usd(quote.grand_total, usdRate)}</span>}</span></div>
         <div className="flex justify-between text-emerald-700"><span>Already paid (deposits etc.)</span><span>{lkr(quote.folio.paid - quote.folio.refunded)}</span></div>
@@ -662,7 +689,7 @@ function CheckOutModal({ r, usdRate, onClose, onDone }: { r: Detail; usdRate: nu
           {payments.map((p, i) => (
             <div key={i} className="flex gap-2">
               <select className="input !w-40" value={p.method} onChange={(e) => setPayments(payments.map((x, j) => (j === i ? { ...x, method: e.target.value } : x)))}>
-                {["cash", "card", "lankaqr", "bank_transfer", ...(r.corporate_account ? ["corporate_credit"] : []), ...(r.guest.loyalty_points > 0 ? ["loyalty_points"] : [])].map((m) => (
+                {["cash", "card", "lankaqr", "bank_transfer", "credit", ...(r.corporate_account ? ["corporate_credit"] : []), ...(r.guest.loyalty_points > 0 ? ["loyalty_points"] : [])].map((m) => (
                   <option key={m} value={m}>{m.toUpperCase()}</option>
                 ))}
               </select>

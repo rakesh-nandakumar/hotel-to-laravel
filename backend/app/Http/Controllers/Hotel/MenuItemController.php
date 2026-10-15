@@ -270,7 +270,7 @@ class MenuItemController extends Controller
             ])
             ->where('active', true)
             ->where('sold_out', false)
-            ->select('id', 'name', 'price', 'item_no', 'description', 'image', 'menu_category_id', 'stock_ingredient_id', 'active', 'sold_out')
+            ->select('id', 'name', 'price', 'item_no', 'description', 'image', 'menu_category_id', 'stock_ingredient_id', 'active', 'sold_out', 'kot_target')
             ->orderBy('item_no')
             ->orderBy('name');
 
@@ -303,6 +303,7 @@ class MenuItemController extends Controller
                 'image' => $item->image,
                 'menu_category_id' => $item->menu_category_id,
                 'stock_ingredient_id' => $item->stock_ingredient_id,
+                'kot_target' => $item->kot_target,
 
                 'available' => $item->available,
                 'availability_reason' => $item->availability_reason,

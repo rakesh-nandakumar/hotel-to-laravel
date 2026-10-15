@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useCentralAuth } from "../../lib/centralAuth";
 import { ErrorText } from "../../components/ui";
@@ -11,6 +11,17 @@ export default function CentralLogin() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+
+  // Clear all session cookies when visiting central login to prevent stale tenant sessions
+  useEffect(() => {
+    document.cookie.split(";").forEach((c) => {
+      const eqPos = c.indexOf("=");
+      const name = eqPos > -1 ? c.slice(0, eqPos).trim() : c.trim();
+      if (name === "laravel_session" || name.startsWith("XSRF-")) {
+        document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`;
+      }
+    });
+  }, []);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();

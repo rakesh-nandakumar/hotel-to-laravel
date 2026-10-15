@@ -364,7 +364,7 @@ function CheckOutModal({ b, onClose, onDone }: { b: Detail; onClose: () => void;
           {payments.map((p, i) => (
             <div key={i} className="flex gap-2">
               <select className="input !w-40" value={p.method} onChange={(e) => setPayments(payments.map((x, j) => (j === i ? { ...x, method: e.target.value } : x)))}>
-                {["cash", "card", "lankaqr", "bank_transfer"].map((m) => <option key={m} value={m}>{m.toUpperCase()}</option>)}
+                {["cash", "card", "lankaqr", "bank_transfer", "credit"].map((m) => <option key={m} value={m}>{m.toUpperCase()}</option>)}
               </select>
               <input className="input" placeholder="Amount LKR" value={p.amount} onChange={(e) => setPayments(payments.map((x, j) => (j === i ? { ...x, amount: e.target.value } : x)))} />
               <input className="input !w-28" placeholder="Ref" value={p.reference} onChange={(e) => setPayments(payments.map((x, j) => (j === i ? { ...x, reference: e.target.value } : x)))} />

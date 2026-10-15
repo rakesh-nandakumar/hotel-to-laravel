@@ -85,7 +85,7 @@ class HotelRoomsSeeder extends Seeder
                 ['tenant_id' => $tenantId, 'name' => $definition['name']],
                 [
                     'max_occupancy' => $definition['max_occupancy'],
-                    'bed_config' => 'TBC — pending from owner',
+                    'bed_config' => null,
                     'amenities' => self::DEFAULT_AMENITIES,
                     'weekday_rate' => $definition['weekday'] * 100,
                     'weekend_rate' => $definition['weekend'] * 100,
@@ -110,7 +110,7 @@ class HotelRoomsSeeder extends Seeder
                         'room_type_id' => $roomType->id,
                         'name' => $definition['name'],
                         'max_occupancy' => $definition['max_occupancy'],
-                        'bed_config' => 'TBC — pending from owner',
+                        'bed_config' => null,
                         'weekday_rate' => $definition['weekday'] * 100,
                         'weekend_rate' => $definition['weekend'] * 100,
                         'item_checklist' => self::ITEM_CHECKLIST,
@@ -140,7 +140,7 @@ class HotelRoomsSeeder extends Seeder
                     $room->update([
                         'name' => $room->name ?: $definition['name'],
                         'max_occupancy' => $room->max_occupancy ?: $definition['max_occupancy'],
-                        'bed_config' => $room->bed_config ?: 'TBC — pending from owner',
+                        'bed_config' => $room->bed_config ?: null,
                         'weekday_rate' => $room->weekday_rate ?: $definition['weekday'] * 100,
                         'weekend_rate' => $room->weekend_rate ?: $definition['weekend'] * 100,
                         'item_checklist' => $room->item_checklist ?? self::ITEM_CHECKLIST,

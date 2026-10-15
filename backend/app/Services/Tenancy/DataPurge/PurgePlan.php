@@ -28,6 +28,8 @@ final class PurgePlan
         public readonly array $nullify,
         public readonly array $warnings,
         public readonly bool $zeroStock,
+        public readonly bool $resetRooms,
+        public readonly bool $resetTill,
         public readonly string $fingerprint,
     ) {}
 
@@ -38,7 +40,7 @@ final class PurgePlan
 
     public function isEmpty(): bool
     {
-        return $this->totalRows() === 0 && ! $this->zeroStock;
+        return $this->totalRows() === 0 && ! $this->zeroStock && ! $this->resetRooms && ! $this->resetTill;
     }
 
     /**
@@ -122,6 +124,8 @@ final class PurgePlan
             'unlinked' => $unlinked,
             'warnings' => $this->warnings,
             'zero_stock' => $this->zeroStock,
+            'reset_rooms' => $this->resetRooms,
+            'reset_till' => $this->resetTill,
             'tables' => $tables,
             'fingerprint' => $this->fingerprint,
         ];
