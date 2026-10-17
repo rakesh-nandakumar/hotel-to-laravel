@@ -39,4 +39,21 @@ class CheckoutReservationRequest extends FormRequest
             'item_checks.*.items.*.note' => ['nullable', 'string', 'max:500'],
         ];
     }
+
+    protected function prepareForValidation(): void
+    {
+        if ($this->has('payments')) {
+            $payments = $this->input('payments');
+            foreach ($payments as &$payment) {
+                if (isset($payment['method'])) {
+                    $payment['method'] = strtolower($payment['method']);
+                }
+            }
+            $this->merge(['payments' => $payments]);
+        }
+
+        if ($this->has('refund_method')) {
+            $this->merge(['refund_method' => strtolower($this->input('refund_method'))]);
+        }
+    }
 }
