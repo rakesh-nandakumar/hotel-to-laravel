@@ -33,6 +33,8 @@ const PAY_METHOD_OPTIONS = [
   { code: "lankaqr", label: "LANKAQR" },
   { code: "bank_transfer", label: "BANK_TRANSFER" },
   { code: "credit", label: "CREDIT" },
+  { code: "corporate_credit", label: "CORPORATE_CREDIT" },
+  { code: "loyalty_points", label: "LOYALTY_POINTS" },
 ];
 
 type ResRow = {
