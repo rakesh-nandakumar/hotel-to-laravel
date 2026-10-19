@@ -183,6 +183,15 @@ export default function SaleDetail() {
       {cancelOpen && (
         <ReasonModal
           title="Cancel sale — deposit forfeiture policy applies automatically"
+          withReasonOptions={[
+            "Client requested cancellation",
+            "Buyer changed mind",
+            "Property not available",
+            "Payment not received",
+            "Breached agreement terms",
+            "Emergency/force majeure",
+            "Other (specify below)"
+          ]}
           onSubmit={async (reason) => {
             try {
               const res = await post<{ ok: boolean; refund_pct: number; refunded: number }>(`/apartments/sales/${s.id}/cancel`, { reason });

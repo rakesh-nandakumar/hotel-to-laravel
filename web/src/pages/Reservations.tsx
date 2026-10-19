@@ -1,6 +1,9 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Plus, Search, Users } from "lucide-react";
+import ReactDatePicker from "react-datepicker";
+import "react-datepicker/dist/react-datepicker.css";
+import { format } from "date-fns";
 import { post } from "../lib/api";
 import { useFetch, usePagedFetch, lkr, todayStr, fmtDate, toCents, useSettings, depositAmount } from "../lib/util";
 import { Badge, Card, Empty, ErrorText, Field, Modal, Pagination, statusColor, Tabs } from "../components/ui";
@@ -349,9 +352,39 @@ export function NewBooking({
 
   return (
     <Modal open onClose={onClose} title="New booking" wide>
+      <style>{`
+        .react-datepicker-wrapper {
+          width: 100% !important;
+        }
+        .react-datepicker__input-container input {
+          width: 100% !important;
+        }
+      `}</style>
       <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="Check-in"><input type="date" className="input" value={checkIn} onChange={(e) => setCheckIn(e.target.value)} /></Field>
-        <Field label="Check-out"><input type="date" className="input" value={checkOut} onChange={(e) => setCheckOut(e.target.value)} /></Field>
+        <Field label="Check-in">
+          <div className="w-full">
+            <ReactDatePicker
+              className="input"
+              selected={checkIn ? new Date(checkIn) : null}
+              onChange={(date: Date | null) => setCheckIn(date ? format(date, 'yyyy-MM-dd') : '')}
+              dateFormat="dd/MM/yyyy"
+              placeholderText="DD/MM/YYYY"
+              minDate={new Date()}
+            />
+          </div>
+        </Field>
+        <Field label="Check-out">
+          <div className="w-full">
+            <ReactDatePicker
+              className="input"
+              selected={checkOut ? new Date(checkOut) : null}
+              onChange={(date: Date | null) => setCheckOut(date ? format(date, 'yyyy-MM-dd') : '')}
+              dateFormat="dd/MM/yyyy"
+              placeholderText="DD/MM/YYYY"
+              minDate={checkIn ? new Date(checkIn) : new Date()}
+            />
+          </div>
+        </Field>
       </div>
 
       <div className="mt-3">
