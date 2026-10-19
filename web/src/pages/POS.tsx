@@ -1526,10 +1526,12 @@ export function DiscountModal({ onApply, onClose }: { onApply: (mode: "PCT" | "F
   );
 }
 
-export function ReasonModal({ title, withAmount, onSubmit, onClose }: { title: string; withAmount?: number; onSubmit: (reason: string, amount?: number, method?: string) => void; onClose: () => void }) {
+export function ReasonModal({ title, withAmount, onSubmit, onClose, withReasonOptions }: { title: string; withAmount?: number; onSubmit: (reason: string, amount?: number, method?: string) => void; onClose: () => void; withReasonOptions?: string[] }) {
   const [reason, setReason] = useState("");
   const [amount, setAmount] = useState(withAmount !== undefined ? (withAmount / 100).toFixed(2) : "");
   const [method, setMethod] = useState("cash");
+  const [customReason, setCustomReason] = useState("");
+  const reasonOptions = withReasonOptions || [];
   return (
     <Modal open onClose={onClose} title={title}>
       <div className="space-y-3">
@@ -1547,10 +1549,32 @@ export function ReasonModal({ title, withAmount, onSubmit, onClose }: { title: s
             </Field>
           </>
         )}
-        <Field label="Reason (required — recorded in the audit log)">
-          <textarea className="input" rows={2} value={reason} onChange={(e) => setReason(e.target.value)} />
-        </Field>
-        <button className="btn-danger w-full" disabled={!reason.trim() || (withAmount !== undefined && toCents(amount) <= 0)} onClick={() => onSubmit(reason.trim(), withAmount !== undefined ? toCents(amount) : undefined, method)}>
+        {reasonOptions.length > 0 ? (
+          <>
+            <Field label="Reason">
+              <select className="input" value={reason} onChange={(e) => {
+                setReason(e.target.value);
+                setCustomReason("");
+              }}>
+                <option value="">Select a reason...</option>
+                {reasonOptions.map((r) => (
+                  <option key={r} value={r}>{r}</option>
+                ))}
+                <option value="other">Other (specify below)</option>
+              </select>
+            </Field>
+            {reason === "other" && (
+              <Field label="Custom reason">
+                <textarea className="input" rows={2} value={customReason} onChange={(e) => setCustomReason(e.target.value)} />
+              </Field>
+            )}
+          </>
+        ) : (
+          <Field label="Reason (required — recorded in the audit log)">
+            <textarea className="input" rows={2} value={reason} onChange={(e) => setReason(e.target.value)} />
+          </Field>
+        )}
+        <button className="btn-danger w-full" disabled={!(reasonOptions.length > 0 ? (reason.trim() && (reason !== "other" || customReason.trim())) : reason.trim()) || (withAmount !== undefined && toCents(amount) <= 0)} onClick={() => onSubmit(reasonOptions.length > 0 && reason === "other" ? customReason.trim() : reason.trim(), withAmount !== undefined ? toCents(amount) : undefined, method)}>
           Confirm
         </button>
       </div>

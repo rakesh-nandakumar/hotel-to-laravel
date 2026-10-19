@@ -1,6 +1,9 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Plus, Search } from "lucide-react";
+import ReactDatePicker from "react-datepicker";
+import "react-datepicker/dist/react-datepicker.css";
+import { format } from "date-fns";
 import { post } from "../../lib/api";
 import { useFetch, usePagedFetch, lkr, todayStr, fmtDate, toCents } from "../../lib/util";
 import { Badge, Empty, ErrorText, Field, Modal, Pagination, statusColor } from "../../components/ui";
@@ -149,8 +152,31 @@ function NewLease({ onClose, onCreated }: { onClose: () => void; onCreated: (id:
           </select>
         </Field>
         <Field label="Monthly rent (LKR) *"><input className="input" value={form.monthlyRent} onChange={(e) => setForm({ ...form, monthlyRent: e.target.value })} /></Field>
-        <Field label="Start date"><input type="date" className="input" value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} /></Field>
-        <Field label="End date" hint="Leave blank for open-ended / month-to-month"><input type="date" className="input" value={form.endDate} onChange={(e) => setForm({ ...form, endDate: e.target.value })} /></Field>
+        <Field label="Start date">
+          <div className="w-full">
+            <ReactDatePicker
+              className="input"
+              selected={form.startDate ? new Date(form.startDate) : null}
+              onChange={(date: Date | null) => setForm({ ...form, startDate: date ? format(date, 'yyyy-MM-dd') : '' })}
+              dateFormat="dd/MM/yyyy"
+              placeholderText="DD/MM/YYYY"
+              minDate={new Date()}
+            />
+          </div>
+        </Field>
+        <Field label="End date" hint="Leave blank for open-ended / month-to-month">
+          <div className="w-full">
+            <ReactDatePicker
+              className="input"
+              selected={form.endDate ? new Date(form.endDate) : null}
+              onChange={(date: Date | null) => setForm({ ...form, endDate: date ? format(date, 'yyyy-MM-dd') : '' })}
+              dateFormat="dd/MM/yyyy"
+              placeholderText="DD/MM/YYYY"
+              minDate={form.startDate ? new Date(form.startDate) : new Date()}
+              isClearable
+            />
+          </div>
+        </Field>
         <Field label="Rent due day of month"><input className="input" inputMode="numeric" value={form.rentDueDay} onChange={(e) => setForm({ ...form, rentDueDay: e.target.value })} /></Field>
         <Field label="Notice period (days)"><input className="input" inputMode="numeric" value={form.noticePeriodDays} onChange={(e) => setForm({ ...form, noticePeriodDays: e.target.value })} /></Field>
         <Field label="Security deposit (LKR)"><input className="input" value={form.securityDeposit} onChange={(e) => setForm({ ...form, securityDeposit: e.target.value })} /></Field>
