@@ -110,6 +110,14 @@ class DeployController extends Controller
         ], 'deploy/seed/mountview-venues');
     }
 
+    public function seedLookups(): Response
+    {
+        return $this->run('db:seed', [
+            '--class' => 'Database\\Seeders\\LookupSeeder',
+            '--force' => true,
+        ], 'deploy/seed/lookups');
+    }
+
     /**
      * Runs the artisan command the way a shared host's PHP-over-HTTP can
      * actually survive it:
