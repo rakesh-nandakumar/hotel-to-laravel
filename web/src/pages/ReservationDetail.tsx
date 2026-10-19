@@ -245,6 +245,15 @@ export default function ReservationDetail() {
       {cancelOpen && (
         <ReasonModal
           title="Cancel booking — policy refund applied automatically"
+          withReasonOptions={[
+            "Client requested cancellation",
+            "Guest no-show",
+            "Booking error/mistake",
+            "Payment not received",
+            "Emergency/force majeure",
+            "Duplicate booking",
+            "Other (specify below)"
+          ]}
           onSubmit={async (reason) => {
             try {
               const res = await post<{ ok: boolean; refund_pct: number; refunded: number; fee: number }>(`/reservations/${r.id}/cancel`, { reason });

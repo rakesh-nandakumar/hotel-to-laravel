@@ -486,6 +486,15 @@ function Bookings() {
       {selected && cancelOpen && (
         <ReasonModal
           title="Cancel Venue Booking"
+          withReasonOptions={[
+            "Client requested cancellation",
+            "Event cancelled by client",
+            "Venue maintenance issue",
+            "Force majeure (weather, emergency)",
+            "Payment not received",
+            "Double booking conflict",
+            "Other (specify below)"
+          ]}
           onSubmit={async (reason) => {
             try {
               await post(`/venues/bookings/${selected.id}/cancel`, { reason, refund_method: "cash" });
@@ -524,6 +533,8 @@ function NewBooking({ onClose, onDone }: { onClose: () => void; onDone: () => vo
     advancePaymentMethod: "cash",
     profitMargin: "20000",
     combinedHallCharge: "65000",
+    hallCharge: "",
+    hallOnlyCharge: "",
   });
   const [venueExtras, setVenueExtras] = useState<{ description: string; amount: string; charge_type: string; is_percentage: boolean; enabled: boolean; isCustom: boolean }[]>([
     { description: "AC", amount: "12000", charge_type: "ac", is_percentage: false, enabled: false, isCustom: false },
@@ -568,6 +579,14 @@ function NewBooking({ onClose, onDone }: { onClose: () => void; onDone: () => vo
         // Pre-fill hall only rate from venue
         const venueHallOnlyRate = venue.hall_only_per_person || 50000;
         setF(prev => ({ ...prev, hallOnlyRate: centsToRupees(venueHallOnlyRate) }));
+        // Pre-fill hall charge for hall+food package
+        const defaultHallCharge = venue.hall_type === "luxury" ? (venue.luxury_hall_charge ?? 4500000) : (venue.basic_hall_charge ?? 4000000);
+        setF(prev => ({ ...prev, hallCharge: centsToRupees(defaultHallCharge) }));
+        // Pre-fill hall charge for hall_only package
+        setF(prev => ({ ...prev, hallOnlyCharge: centsToRupees(defaultHallCharge) }));
+        // Pre-fill per plate price from venue
+        const venuePerPlatePrice = venue.per_plate_starting_price || 195000;
+        setF(prev => ({ ...prev, perPlatePrice: centsToRupees(venuePerPlatePrice) }));
       }
     }
   }, [f.venueId]);
@@ -579,17 +598,29 @@ function NewBooking({ onClose, onDone }: { onClose: () => void; onDone: () => vo
     const guestCount = parseInt(f.guestCount) || 0;
 
     if (f.packageType === "hall_only") {
-      // Use editable hall only rate
-      const hallOnlyRate = f.hallOnlyRate ? toCents(f.hallOnlyRate) : (selectedVenues[0].hall_only_per_person || 50000);
-      const hallCharge = hallOnlyRate * guestCount;
-      const serviceCharge = Math.round(hallCharge * (parseFloat(f.serviceChargePct) || 10) / 100);
+      // Use editable hall charge
+      let hallCharge: number;
+      if (f.hallOnlyCharge) {
+        hallCharge = toCents(f.hallOnlyCharge);
+      } else if (selectedVenues.length === 1) {
+        hallCharge = selectedVenues[0].hall_type === "luxury" ? (selectedVenues[0].luxury_hall_charge ?? 4500000) : (selectedVenues[0].basic_hall_charge ?? 4000000);
+      } else {
+        hallCharge = selectedVenues.reduce((sum, v) => {
+          return sum + (v.hall_type === "luxury" ? (v.luxury_hall_charge ?? 4500000) : (v.basic_hall_charge ?? 4000000));
+        }, 0);
+      }
+      const serviceCharge = Math.round(hallCharge * (parseFloat(f.serviceChargePct) ?? 10) / 100);
       return { rental: hallCharge, foodCost: 0, serviceCharge, total: hallCharge + serviceCharge };
     } else {
-      // Hall + Food: use fixed venue hall charge or combined hall charge
+      // Hall + Food: use editable hall charge, combined hall charge, or default venue charge
       let hallCharge: number;
-      if (showCombinedHallCharge && f.combinedHallCharge) {
+      if (f.hallCharge) {
+        // Use custom editable hall charge
+        hallCharge = toCents(f.hallCharge);
+      } else if (showCombinedHallCharge && f.combinedHallCharge) {
         hallCharge = toCents(f.combinedHallCharge);
       } else if (selectedVenues.length === 1) {
+        // Default to venue's fixed charge as placeholder
         hallCharge = selectedVenues[0].hall_type === "luxury" ? (selectedVenues[0].luxury_hall_charge ?? 4500000) : (selectedVenues[0].basic_hall_charge ?? 4000000);
       } else {
         // Sum of both venues if both selected but no combined charge set
@@ -600,7 +631,7 @@ function NewBooking({ onClose, onDone }: { onClose: () => void; onDone: () => vo
       const perPlatePrice = f.perPlatePrice ? toCents(f.perPlatePrice) : (selectedVenues[0].per_plate_starting_price || 195000);
       const foodCost = perPlatePrice * guestCount;
       const baseTotal = hallCharge + foodCost;
-      const serviceCharge = Math.round(baseTotal * (parseFloat(f.serviceChargePct) || 10) / 100);
+      const serviceCharge = Math.round(baseTotal * (parseFloat(f.serviceChargePct) ?? 10) / 100);
       return { rental: hallCharge, foodCost, serviceCharge, total: baseTotal + serviceCharge };
     }
   };
@@ -638,6 +669,7 @@ function NewBooking({ onClose, onDone }: { onClose: () => void; onDone: () => vo
             onChange={(date: Date | null) => setF({ ...f, date: date ? format(date, 'yyyy-MM-dd') : '' })}
             dateFormat="dd/MM/yyyy"
             placeholderText="DD/MM/YYYY"
+            minDate={new Date()}
           />
         </Field>
 
@@ -678,32 +710,44 @@ function NewBooking({ onClose, onDone }: { onClose: () => void; onDone: () => vo
                 />
               </Field>
             )}
-            {selectedVenues.length === 1 && (
-              <div className="text-xs text-slate-500">
-                Hall charge: {lkr(selectedVenues[0].hall_type === "luxury" ? (selectedVenues[0].luxury_hall_charge ?? 4500000) : (selectedVenues[0].basic_hall_charge ?? 4000000))}
-              </div>
-            )}
-            {selectedVenues.length === 2 && !showCombinedHallCharge && (
-              <div className="text-xs text-slate-500">
-                Hall charge: {lkr(selectedVenues.reduce((sum, v) => sum + (v.hall_type === "luxury" ? (v.luxury_hall_charge ?? 4500000) : (v.basic_hall_charge ?? 4000000)), 0))}
-              </div>
+            {!showCombinedHallCharge && (
+              <Field label="Hall Charge (LKR)">
+                <input
+                  className="input"
+                  type="number"
+                  value={f.hallCharge}
+                  onChange={(e) => setF({ ...f, hallCharge: e.target.value })}
+                  placeholder={selectedVenues.length === 1
+                    ? centsToRupees(selectedVenues[0].hall_type === "luxury" ? (selectedVenues[0].luxury_hall_charge ?? 4500000) : (selectedVenues[0].basic_hall_charge ?? 4000000))
+                    : centsToRupees(selectedVenues.reduce((sum, v) => sum + (v.hall_type === "luxury" ? (v.luxury_hall_charge ?? 4500000) : (v.basic_hall_charge ?? 4000000)), 0))
+                  }
+                />
+              </Field>
             )}
           </>
         ) : (
           <>
-            <Field label="Hall Only Rate (LKR per person)">
+            <Field label="Hall Charge (LKR)">
               <input
                 className="input"
                 type="number"
-                value={f.hallOnlyRate}
-                onChange={(e) => setF({ ...f, hallOnlyRate: e.target.value })}
-                placeholder={selectedVenues.length > 0 ? centsToRupees(selectedVenues[0].hall_only_per_person || 50000) : "500"}
+                value={f.hallOnlyCharge}
+                onChange={(e) => setF({ ...f, hallOnlyCharge: e.target.value })}
+                placeholder={selectedVenues.length === 1
+                  ? centsToRupees(selectedVenues[0].hall_type === "luxury" ? (selectedVenues[0].luxury_hall_charge ?? 4500000) : (selectedVenues[0].basic_hall_charge ?? 4000000))
+                  : centsToRupees(selectedVenues.reduce((sum, v) => sum + (v.hall_type === "luxury" ? (v.luxury_hall_charge ?? 4500000) : (v.basic_hall_charge ?? 4000000)), 0))
+                }
               />
             </Field>
           </>
         )}
         <Field label="Service Charge %">
-          <input className="input" type="number" value={f.serviceChargePct} onChange={(e) => setF({ ...f, serviceChargePct: e.target.value })} />
+          <input className="input" type="number" min="0" max="100" value={f.serviceChargePct} onChange={(e) => {
+            let val = parseFloat(e.target.value);
+            if (val < 0) val = 0;
+            if (val > 100) val = 100;
+            setF({ ...f, serviceChargePct: String(val) });
+          }} />
         </Field>
 
         <Field label="Expected guest count"><input className="input" value={f.guestCount} onChange={(e) => setF({ ...f, guestCount: e.target.value })} /></Field>
@@ -876,7 +920,7 @@ function NewBooking({ onClose, onDone }: { onClose: () => void; onDone: () => vo
           </>
         )}
         {f.packageType === "hall_only" && (
-          <div className="flex justify-between font-bold"><span>Hall Only ({parseInt(f.guestCount) || 0} persons)</span><span>{lkr(pricing.rental)}</span></div>
+          <div className="flex justify-between font-bold"><span>Hall Charge</span><span>{lkr(pricing.rental)}</span></div>
         )}
         {pricing.serviceCharge > 0 && (
           <div className="flex justify-between"><span>Service Charge ({f.serviceChargePct}%)</span><span>{lkr(pricing.serviceCharge)}</span></div>
@@ -920,9 +964,9 @@ function NewBooking({ onClose, onDone }: { onClose: () => void; onDone: () => vo
             use_package_pricing: true,
             package_type: f.packageType,
             per_plate_price: f.perPlatePrice ? toCents(f.perPlatePrice) : null,
-            hall_charge_used: f.packageType === "hall_food" ? (showCombinedHallCharge && f.combinedHallCharge ? toCents(f.combinedHallCharge) : (isBothVenuesSelected ? selectedVenues.reduce((sum, v) => sum + (v.hall_type === "luxury" ? (v.luxury_hall_charge ?? 4500000) : (v.basic_hall_charge ?? 4000000)), 0) : (selectedVenues[0].hall_type === "luxury" ? selectedVenues[0].luxury_hall_charge : selectedVenues[0].basic_hall_charge))) : null,
-            hall_only_per_person: f.packageType === "hall_only" ? (f.hallOnlyRate ? toCents(f.hallOnlyRate) : (selectedVenues.length > 0 ? selectedVenues[0].hall_only_per_person ?? null : null)) : null,
-            service_charge_pct: parseInt(f.serviceChargePct) || 10,
+            hall_charge_used: f.packageType === "hall_food" ? (f.hallCharge ? toCents(f.hallCharge) : (showCombinedHallCharge && f.combinedHallCharge ? toCents(f.combinedHallCharge) : (isBothVenuesSelected ? selectedVenues.reduce((sum, v) => sum + (v.hall_type === "luxury" ? (v.luxury_hall_charge ?? 4500000) : (v.basic_hall_charge ?? 4000000)), 0) : (selectedVenues[0].hall_type === "luxury" ? selectedVenues[0].luxury_hall_charge : selectedVenues[0].basic_hall_charge)))) : (f.packageType === "hall_only" ? (f.hallOnlyCharge ? toCents(f.hallOnlyCharge) : (selectedVenues.length === 1 ? (selectedVenues[0].hall_type === "luxury" ? (selectedVenues[0].luxury_hall_charge ?? 4500000) : (selectedVenues[0].basic_hall_charge ?? 4000000)) : selectedVenues.reduce((sum, v) => sum + (v.hall_type === "luxury" ? (v.luxury_hall_charge ?? 4500000) : (v.basic_hall_charge ?? 4000000)), 0))) : null),
+            hall_only_per_person: null,
+            service_charge_pct: parseInt(f.serviceChargePct) ?? 10,
             byod_selected: f.byodSelected,
             dj_required: f.djRequired,
             advance_payment: f.advancePayment ? toCents(f.advancePayment) : 0,
@@ -1030,6 +1074,15 @@ function BookingModal({ b, onClose }: { b: Booking; onClose: () => void }) {
       {cancelOpen && (
         <ReasonModal
           title="Cancel venue booking"
+          withReasonOptions={[
+            "Client requested cancellation",
+            "Event cancelled by client",
+            "Venue maintenance issue",
+            "Force majeure (weather, emergency)",
+            "Payment not received",
+            "Double booking conflict",
+            "Other (specify below)"
+          ]}
           onSubmit={(reason) => act(() => post(`/venues/bookings/${state.id}/cancel`, { reason }), "Venue booking cancelled")}
           onClose={() => setCancelOpen(false)}
         />

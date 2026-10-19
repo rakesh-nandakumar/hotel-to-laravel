@@ -46,10 +46,6 @@ class VenueBookingService
         $primaryVenue = $venues->first();
         $isSingleVenue = count($venueIds) === 1;
 
-        if (($data['guest_count'] ?? 0) > $primaryVenue->max_capacity) {
-            throw ValidationException::withMessages(['guest_count' => "Capacity of {$primaryVenue->name} is {$primaryVenue->max_capacity}."]);
-        }
-
         $confirm = $data['confirm'] ?? false;
         $usePackagePricing = $data['use_package_pricing'] ?? $primaryVenue->usesPackagePricing();
 

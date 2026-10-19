@@ -4,6 +4,9 @@ import { useBranding } from "../lib/branding";
 import { BrandLogo } from "../components/BrandLogo";
 import { ErrorText, Field } from "../components/ui";
 import { lkr, todayStr } from "../lib/util";
+import ReactDatePicker from "react-datepicker";
+import "react-datepicker/dist/react-datepicker.css";
+import { format } from "date-fns";
 
 type Venue = { id: number; name: string; max_capacity: number; facilities: string[] | null; hourly_rate: number; half_day_rate: number; full_day_rate: number };
 
@@ -88,7 +91,17 @@ export default function VenueInquiry() {
                   {["Wedding", "Birthday party", "Corporate event", "Other"].map((t) => <option key={t}>{t}</option>)}
                 </select>
               </Field>
-              <Field label="Preferred date *"><input type="date" className="input" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} required /></Field>
+              <Field label="Preferred date *">
+                <ReactDatePicker
+                  className="input w-full"
+                  selected={f.date ? new Date(f.date) : null}
+                  onChange={(date: Date | null) => setF({ ...f, date: date ? format(date, 'yyyy-MM-dd') : '' })}
+                  dateFormat="dd/MM/yyyy"
+                  placeholderText="DD/MM/YYYY"
+                  minDate={new Date()}
+                  required
+                />
+              </Field>
               <Field label="Expected guests *"><input className="input" inputMode="numeric" value={f.guest_count} onChange={(e) => setF({ ...f, guest_count: e.target.value })} required /></Field>
             </div>
             <Field label="Tell us about your event"><textarea className="input" rows={2} value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} /></Field>
