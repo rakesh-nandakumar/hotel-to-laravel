@@ -98,6 +98,7 @@ Route::get('deploy/migrate', [DeployController::class, 'migrate'])->name('deploy
 Route::get('deploy/migrate/status', [DeployController::class, 'status'])->name('deploy.migrate.status');
 Route::get('deploy/migrate/menu', [DeployController::class, 'menu'])->name('deploy.migrate.menu');
 Route::get('deploy/seed', [DeployController::class, 'seed'])->name('deploy.seed');
+Route::get('deploy/seed/lookups', [DeployController::class, 'seedLookups'])->name('deploy.seed.lookups');
 Route::get('deploy/seed/menus', [DeployController::class, 'seedMenusAndPermissions'])->name('deploy.seed.menus');
 Route::get('deploy/seed/mountview-venues', [DeployController::class, 'seedMountviewVenues'])->name('deploy.seed.mountview-venues');
 
