@@ -669,7 +669,6 @@ function NewBooking({ onClose, onDone }: { onClose: () => void; onDone: () => vo
             onChange={(date: Date | null) => setF({ ...f, date: date ? format(date, 'yyyy-MM-dd') : '' })}
             dateFormat="dd/MM/yyyy"
             placeholderText="DD/MM/YYYY"
-            minDate={new Date()}
           />
         </Field>
 

@@ -160,7 +160,6 @@ function NewLease({ onClose, onCreated }: { onClose: () => void; onCreated: (id:
               onChange={(date: Date | null) => setForm({ ...form, startDate: date ? format(date, 'yyyy-MM-dd') : '' })}
               dateFormat="dd/MM/yyyy"
               placeholderText="DD/MM/YYYY"
-              minDate={new Date()}
             />
           </div>
         </Field>
@@ -172,7 +171,7 @@ function NewLease({ onClose, onCreated }: { onClose: () => void; onCreated: (id:
               onChange={(date: Date | null) => setForm({ ...form, endDate: date ? format(date, 'yyyy-MM-dd') : '' })}
               dateFormat="dd/MM/yyyy"
               placeholderText="DD/MM/YYYY"
-              minDate={form.startDate ? new Date(form.startDate) : new Date()}
+              minDate={form.startDate ? new Date(form.startDate) : undefined}
               isClearable
             />
           </div>

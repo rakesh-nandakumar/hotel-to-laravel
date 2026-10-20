@@ -98,7 +98,6 @@ export default function VenueInquiry() {
                   onChange={(date: Date | null) => setF({ ...f, date: date ? format(date, 'yyyy-MM-dd') : '' })}
                   dateFormat="dd/MM/yyyy"
                   placeholderText="DD/MM/YYYY"
-                  minDate={new Date()}
                   required
                 />
               </Field>
