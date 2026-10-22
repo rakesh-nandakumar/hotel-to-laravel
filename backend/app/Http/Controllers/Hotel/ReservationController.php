@@ -207,7 +207,40 @@ class ReservationController extends Controller
 
     public function update(UpdateReservationRequest $request, Reservation $reservation): JsonResponse
     {
-        $reservation->update($request->validated());
+        $data = $request->validated();
+
+        // If dates are being changed, check availability and recalculate charges
+        if (isset($data['check_in']) || isset($data['check_out'])) {
+            $checkIn = Carbon::parse($data['check_in'] ?? $reservation->check_in)->startOfDay();
+            $checkOut = Carbon::parse($data['check_out'] ?? $reservation->check_out)->startOfDay();
+
+            // Check availability for the new dates
+            $roomIds = $reservation->rooms->pluck('room_id')->toArray();
+            foreach ($roomIds as $roomId) {
+                $isAvailable = $this->availability->isRoomAvailable($roomId, $checkIn, $checkOut, $reservation->id);
+                if (! $isAvailable) {
+                    return response()->json(['error' => 'Room is not available for the selected dates.'], 422);
+                }
+            }
+
+            // Recalculate room charges for new dates
+            $result = $this->reservations->recalculateRoomCharges($reservation, $checkIn, $checkOut, $request->user()->id);
+
+            // Update other fields
+            unset($data['check_in'], $data['check_out']);
+            if (! empty($data)) {
+                $reservation->update($data);
+            }
+
+            AuditLog::record('reservation.updated', $reservation, ['code' => $reservation->code]);
+
+            return response()->json([
+                'message' => $result['message'],
+                'reservation' => $reservation->load(['guest', 'status', 'rooms.room']),
+            ]);
+        }
+
+        $reservation->update($data);
 
         AuditLog::record('reservation.updated', $reservation, ['code' => $reservation->code]);
 

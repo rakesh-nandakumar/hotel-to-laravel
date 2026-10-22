@@ -720,6 +720,101 @@ class ReservationService
      */
     public function findCheckedInReservationForRoom(int $roomId): Reservation
     {
+        return Reservation::query()
+            ->statusIn([ReservationStatus::CHECKED_IN])
+            ->whereHas('rooms', fn ($q) => $q->where('room_id', $roomId))
+            ->latest('check_in')
+            ->firstOrFail();
+    }
+
+    /**
+     * Recalculate room charges when dates are changed
+     */
+    public function recalculateRoomCharges(Reservation $reservation, Carbon $newCheckIn, Carbon $newCheckOut, int $staffId): array
+    {
+        if (! $reservation->folio) {
+            throw new \Exception('Reservation has no folio to update charges.');
+        }
+
+        $oldCheckIn = Carbon::parse($reservation->check_in)->startOfDay();
+        $oldCheckOut = Carbon::parse($reservation->check_out)->startOfDay();
+
+        // If dates haven't changed, nothing to do
+        if ($oldCheckIn->eq($newCheckIn) && $oldCheckOut->eq($newCheckOut)) {
+            return ['message' => 'Dates unchanged, no recalculation needed.'];
+        }
+
+        return DB::transaction(function () use ($reservation, $newCheckIn, $newCheckOut, $oldCheckIn, $oldCheckOut, $staffId) {
+            $folio = $reservation->folio;
+            $venueSourceId = Lookup::id(LookupType::LINE_SOURCE, LineSource::RESERVATION);
+
+            // Remove old room charge folio lines
+            FolioLine::where('folio_id', $folio->id)
+                ->where('line_source_id', $venueSourceId)
+                ->where('description', 'like', '%Night%')
+                ->delete();
+
+            // Calculate new room charges
+            $nightList = $this->pricing->nights($newCheckIn, $newCheckOut);
+            $nightCount = count($nightList);
+            $firstNight = Carbon::parse($nightList[0]);
+
+            $rooms = $reservation->rooms->load('room');
+            $newStayTotal = 0;
+
+            foreach ($rooms as $reservationRoom) {
+                $room = $reservationRoom->room;
+                $rate = $reservationRoom->nightly_rate ?? $this->pricing->nightlyRate($room, $firstNight);
+
+                // Create new folio lines for each night
+                foreach ($nightList as $index => $nightDate) {
+                    FolioLine::create([
+                        'folio_id' => $folio->id,
+                        'line_source_id' => $venueSourceId,
+                        'description' => "{$room->number} — Night ".($index + 1),
+                        'qty' => 1,
+                        'unit_price' => $rate,
+                        'amount' => $rate,
+                        'staff_id' => $staffId,
+                    ]);
+                }
+
+                $newStayTotal += $rate * $nightCount;
+            }
+
+            // Update reservation room rates
+            foreach ($rooms as $reservationRoom) {
+                $room = $reservationRoom->room;
+                $rate = $reservationRoom->nightly_rate ?? $this->pricing->nightlyRate($room, $firstNight);
+                $reservationRoom->update(['nightly_rate' => $rate]);
+            }
+
+            // Update reservation dates
+            $reservation->update([
+                'check_in' => $newCheckIn,
+                'check_out' => $newCheckOut,
+            ]);
+
+            AuditLog::record('reservation.dates_extended', $reservation, [
+                'code' => $reservation->code,
+                'old_check_in' => $oldCheckIn->toDateString(),
+                'old_check_out' => $oldCheckOut->toDateString(),
+                'new_check_in' => $newCheckIn->toDateString(),
+                'new_check_out' => $newCheckOut->toDateString(),
+                'new_total' => $newStayTotal,
+            ]);
+
+            return [
+                'message' => 'Room charges recalculated successfully.',
+                'new_total' => $newStayTotal,
+                'new_check_in' => $newCheckIn->toDateString(),
+                'new_check_out' => $newCheckOut->toDateString(),
+            ];
+        });
+    }
+
+    public function quickCheckoutForRoom(int $roomId): array
+    {
         $reservationRoom = ReservationRoom::query()
             ->where('room_id', $roomId)
             ->whereHas('reservation', fn ($q) => $q->statusCode(ReservationStatus::CHECKED_IN))

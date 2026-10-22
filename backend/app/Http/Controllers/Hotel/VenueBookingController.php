@@ -148,6 +148,8 @@ class VenueBookingController extends Controller
         ));
     }
 
+
+
     private function withFolioTotals(VenueBooking $booking): VenueBooking
     {
         try {

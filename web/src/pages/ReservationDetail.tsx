@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { Printer, LogIn, LogOut, Ban, Plus, Pencil, Trash2, Check, CircleDot, Circle } from "lucide-react";
+import ReactDatePicker from "react-datepicker";
+import { format } from "date-fns";
 import { printDocument, post, put } from "../lib/api";
 import { useFetch, lkr, usd, fmtDate, fmtDateTime, toCents, useSettings } from "../lib/util";
 import { Badge, Card, Empty, ErrorText, Field, Modal, statusColor } from "../components/ui";
@@ -9,6 +11,7 @@ import { SplitPay, ReasonModal, DiscountModal } from "./POS";
 import { useToast } from "../lib/toast";
 import { useAuth } from "../lib/auth";
 import clsx from "clsx";
+import "react-datepicker/dist/react-datepicker.css";
 
 /** Every status/channel/etc. lookup relation serializes as this shape (see App\Models\Lookup). */
 type Lookup = { id: number; code: string; name: string };
@@ -99,8 +102,11 @@ export default function ReservationDetail() {
               {can("hotel_reservations.cancel") && <button className="btn-danger" onClick={() => setCancelOpen(true)}><Ban size={16} /> Cancel</button>}
             </>
           )}
-          {r.status.code === "checked_in" && can("hotel_reservations.checkout") && (
-            <button className="btn-primary" onClick={() => setCheckoutOpen(true)}><LogOut size={16} /> Check out</button>
+          {r.status.code === "checked_in" && (
+            <>
+              {can("hotel_reservations.edit") && <button className="btn-primary bg-amber-500 hover:bg-amber-600" onClick={() => setEditStayOpen(true)}>Extend stay</button>}
+              {can("hotel_reservations.checkout") && <button className="btn-primary" onClick={() => setCheckoutOpen(true)}><LogOut size={16} /> Check out</button>}
+            </>
           )}
           {whatsapp.canShare(r.status.code) && (
             <button className="btn-secondary !border-emerald-200 !text-emerald-700 hover:!bg-emerald-50" onClick={() => setShareOpen(true)} title="Share booking to the WhatsApp group">
@@ -399,6 +405,8 @@ function EditStayModal({ r, onClose, onDone }: { r: Detail; onClose: () => void;
     adults: String(r.adults), children: String(r.children),
     packageId: r.package?.code === "RO" ? "" : r.package_id ? String(r.package_id) : "",
     notes: r.notes ?? "",
+    checkIn: r.check_in ? new Date(r.check_in) : null,
+    checkOut: r.check_out ? new Date(r.check_out) : null,
   });
   const { data: pkgResp } = useFetch<{ packages: { id: number; code: string; name: string }[] }>("/rooms/packages");
   const packages = pkgResp?.packages;
@@ -414,6 +422,8 @@ function EditStayModal({ r, onClose, onDone }: { r: Detail; onClose: () => void;
         children: parseInt(f.children) || 0,
         package_id: f.packageId ? Number(f.packageId) : null,
         notes: f.notes,
+        check_in: f.checkIn ? format(f.checkIn, 'yyyy-MM-dd') : undefined,
+        check_out: f.checkOut ? format(f.checkOut, 'yyyy-MM-dd') : undefined,
       });
       onDone();
     } catch (e) {
@@ -424,8 +434,26 @@ function EditStayModal({ r, onClose, onDone }: { r: Detail; onClose: () => void;
   };
 
   return (
-    <Modal open onClose={onClose} title={`Edit stay — ${r.code}`}>
+    <Modal open onClose={onClose} title={`Extend stay — ${r.code}`}>
       <div className="grid gap-3 sm:grid-cols-2">
+        <Field label="Check-in date">
+          <ReactDatePicker
+            className="input w-full"
+            selected={f.checkIn}
+            onChange={(date: Date | null) => setF({ ...f, checkIn: date })}
+            dateFormat="dd/MM/yyyy"
+            placeholderText="DD/MM/YYYY"
+          />
+        </Field>
+        <Field label="Check-out date">
+          <ReactDatePicker
+            className="input w-full"
+            selected={f.checkOut}
+            onChange={(date: Date | null) => setF({ ...f, checkOut: date })}
+            dateFormat="dd/MM/yyyy"
+            placeholderText="DD/MM/YYYY"
+          />
+        </Field>
         <Field label="Adults"><input className="input" inputMode="numeric" value={f.adults} onChange={(e) => setF({ ...f, adults: e.target.value })} /></Field>
         <Field label="Children"><input className="input" inputMode="numeric" value={f.children} onChange={(e) => setF({ ...f, children: e.target.value })} /></Field>
         <Field label="Package" hint="Changes apply to future charges only">

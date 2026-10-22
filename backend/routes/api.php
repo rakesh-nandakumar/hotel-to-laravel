@@ -175,6 +175,7 @@ Route::prefix('central')->name('central.')->middleware('central_only')->group(fu
         Route::post('tenants/{tenant}/reset-admin-password', [TenantController::class, 'resetAdminPassword'])->name('tenants.reset-admin-password');
         Route::get('tenants/{tenant}/credentials', [TenantController::class, 'credentials'])->name('tenants.credentials');
         Route::get('tenants/{tenant}/audit-logs', [TenantController::class, 'auditLogs'])->name('tenants.audit-logs');
+        Route::post('tenants/{tenant}/purge-cancelled-venue-bookings', [TenantController::class, 'purgeCancelledVenueBookings'])->name('tenants.purge-cancelled-venue-bookings');
 
         Route::get('admins', [CentralAdminController::class, 'index'])->name('admins.index');
         Route::post('admins', [CentralAdminController::class, 'store'])->name('admins.store');

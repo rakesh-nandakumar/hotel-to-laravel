@@ -487,6 +487,18 @@ export function DataTab({ tenantId, tenantName }: { tenantId: number; tenantName
             <span>Bulk-delete this tenant's data by category. Every purge creates a restorable backup kept for <strong>{catalog?.retention_days ?? 90} days</strong>.</span>
           </div>
           <div className="flex gap-2">
+            <button className="btn-danger !py-1.5 text-sm" onClick={async () => {
+              if (confirm("Are you sure you want to delete all CANCELLED venue bookings for this tenant? This cannot be undone.")) {
+                try {
+                  await post(`/central/tenants/${tenantId}/purge-cancelled-venue-bookings`);
+                  toast.success("Cancelled venue bookings deleted successfully");
+                } catch (e) {
+                  toast.error((e as Error).message);
+                }
+              }
+            }}>
+              <Trash2 size={14} className="mr-1" /> Purge cancelled venue bookings
+            </button>
             <button className={clsx("btn-secondary !py-1.5 text-sm", view === "select" && "bg-slate-200")} onClick={() => setView("select")}><Database size={14} /> Select data</button>
             <button className={clsx("btn-secondary !py-1.5 text-sm", view === "history" && "bg-slate-200")} onClick={() => setView("history")}><Clock size={14} /> History</button>
             <button className="btn-danger !py-1.5 text-sm" onClick={() => { setResetPassword(""); setResetPwError(""); setResetConfirming(true); }}><Trash2 size={14} /> Full reset</button>

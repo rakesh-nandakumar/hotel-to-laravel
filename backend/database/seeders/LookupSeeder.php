@@ -151,6 +151,7 @@ class LookupSeeder extends Seeder
 
         $this->seedType(LookupType::LINE_SOURCE, [
             [LineSource::ROOM, 'Room', 'blue'],
+            [LineSource::RESERVATION, 'Reservation', 'blue'],
             [LineSource::PACKAGE, 'Package', 'blue'],
             [LineSource::RESTAURANT, 'Restaurant', 'orange'],
             [LineSource::MINIBAR, 'Minibar', 'orange'],
