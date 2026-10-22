@@ -7,6 +7,8 @@ class LineSource
 {
     public const ROOM = 'room';
 
+    public const RESERVATION = 'reservation';
+
     public const PACKAGE = 'package';
 
     public const RESTAURANT = 'restaurant';

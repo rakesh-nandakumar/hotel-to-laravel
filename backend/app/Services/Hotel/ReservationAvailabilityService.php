@@ -71,4 +71,30 @@ class ReservationAvailabilityService
 
         return $free;
     }
+
+    /**
+     * Check if a specific room is available for the given dates
+     */
+    public function isRoomAvailable(int $roomId, CarbonInterface $checkIn, CarbonInterface $checkOut, ?int $excludeReservationId = null): bool
+    {
+        $busyStatuses = [ReservationStatus::PENDING, ReservationStatus::CONFIRMED, ReservationStatus::CHECKED_IN];
+
+        $isBusy = ReservationRoom::query()
+            ->where('room_id', $roomId)
+            ->whereHas('reservation', function (Builder $query) use ($checkIn, $checkOut, $excludeReservationId, $busyStatuses) {
+                $query->statusIn($busyStatuses)
+                    ->where('check_in', '<', $checkOut->toDateString())
+                    ->where('check_out', '>', $checkIn->toDateString());
+
+                if ($excludeReservationId) {
+                    $query->where('id', '!=', $excludeReservationId);
+                }
+            })
+            ->exists();
+
+        $maintenanceId = Lookup::id(LookupType::ROOM_STATUS, RoomStatus::MAINTENANCE);
+        $inMaintenance = Room::where('id', $roomId)->where('room_status_id', $maintenanceId)->exists();
+
+        return ! $isBusy && ! $inMaintenance;
+    }
 }

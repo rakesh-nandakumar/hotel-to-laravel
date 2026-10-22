@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { api, post, put } from "../../lib/api";
+import { useToast } from "../../lib/toast";
 import {
   Card, Badge, Field, ErrorText, Tabs, statusColor, SimpleTable, Pagination, ConfirmDialog, Modal,
 } from "../../components/ui";
@@ -121,6 +122,7 @@ export default function CentralTenantDetail() {
 function OverviewTab({
   tenant, owner, onSaved,
 }: { tenant: Tenant; owner: OwnerAdmin | null; onSaved: (t: Tenant) => void }) {
+  const toast = useToast();
   const [name, setName] = useState(tenant.name);
   const [status, setStatus] = useState(tenant.status);
   const [busy, setBusy] = useState(false);

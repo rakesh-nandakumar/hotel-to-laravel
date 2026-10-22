@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Central;
 
 use App\Http\Controllers\Controller;
 use App\Models\AuditLog;
+use App\Models\Hotel\VenueBooking;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Rules\ReservedSlug;
@@ -247,13 +248,27 @@ class TenantController extends Controller
             ->withoutTenantScope()
             ->where('tenant_id', $tenant->id)
             ->whereHas('roles', fn (Builder $q) => $q->where('is_full_admin', true))
-            ->orderBy('id')
-            ->first()
-            ?? User::query()
-                ->withoutTenantScope()
-                ->where('tenant_id', $tenant->id)
-                ->orderBy('id')
-                ->first();
+            ->latest()
+            ->first();
+    }
+
+    /**
+     * Purge cancelled venue bookings for a specific tenant (temporary utility)
+     */
+    public function purgeCancelledVenueBookings(Request $request, Tenant $tenant): JsonResponse
+    {
+        $ctx = app(CurrentContext::class);
+
+        $count = $ctx->runForTenant($tenant, function () {
+            return VenueBooking::query()
+                ->whereHas('status', fn ($q) => $q->where('code', 'cancelled'))
+                ->delete();
+        });
+
+        return response()->json([
+            'message' => "Deleted {$count} cancelled venue bookings for {$tenant->name}.",
+            'count' => $count,
+        ]);
     }
 
     /**

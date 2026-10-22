@@ -21,6 +21,8 @@ class UpdateReservationRequest extends FormRequest
             'adults' => ['sometimes', 'integer', 'min:1'],
             'children' => ['sometimes', 'integer', 'min:0'],
             'package_id' => ['sometimes', 'nullable', 'integer', 'exists:packages,id'],
+            'check_in' => ['sometimes', 'date'],
+            'check_out' => ['sometimes', 'date', 'after:check_in'],
         ];
     }
 }
