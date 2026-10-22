@@ -254,17 +254,28 @@ class VenueBookingService
         $perPlatePrice = null;
 
         if ($packageType === 'hall_only') {
-            // Hall only: 500 per person (or venue-specific rate)
-            $hallOnlyRate = $venues->first()->hall_only_per_person;
-            $hallCharge = $hallOnlyRate * $guestCount;
+            // Hall only: use custom hall charge if provided, otherwise per-person rate
+            if (isset($data['hall_charge_used']) && $data['hall_charge_used'] > 0) {
+                $hallCharge = $data['hall_charge_used'];
+                $venueNames = $venues->pluck('name')->join(' + ');
+                $folioLines[] = [
+                    'description' => "{$venueNames} — Hall Only ({$guestCount} persons)",
+                    'qty' => 1,
+                    'unit_price' => $hallCharge,
+                    'amount' => $hallCharge,
+                ];
+            } else {
+                $hallOnlyRate = $venues->first()->hall_only_per_person;
+                $hallCharge = $hallOnlyRate * $guestCount;
 
-            $venueNames = $venues->pluck('name')->join(' + ');
-            $folioLines[] = [
-                'description' => "{$venueNames} — Hall Only ({$guestCount} persons)",
-                'qty' => $guestCount,
-                'unit_price' => $hallOnlyRate,
-                'amount' => $hallCharge,
-            ];
+                $venueNames = $venues->pluck('name')->join(' + ');
+                $folioLines[] = [
+                    'description' => "{$venueNames} — Hall Only ({$guestCount} persons)",
+                    'qty' => $guestCount,
+                    'unit_price' => $hallOnlyRate,
+                    'amount' => $hallCharge,
+                ];
+            }
 
             $total = $hallCharge;
         } else {
