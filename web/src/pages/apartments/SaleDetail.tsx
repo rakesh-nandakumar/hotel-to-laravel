@@ -209,6 +209,7 @@ export default function SaleDetail() {
       {payOpen && ledger && (
         <SplitPay
           due={Math.max(ledger.balance, 0)}
+          allowPartial={true}
           onDone={async (payments) => {
             try {
               for (const p of payments) {

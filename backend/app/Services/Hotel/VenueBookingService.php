@@ -165,37 +165,13 @@ class VenueBookingService
                         'staff_id' => $staffId,
                     ]);
 
-                    // Record the payment(s)
+                    // Only record the payment method for tracking purposes, but don't count it as actual cash in till
+                    // The actual payment will be recorded when the balance is settled at the event
                     $paymentMethod = $data['advance_payment_method'] ?? 'cash';
                     if (is_array($paymentMethod)) {
-                        // Split payment - record each payment method
-                        foreach ($paymentMethod as $pm) {
-                            $amount = isset($pm['amount']) ? (int) $pm['amount'] : 0;
-                            // Convert LKR to cents if amount is provided as number
-                            if ($amount > 0 && $amount < 10000) {
-                                $amount = $amount * 100; // Assume LKR if less than 10000
-                            }
-                            if ($amount > 0) {
-                                $this->billing->recordPayment([
-                                    'folio_id' => $folio->id,
-                                    'method' => $pm['method'] ?? 'cash',
-                                    'amount' => $amount,
-                                    'kind' => PaymentKind::PAYMENT,
-                                    'reason' => 'Advance payment for venue booking',
-                                    'staff_id' => $staffId,
-                                ]);
-                            }
-                        }
+                        $bookingData['advance_payment_method'] = json_encode($paymentMethod);
                     } else {
-                        // Single payment method
-                        $this->billing->recordPayment([
-                            'folio_id' => $folio->id,
-                            'method' => $paymentMethod,
-                            'amount' => $data['advance_payment'],
-                            'kind' => PaymentKind::PAYMENT,
-                            'reason' => 'Advance payment for venue booking',
-                            'staff_id' => $staffId,
-                        ]);
+                        $bookingData['advance_payment_method'] = $paymentMethod;
                     }
                 }
             } else {
@@ -448,14 +424,18 @@ class VenueBookingService
             'advance_payment_method' => $method,
         ]);
 
-        // If there's a folio, record the advance as a payment
+        // Advance payment is only recorded as a folio credit, not as an actual payment
+        // The actual payment will be recorded when the balance is settled at the event
+        // If there's a folio, add the advance as a credit line
         if ($booking->folio) {
-            $this->billing->recordPayment([
+            $venueSourceId = Lookup::id(LookupType::LINE_SOURCE, LineSource::VENUE);
+            FolioLine::create([
                 'folio_id' => $booking->folio->id,
-                'method' => $method,
-                'amount' => $amount,
-                'kind' => PaymentKind::PAYMENT,
-                'reason' => 'Advance payment for venue booking',
+                'line_source_id' => $venueSourceId,
+                'description' => 'Advance payment',
+                'qty' => 1,
+                'unit_price' => -$amount, // Negative to reduce balance
+                'amount' => -$amount,
                 'staff_id' => $staffId,
             ]);
         }

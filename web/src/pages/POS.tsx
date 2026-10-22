@@ -1433,7 +1433,7 @@ function MergeOrdersModal({ order, candidates, onDone, onClose }: { order: Order
 
 /** Split bill across multiple people / payment methods. */
 export function SplitPay({
-  due, onDone, onClose, allowOverpay = false,
+  due, onDone, onClose, allowOverpay = false, allowPartial = false,
 }: {
   due: number;
   onDone: (p: { method: string; amount: number; reference?: string }[]) => void;
@@ -1442,13 +1442,19 @@ export function SplitPay({
   // back change). The folio "record a payment" and venue-deposit call sites
   // don't have a "change" concept, so they keep the strict exact-match.
   allowOverpay?: boolean;
+  // Allow partial payments (e.g., venue deposits before the event)
+  allowPartial?: boolean;
 }) {
-  const [rows, setRows] = useState<{ method: string; amount: string; reference: string }[]>([{ method: "cash", amount: (due / 100).toFixed(2), reference: "" }]);
+  const [rows, setRows] = useState<{ method: string; amount: string; reference: string }[]>([{ method: "cash", amount: allowPartial ? "" : (due / 100).toFixed(2), reference: "" }]);
   const sum = rows.reduce((s, r) => s + toCents(r.amount), 0);
   const remaining = due - sum;
   const hasCash = rows.some((r) => r.method.toLowerCase() === "cash" && toCents(r.amount) > 0);
   const overTenderNeedsCash = allowOverpay && remaining < 0 && !hasCash;
-  const blocked = allowOverpay ? remaining > 0 || overTenderNeedsCash : remaining !== 0;
+  const blocked = allowPartial
+    ? (sum <= 0) || (remaining < 0 && !allowOverpay) || (remaining < 0 && overTenderNeedsCash)
+    : allowOverpay
+      ? remaining > 0 || overTenderNeedsCash
+      : remaining !== 0;
 
   return (
     <Modal open onClose={onClose} title="Take payment — split across methods">
@@ -1467,7 +1473,7 @@ export function SplitPay({
             )}
           </div>
         ))}
-        <button className="btn-secondary w-full" onClick={() => setRows([...rows, { method: "card", amount: remaining > 0 ? (remaining / 100).toFixed(2) : "", reference: "" }])}>
+        <button className="btn-secondary w-full" onClick={() => setRows([...rows, { method: "card", amount: remaining > 0 && !allowPartial ? (remaining / 100).toFixed(2) : "", reference: "" }])}>
           + Add split
         </button>
         <div className="flex justify-between text-sm font-semibold">
@@ -1476,7 +1482,9 @@ export function SplitPay({
             {remaining === 0
               ? "Balanced ✓"
               : remaining > 0
-                ? `Short ${lkr(remaining)}`
+                ? allowPartial
+                  ? `Remaining ${lkr(remaining)}`
+                  : `Short ${lkr(remaining)}`
                 : allowOverpay
                   ? overTenderNeedsCash ? `Over ${lkr(-remaining)} — add a cash payment to give change` : `Change due ${lkr(-remaining)}`
                   : `Over ${lkr(-remaining)}`}
@@ -1487,7 +1495,7 @@ export function SplitPay({
           disabled={blocked || due <= 0}
           onClick={() => onDone(rows.map((r) => ({ method: r.method, amount: toCents(r.amount), reference: r.reference || undefined })))}
         >
-          Confirm {lkr(due)}
+          Confirm {allowPartial ? lkr(sum) : lkr(due)}
         </button>
       </div>
     </Modal>

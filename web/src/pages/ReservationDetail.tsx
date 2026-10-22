@@ -290,6 +290,7 @@ export default function ReservationDetail() {
       {payOpen && f && (
         <SplitPay
           due={Math.max(f.balance, 0)}
+          allowPartial={true}
           onDone={async (payments) => {
             try {
               for (const p of payments) {
