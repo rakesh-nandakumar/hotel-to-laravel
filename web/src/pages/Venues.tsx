@@ -463,12 +463,13 @@ function Bookings() {
       {selected && payOpen && selected.folio && (
         <SplitPay
           due={Math.max(selected.balance, 0)}
+          allowPartial={true}
           onDone={async (payments) => {
             try {
               for (const p of payments) {
                 await post(`/folios/${selected.folio!.id}/payments`, {
                   method: p.method.toLowerCase(),
-                  amount: toCents(p.amount),
+                  amount: p.amount,
                   kind: "payment",
                   reason: "Venue booking payment",
                 });
@@ -669,7 +670,6 @@ function NewBooking({ onClose, onDone }: { onClose: () => void; onDone: () => vo
             onChange={(date: Date | null) => setF({ ...f, date: date ? format(date, 'yyyy-MM-dd') : '' })}
             dateFormat="dd/MM/yyyy"
             placeholderText="DD/MM/YYYY"
-            minDate={new Date()}
           />
         </Field>
 
@@ -1051,6 +1051,7 @@ function BookingModal({ b, onClose }: { b: Booking; onClose: () => void }) {
       {payOpen && state.folio && (
         <SplitPay
           due={Math.max(state.balance, 0)}
+          allowPartial={true}
           onDone={async (payments) => {
             try {
               for (const p of payments) {

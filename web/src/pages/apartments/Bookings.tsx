@@ -165,7 +165,6 @@ function NewBooking({ onClose, onCreated }: { onClose: () => void; onCreated: (i
               onChange={(date: Date | null) => { setCheckIn(date ? format(date, 'yyyy-MM-dd') : ''); setUnitId(null); }}
               dateFormat="dd/MM/yyyy"
               placeholderText="DD/MM/YYYY"
-              minDate={new Date()}
             />
           </div>
         </Field>
@@ -177,7 +176,7 @@ function NewBooking({ onClose, onCreated }: { onClose: () => void; onCreated: (i
               onChange={(date: Date | null) => { setCheckOut(date ? format(date, 'yyyy-MM-dd') : ''); setUnitId(null); }}
               dateFormat="dd/MM/yyyy"
               placeholderText="DD/MM/YYYY"
-              minDate={checkIn ? new Date(checkIn) : new Date()}
+              minDate={checkIn ? new Date(checkIn) : undefined}
             />
           </div>
         </Field>
