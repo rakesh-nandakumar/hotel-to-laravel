@@ -71,7 +71,10 @@ class VenueBookingService
         }
 
         $extras = $data['extras'] ?? [];
-        $extrasTotal = (int) collect($extras)->sum('amount');
+        $venueExtras = $data['venue_extras'] ?? [];
+        $extrasTotal = $usePackagePricing
+            ? (int) collect($venueExtras)->sum('amount')
+            : (int) collect($extras)->sum('amount');
         $depositDue = Settings::depositAmount($pricing['total'] + $extrasTotal, 'billing.venue_deposit_mode', 'billing.venue_deposit_pct', 'billing.venue_deposit_fixed', 25);
 
         $booking = DB::transaction(function () use ($data, $venues, $primaryVenue, $confirm, $pricing, $extras, $depositDue, $staffId, $usePackagePricing, $isSingleVenue) {
@@ -192,20 +195,22 @@ class VenueBookingService
                 ]);
             }
 
-            // Add extra charges
-            foreach ($extras as $extra) {
-                FolioLine::create([
-                    'folio_id' => $folio->id,
-                    'line_source_id' => $venueSourceId,
-                    'description' => "{$extra['description']} — optional extra",
-                    'qty' => 1,
-                    'unit_price' => $extra['amount'],
-                    'amount' => $extra['amount'],
-                    'staff_id' => $staffId,
-                ]);
+            // Add extra charges (legacy pricing only - package pricing extras are already in folio_lines)
+            if (! $usePackagePricing) {
+                foreach ($extras as $extra) {
+                    FolioLine::create([
+                        'folio_id' => $folio->id,
+                        'line_source_id' => $venueSourceId,
+                        'description' => "{$extra['description']} — optional extra",
+                        'qty' => 1,
+                        'unit_price' => $extra['amount'],
+                        'amount' => $extra['amount'],
+                        'staff_id' => $staffId,
+                    ]);
+                }
             }
 
-            // Create venue extra charges records for unlimited extras
+            // Create venue extra charges records for unlimited extras (package pricing)
             if ($usePackagePricing && isset($data['venue_extras'])) {
                 foreach ($data['venue_extras'] as $index => $extra) {
                     VenueExtraCharge::create([
@@ -328,6 +333,22 @@ class VenueBookingService
                 'amount' => $profitMargin,
             ];
             $total += $profitMargin;
+        }
+
+        // Add venue extras (AC, DJ, cleaning staff, etc.)
+        if (isset($data['venue_extras']) && is_array($data['venue_extras'])) {
+            foreach ($data['venue_extras'] as $extra) {
+                $amount = $extra['amount'] ?? 0;
+                if ($amount > 0) {
+                    $folioLines[] = [
+                        'description' => $extra['description'] ?? 'Additional Charge',
+                        'qty' => 1,
+                        'unit_price' => $amount,
+                        'amount' => $amount,
+                    ];
+                    $total += $amount;
+                }
+            }
         }
 
         return [
