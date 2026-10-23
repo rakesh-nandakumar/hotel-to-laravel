@@ -882,7 +882,7 @@ class OrderService
         $order->loadMissing('items.menuItem.category');
         $live = $order->items->where('voided', false);
         // Add-on lines are never minibar — they're kitchen/front-of-house additions.
-        $minibar = (int) $live->filter(fn (OrderItem $i) => $i->add_on_id === null && $i->menuItem?->category?->is_minibar)->sum('amount');
+        $minibar = (int) $live->filter(fn (OrderItem $i) => $i->add_on_id === null && $i->menuItem?->category?->is_minibar ?? false)->sum('amount');
         $restaurant = (int) $live->sum('amount') - $minibar;
 
         $folioId = $reservation->folio->id;

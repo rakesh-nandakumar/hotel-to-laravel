@@ -193,7 +193,7 @@ class ReportService
         $byCategory = [];
         $byItem = [];
         foreach ($orderItems as $item) {
-            $category = $item->menuItem->category->name;
+            $category = $item->menuItem?->category?->name ?? 'Uncategorized';
             $byCategory[$category] = ($byCategory[$category] ?? 0) + $item->amount;
             $byItem[$item->name] = [
                 'qty' => ($byItem[$item->name]['qty'] ?? 0) + $item->qty,
@@ -330,7 +330,7 @@ class ReportService
         $byCategory = [];
         $byItem = [];
         foreach ($orderItems as $item) {
-            $category = $item->menuItem->category->name;
+            $category = $item->menuItem?->category?->name ?? 'Uncategorized';
             $byCategory[$category] = ($byCategory[$category] ?? 0) + $item->amount;
             $byItem[$item->name] = [
                 'qty' => ($byItem[$item->name]['qty'] ?? 0) + $item->qty,
