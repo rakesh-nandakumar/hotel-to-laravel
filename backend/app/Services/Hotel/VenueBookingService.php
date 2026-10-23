@@ -117,7 +117,6 @@ class VenueBookingService
                 $bookingData['byod_selected'] = $data['byod_selected'] ?? false;
                 $bookingData['dj_required'] = $data['dj_required'] ?? true;
                 $bookingData['advance_payment'] = $data['advance_payment'] ?? 0;
-                $bookingData['profit_margin'] = $data['profit_margin'] ?? 0;
                 if ($bookingData['advance_payment'] > 0) {
                     $bookingData['advance_paid_at'] = now();
                     $paymentMethod = $data['advance_payment_method'] ?? null;
@@ -251,7 +250,6 @@ class VenueBookingService
         $guestCount = $data['guest_count'] ?? 0;
         $packageType = $data['package_type'] ?? 'hall_food';
         $serviceChargePct = $data['service_charge_pct'] ?? 10;
-        $profitMargin = $data['profit_margin'] ?? 0;
 
         $folioLines = [];
         $total = 0;
@@ -324,17 +322,6 @@ class VenueBookingService
             $total += $serviceCharge;
         }
 
-        // Add profit margin if applicable
-        if ($profitMargin > 0) {
-            $folioLines[] = [
-                'description' => 'Profit Margin',
-                'qty' => 1,
-                'unit_price' => $profitMargin,
-                'amount' => $profitMargin,
-            ];
-            $total += $profitMargin;
-        }
-
         // Add venue extras (AC, DJ, cleaning staff, etc.)
         if (isset($data['venue_extras']) && is_array($data['venue_extras'])) {
             foreach ($data['venue_extras'] as $extra) {
@@ -385,9 +372,140 @@ class VenueBookingService
      */
     public function updateBooking(VenueBooking $booking, array $data): VenueBooking
     {
+        $pricingFields = array_keys(array_filter([
+            'package_type' => isset($data['package_type']),
+            'per_plate_price' => isset($data['per_plate_price']),
+            'hall_charge_used' => isset($data['hall_charge_used']),
+            'service_charge_pct' => isset($data['service_charge_pct']),
+            'byod_selected' => isset($data['byod_selected']),
+            'dj_required' => isset($data['dj_required']),
+            'venue_extras' => isset($data['venue_extras']),
+        ]));
+
+        // Handle venue changes separately
+        if (isset($data['venue_id']) || isset($data['venue_ids'])) {
+            $newVenueIds = $data['venue_ids'] ?? [$data['venue_id']];
+            $data['venue_ids'] = $newVenueIds;
+            $data['venue_id'] = $newVenueIds[0] ?? $booking->venue_id;
+        }
+
+        // If pricing fields are being updated, recalculate and update folio
+        if (! empty($pricingFields)) {
+            return DB::transaction(function () use ($booking, $data, $pricingFields) {
+                // Update basic fields first
+                $basicFields = array_diff_key($data, array_flip($pricingFields));
+                if (! empty($basicFields)) {
+                    $booking->update($basicFields);
+                }
+
+                // Recalculate pricing
+                $venues = Venue::query()->whereIn('id', $booking->venue_ids ?? [$booking->venue_id])->get();
+                $pricingData = array_merge($booking->toArray(), $data);
+                $pricing = $this->calculatePackagePricing($venues, $pricingData);
+
+                // Update booking pricing fields
+                $booking->update([
+                    'package_type' => $data['package_type'] ?? $booking->package_type,
+                    'per_plate_price' => $data['per_plate_price'] ?? $booking->per_plate_price,
+                    'hall_charge_used' => $data['hall_charge_used'] ?? $booking->hall_charge_used,
+                    'service_charge_pct' => $data['service_charge_pct'] ?? $booking->service_charge_pct,
+                    'byod_selected' => $data['byod_selected'] ?? $booking->byod_selected,
+                    'dj_required' => $data['dj_required'] ?? $booking->dj_required,
+                ]);
+
+                // Update venue extras
+                if (isset($data['venue_extras'])) {
+                    // Delete old extras
+                    VenueExtraCharge::where('venue_booking_id', $booking->id)->delete();
+
+                    // Create new extras
+                    foreach ($data['venue_extras'] as $extra) {
+                        VenueExtraCharge::create([
+                            'venue_booking_id' => $booking->id,
+                            'description' => $extra['description'],
+                            'amount' => $extra['amount'],
+                            'charge_type' => $extra['charge_type'] ?? null,
+                            'is_percentage' => $extra['is_percentage'] ?? false,
+                        ]);
+                    }
+                }
+
+                // Update folio if it exists
+                if ($booking->folio) {
+                    $folio = $booking->folio;
+                    $venueSourceId = Lookup::id(LookupType::LINE_SOURCE, LineSource::VENUE);
+
+                    // Remove old venue charge lines
+                    FolioLine::where('folio_id', $folio->id)
+                        ->where('line_source_id', $venueSourceId)
+                        ->where('description', 'like', '%Venue Booking%')
+                        ->delete();
+
+                    // Add new venue charge lines
+                    if ($pricing['rental'] > 0) {
+                        FolioLine::create([
+                            'folio_id' => $folio->id,
+                            'line_source_id' => $venueSourceId,
+                            'description' => "Venue Booking {$booking->code} - Hall Charge",
+                            'qty' => 1,
+                            'unit_price' => $pricing['rental'],
+                            'amount' => $pricing['rental'],
+                            'staff_id' => auth()->id(),
+                        ]);
+                    }
+
+                    if ($pricing['foodCost'] > 0) {
+                        FolioLine::create([
+                            'folio_id' => $folio->id,
+                            'line_source_id' => $venueSourceId,
+                            'description' => "Venue Booking {$booking->code} - Catering ({$booking->guest_count} guests)",
+                            'qty' => $booking->guest_count,
+                            'unit_price' => $pricing['foodCost'] / $booking->guest_count,
+                            'amount' => $pricing['foodCost'],
+                            'staff_id' => auth()->id(),
+                        ]);
+                    }
+
+                    // Add venue extras to folio
+                    if (isset($data['venue_extras'])) {
+                        foreach ($data['venue_extras'] as $extra) {
+                            FolioLine::create([
+                                'folio_id' => $folio->id,
+                                'line_source_id' => $venueSourceId,
+                                'description' => $extra['description'],
+                                'qty' => 1,
+                                'unit_price' => $extra['amount'],
+                                'amount' => $extra['amount'],
+                                'staff_id' => auth()->id(),
+                            ]);
+                        }
+                    }
+
+                    // Add service charge
+                    if ($pricing['serviceCharge'] > 0) {
+                        $serviceChargeSourceId = Lookup::id(LookupType::LINE_SOURCE, LineSource::SERVICE_CHARGE);
+                        FolioLine::create([
+                            'folio_id' => $folio->id,
+                            'line_source_id' => $serviceChargeSourceId,
+                            'description' => "Service charge - Venue Booking {$booking->code}",
+                            'qty' => 1,
+                            'unit_price' => $pricing['serviceCharge'],
+                            'amount' => $pricing['serviceCharge'],
+                            'staff_id' => auth()->id(),
+                        ]);
+                    }
+                }
+
+                AuditLog::record('venue_booking.updated', $booking, ['code' => $booking->code]);
+
+                return $booking->load(['venue', 'folio', 'status', 'durationType', 'extraCharges']);
+            });
+        }
+
+        // Simple update - no pricing changes
         $booking->update($data);
 
-        return $booking->load(['venue', 'folio', 'status', 'durationType']);
+        return $booking->load(['venue', 'folio', 'status', 'durationType', 'extraCharges']);
     }
 
     /** Confirm an inquiry — re-checks the double-booking clash at confirm time. */

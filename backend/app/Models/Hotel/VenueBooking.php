@@ -53,7 +53,6 @@ class VenueBooking extends Model
         'advance_payment',
         'advance_paid_at',
         'advance_payment_method',
-        'profit_margin',
         'folio_id',
     ];
 
@@ -74,7 +73,6 @@ class VenueBooking extends Model
             'advance_payment' => 'integer',
             'advance_paid_at' => 'datetime',
             'advance_payment_method' => 'array',
-            'profit_margin' => 'integer',
             'venue_ids' => 'array',
         ];
     }
