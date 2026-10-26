@@ -40,6 +40,7 @@ type Booking = {
   per_plate_price?: number | null;
   hall_charge_used?: number | null;
   service_charge_pct?: number;
+  service_charge_on?: 'hall' | 'food' | 'both';
   byod_selected?: boolean;
   dj_required?: boolean;
   advance_payment?: number;
@@ -535,6 +536,7 @@ function NewBooking({ onClose, onDone }: { onClose: () => void; onDone: () => vo
     perPlatePrice: "1950",
     hallOnlyRate: "500",
     serviceChargePct: "10",
+    serviceChargeOn: "both", // "hall", "food", or "both"
     byodSelected: false,
     djRequired: true,
     splitPayment: false,
@@ -604,6 +606,8 @@ function NewBooking({ onClose, onDone }: { onClose: () => void; onDone: () => vo
     if (selectedVenues.length === 0) return { rental: 0, foodCost: 0, serviceCharge: 0, total: 0 };
 
     const guestCount = parseInt(f.guestCount) || 0;
+    const serviceChargePct = parseFloat(f.serviceChargePct) ?? 10;
+    const serviceChargeOn = f.serviceChargeOn || "both";
 
     if (f.packageType === "hall_only") {
       // Use editable hall charge
@@ -617,7 +621,11 @@ function NewBooking({ onClose, onDone }: { onClose: () => void; onDone: () => vo
           return sum + (v.hall_type === "luxury" ? (v.luxury_hall_charge ?? 4500000) : (v.basic_hall_charge ?? 4000000));
         }, 0);
       }
-      const serviceCharge = Math.round(hallCharge * (parseFloat(f.serviceChargePct) ?? 10) / 100);
+      // Calculate service charge based on selection
+      let serviceCharge = 0;
+      if (serviceChargeOn === "hall" || serviceChargeOn === "both") {
+        serviceCharge = Math.round(hallCharge * serviceChargePct / 100);
+      }
       return { rental: hallCharge, foodCost: 0, serviceCharge, total: hallCharge + serviceCharge };
     } else {
       // Hall + Food: use editable hall charge, combined hall charge, or default venue charge
@@ -638,9 +646,19 @@ function NewBooking({ onClose, onDone }: { onClose: () => void; onDone: () => vo
       }
       const perPlatePrice = f.perPlatePrice ? toCents(f.perPlatePrice) : (selectedVenues[0].per_plate_starting_price || 195000);
       const foodCost = perPlatePrice * guestCount;
-      const baseTotal = hallCharge + foodCost;
-      const serviceCharge = Math.round(baseTotal * (parseFloat(f.serviceChargePct) ?? 10) / 100);
-      return { rental: hallCharge, foodCost, serviceCharge, total: baseTotal + serviceCharge };
+
+      // Calculate service charge based on selection
+      let serviceCharge = 0;
+      if (serviceChargeOn === "hall") {
+        serviceCharge = Math.round(hallCharge * serviceChargePct / 100);
+      } else if (serviceChargeOn === "food") {
+        serviceCharge = Math.round(foodCost * serviceChargePct / 100);
+      } else {
+        // both
+        serviceCharge = Math.round((hallCharge + foodCost) * serviceChargePct / 100);
+      }
+
+      return { rental: hallCharge, foodCost, serviceCharge, total: hallCharge + foodCost + serviceCharge };
     }
   };
   
@@ -755,6 +773,13 @@ function NewBooking({ onClose, onDone }: { onClose: () => void; onDone: () => vo
             if (val > 100) val = 100;
             setF({ ...f, serviceChargePct: String(val) });
           }} />
+        </Field>
+        <Field label="Service Charge On">
+          <select className="input" value={f.serviceChargeOn} onChange={(e) => setF({ ...f, serviceChargeOn: e.target.value })}>
+            <option value="both">Both Hall & Food</option>
+            <option value="hall">Hall Only</option>
+            <option value="food">Food Only</option>
+          </select>
         </Field>
 
         <Field label="Expected guest count"><input className="input" value={f.guestCount} onChange={(e) => setF({ ...f, guestCount: e.target.value })} /></Field>
@@ -965,6 +990,7 @@ function NewBooking({ onClose, onDone }: { onClose: () => void; onDone: () => vo
             hall_charge_used: f.packageType === "hall_food" ? (f.hallCharge ? toCents(f.hallCharge) : (showCombinedHallCharge && f.combinedHallCharge ? toCents(f.combinedHallCharge) : (isBothVenuesSelected ? selectedVenues.reduce((sum, v) => sum + (v.hall_type === "luxury" ? (v.luxury_hall_charge ?? 4500000) : (v.basic_hall_charge ?? 4000000)), 0) : (selectedVenues[0].hall_type === "luxury" ? selectedVenues[0].luxury_hall_charge : selectedVenues[0].basic_hall_charge)))) : (f.packageType === "hall_only" ? (f.hallOnlyCharge ? toCents(f.hallOnlyCharge) : (selectedVenues.length === 1 ? (selectedVenues[0].hall_type === "luxury" ? (selectedVenues[0].luxury_hall_charge ?? 4500000) : (selectedVenues[0].basic_hall_charge ?? 4000000)) : selectedVenues.reduce((sum, v) => sum + (v.hall_type === "luxury" ? (v.luxury_hall_charge ?? 4500000) : (v.basic_hall_charge ?? 4000000)), 0))) : null),
             hall_only_per_person: null,
             service_charge_pct: parseInt(f.serviceChargePct) ?? 10,
+            service_charge_on: f.serviceChargeOn || "both",
             byod_selected: f.byodSelected,
             dj_required: f.djRequired,
             advance_payment: f.advancePayment ? toCents(f.advancePayment) : 0,
@@ -1016,6 +1042,7 @@ function BookingModal({ b, onClose, editMode: propEditMode, onEditModeChange }: 
     per_plate_price: (b as any).per_plate_price ? centsToRupees((b as any).per_plate_price) : "",
     hall_charge_used: (b as any).hall_charge_used ? centsToRupees((b as any).hall_charge_used) : "",
     service_charge_pct: String((b as any).service_charge_pct || 10),
+    service_charge_on: (b as any).service_charge_on || "both",
     byod_selected: (b as any).byod_selected || false,
     dj_required: (b as any).dj_required || false,
     notes: (b as any).notes || "",
@@ -1128,6 +1155,7 @@ function BookingModal({ b, onClose, editMode: propEditMode, onEditModeChange }: 
         per_plate_price: editForm.per_plate_price ? toCents(editForm.per_plate_price) : null,
         hall_charge_used: editForm.hall_charge_used ? toCents(editForm.hall_charge_used) : null,
         service_charge_pct: Number(editForm.service_charge_pct || 0),
+        service_charge_on: editForm.service_charge_on || "both",
         byod_selected: editForm.byod_selected,
         dj_required: editForm.dj_required,
         notes: editForm.notes || null,
@@ -1209,6 +1237,13 @@ function BookingModal({ b, onClose, editMode: propEditMode, onEditModeChange }: 
           </Field>
           <Field label="Service Charge (%)">
             <input className="input" type="number" min="0" max="100" value={editForm.service_charge_pct} onChange={(e) => setEditForm({ ...editForm, service_charge_pct: e.target.value })} />
+          </Field>
+          <Field label="Service Charge On">
+            <select className="input" value={editForm.service_charge_on} onChange={(e) => setEditForm({ ...editForm, service_charge_on: e.target.value })}>
+              <option value="both">Both Hall & Food</option>
+              <option value="hall">Hall Only</option>
+              <option value="food">Food Only</option>
+            </select>
           </Field>
           <div className="flex gap-4">
             <label className="flex items-center gap-2">

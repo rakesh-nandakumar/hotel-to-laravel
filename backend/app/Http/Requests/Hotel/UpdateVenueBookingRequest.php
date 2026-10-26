@@ -38,6 +38,7 @@ class UpdateVenueBookingRequest extends FormRequest
             'per_plate_price' => ['sometimes', 'nullable', 'integer', 'min:0'],
             'hall_charge_used' => ['sometimes', 'nullable', 'integer', 'min:0'],
             'service_charge_pct' => ['sometimes', 'nullable', 'integer', 'min:0', 'max:100'],
+            'service_charge_on' => ['sometimes', 'nullable', 'string', 'in:hall,food,both'],
             'byod_selected' => ['sometimes', 'nullable', 'boolean'],
             'dj_required' => ['sometimes', 'nullable', 'boolean'],
             'venue_extras' => ['sometimes', 'nullable', 'array'],

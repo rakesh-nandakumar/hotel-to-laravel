@@ -114,6 +114,7 @@ class VenueBookingService
                 $bookingData['per_plate_price'] = $pricing['per_plate_price'] ?? null;
                 $bookingData['hall_charge_used'] = $pricing['hall_charge'];
                 $bookingData['service_charge_pct'] = $pricing['service_charge_pct'];
+                $bookingData['service_charge_on'] = $data['service_charge_on'] ?? 'both';
                 $bookingData['byod_selected'] = $data['byod_selected'] ?? false;
                 $bookingData['dj_required'] = $data['dj_required'] ?? true;
                 $bookingData['advance_payment'] = $data['advance_payment'] ?? 0;
@@ -250,6 +251,7 @@ class VenueBookingService
         $guestCount = $data['guest_count'] ?? 0;
         $packageType = $data['package_type'] ?? 'hall_food';
         $serviceChargePct = $data['service_charge_pct'] ?? 10;
+        $serviceChargeOn = $data['service_charge_on'] ?? 'both';
 
         $folioLines = [];
         $total = 0;
@@ -312,14 +314,26 @@ class VenueBookingService
 
         // Add service charge if applicable
         if ($serviceChargePct > 0) {
-            $serviceCharge = (int) round($total * $serviceChargePct / 100);
-            $folioLines[] = [
-                'description' => "Service Charge ({$serviceChargePct}%)",
-                'qty' => 1,
-                'unit_price' => $serviceCharge,
-                'amount' => $serviceCharge,
-            ];
-            $total += $serviceCharge;
+            $serviceCharge = 0;
+            if ($serviceChargeOn === 'hall') {
+                $serviceCharge = (int) round($hallCharge * $serviceChargePct / 100);
+            } elseif ($serviceChargeOn === 'food') {
+                $foodCost = $packageType === 'hall_food' ? ($perPlatePrice * $guestCount) : 0;
+                $serviceCharge = (int) round($foodCost * $serviceChargePct / 100);
+            } else {
+                // both
+                $serviceCharge = (int) round($total * $serviceChargePct / 100);
+            }
+
+            if ($serviceCharge > 0) {
+                $folioLines[] = [
+                    'description' => "Service Charge ({$serviceChargePct}%)",
+                    'qty' => 1,
+                    'unit_price' => $serviceCharge,
+                    'amount' => $serviceCharge,
+                ];
+                $total += $serviceCharge;
+            }
         }
 
         // Add venue extras (AC, DJ, cleaning staff, etc.)
@@ -409,6 +423,7 @@ class VenueBookingService
                     'per_plate_price' => $data['per_plate_price'] ?? $booking->per_plate_price,
                     'hall_charge_used' => $data['hall_charge_used'] ?? $booking->hall_charge_used,
                     'service_charge_pct' => $data['service_charge_pct'] ?? $booking->service_charge_pct,
+                    'service_charge_on' => $data['service_charge_on'] ?? $booking->service_charge_on,
                     'byod_selected' => $data['byod_selected'] ?? $booking->byod_selected,
                     'dj_required' => $data['dj_required'] ?? $booking->dj_required,
                 ]);
