@@ -23,7 +23,7 @@ class VenueBookingController extends Controller
 
     public function index(Request $request): JsonResponse
     {
-        $query = VenueBooking::query()->with(['venue:id,name,max_capacity', 'folio', 'folio.status', 'folio.lines', 'folio.payments.kind', 'folio.payments.method', 'status'])->orderBy('date');
+        $query = VenueBooking::query()->with(['venue:id,name,max_capacity', 'folio', 'folio.status', 'folio.lines', 'folio.payments.kind', 'folio.payments.method', 'status', 'extraCharges'])->orderBy('date');
 
         if ($request->has('page')) {
             $paginated = $query->paginate($request->integer('page_size', 25))->withQueryString();
@@ -36,6 +36,16 @@ class VenueBookingController extends Controller
                 } else {
                     $b->venue_name = $b->venue->name ?? '';
                 }
+                // Map extra charges to venue_extras format for frontend
+                $venueExtras = $b->extraCharges->map(function ($charge) {
+                    return [
+                        'description' => $charge->description,
+                        'amount' => $charge->amount,
+                        'charge_type' => $charge->charge_type,
+                        'is_percentage' => $charge->is_percentage,
+                    ];
+                })->toArray();
+                $b->venue_extras = $venueExtras;
 
                 return $b;
             });
@@ -77,7 +87,7 @@ class VenueBookingController extends Controller
 
     public function show(VenueBooking $booking): JsonResponse
     {
-        $booking->load(['venue', 'guest', 'status', 'durationType']);
+        $booking->load(['venue', 'guest', 'status', 'durationType', 'extraCharges']);
         $folio = $booking->folio;
 
         // Add venue_name for display
@@ -88,9 +98,20 @@ class VenueBookingController extends Controller
             $booking->venue_name = $booking->venue->name ?? '';
         }
 
+        // Map extra charges to venue_extras format for frontend
+        $venueExtras = $booking->extraCharges->map(function ($charge) {
+            return [
+                'description' => $charge->description,
+                'amount' => $charge->amount,
+                'charge_type' => $charge->charge_type,
+                'is_percentage' => $charge->is_percentage,
+            ];
+        })->toArray();
+
         return response()->json([
             'booking' => $booking,
             'folio' => $folio ? $this->billing->present($folio) : null,
+            'venue_extras' => $venueExtras,
         ]);
     }
 
@@ -147,8 +168,6 @@ class VenueBookingController extends Controller
             $booking, $validated['amount'], $validated['method'], $request->user()->id,
         ));
     }
-
-
 
     private function withFolioTotals(VenueBooking $booking): VenueBooking
     {

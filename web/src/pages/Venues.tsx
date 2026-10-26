@@ -27,21 +27,24 @@ type Venue = {
   default_charge_defaults?: { [key: string]: number } | null;
 };
 type Booking = {
-  id: number; code: string; client_name: string; client_phone?: string | null; event_type?: string | null; date: string;
+  id: number; code: string; client_name: string; client_phone?: string | null; client_email?: string | null; event_type?: string | null; date: string;
   start_time?: string | null; end_time?: string | null; guest_count: number; status: Lookup;
   seating?: string | null; av_needs?: string | null; decoration?: string | null; catering_by_hotel: boolean; deposit_due: number;
   venue: { id: number; name: string; max_capacity: number };
   venue_name?: string;
   folio?: { id: number; invoice_no?: string | null } | null;
   total: number; paid: number; balance: number;
+  notes?: string | null;
   // Enhanced booking fields
   package_type?: 'hall_only' | 'hall_food' | null;
   per_plate_price?: number | null;
   hall_charge_used?: number | null;
   service_charge_pct?: number;
+  service_charge_on?: 'hall' | 'food' | 'both';
   byod_selected?: boolean;
   dj_required?: boolean;
   advance_payment?: number;
+  venue_extras?: { description: string; amount: number; charge_type: string; is_percentage: boolean }[] | null;
 };
 
 export default function Venues() {
@@ -319,6 +322,7 @@ function Bookings() {
   const [printingInvoice, setPrintingInvoice] = useState<number | null>(null);
   const [payOpen, setPayOpen] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
+  const [editMode, setEditMode] = useState(false);
 
   const act = (fn: () => Promise<unknown>, successMsg?: string) =>
     fn()
@@ -398,6 +402,11 @@ function Bookings() {
                           👁 View
                         </button>
                       )}
+                      {can("hotel_venue_bookings.edit") && (
+                        <button key={`edit-${b.id}`} className="inline-flex items-center px-3 py-1.5 rounded-lg bg-amber-500 text-white text-xs font-medium hover:bg-amber-600 transition-all duration-150 shadow-sm" onClick={() => { setSelected(b); setEditMode(true); }}>
+                          ✏️ Edit
+                        </button>
+                      )}
                       {b.status.code === "inquiry" && can("hotel_venue_bookings.confirm") && (
                         <button key={`confirm-${b.id}`} className="inline-flex items-center px-3 py-1.5 rounded-lg bg-emerald-500 text-white text-xs font-medium hover:bg-emerald-600 transition-all duration-150 shadow-sm" onClick={() => act(() => post(`/venues/bookings/${b.id}/confirm`), "Venue booking confirmed")}>
                           ✓ Confirm booking
@@ -459,7 +468,7 @@ function Bookings() {
       </div>
 
       {openNew && <NewBooking onClose={() => setOpenNew(false)} onDone={() => { setOpenNew(false); reload(); }} />}
-      {selected && <BookingModal b={selected} onClose={() => { setSelected(null); setPayOpen(false); setCancelOpen(false); reload(); }} />}
+      {selected && <BookingModal b={selected} onClose={() => { setSelected(null); setPayOpen(false); setCancelOpen(false); setEditMode(false); reload(); }} editMode={editMode} onEditModeChange={setEditMode} />}
       {selected && payOpen && selected.folio && (
         <SplitPay
           due={Math.max(selected.balance, 0)}
@@ -527,12 +536,12 @@ function NewBooking({ onClose, onDone }: { onClose: () => void; onDone: () => vo
     perPlatePrice: "1950",
     hallOnlyRate: "500",
     serviceChargePct: "10",
+    serviceChargeOn: "both", // "hall", "food", or "both"
     byodSelected: false,
     djRequired: true,
     splitPayment: false,
     advancePayment: "",
     advancePaymentMethod: "cash",
-    profitMargin: "20000",
     combinedHallCharge: "65000",
     hallCharge: "",
     hallOnlyCharge: "",
@@ -597,6 +606,8 @@ function NewBooking({ onClose, onDone }: { onClose: () => void; onDone: () => vo
     if (selectedVenues.length === 0) return { rental: 0, foodCost: 0, serviceCharge: 0, total: 0 };
 
     const guestCount = parseInt(f.guestCount) || 0;
+    const serviceChargePct = parseFloat(f.serviceChargePct) ?? 10;
+    const serviceChargeOn = f.serviceChargeOn || "both";
 
     if (f.packageType === "hall_only") {
       // Use editable hall charge
@@ -610,7 +621,11 @@ function NewBooking({ onClose, onDone }: { onClose: () => void; onDone: () => vo
           return sum + (v.hall_type === "luxury" ? (v.luxury_hall_charge ?? 4500000) : (v.basic_hall_charge ?? 4000000));
         }, 0);
       }
-      const serviceCharge = Math.round(hallCharge * (parseFloat(f.serviceChargePct) ?? 10) / 100);
+      // Calculate service charge based on selection
+      let serviceCharge = 0;
+      if (serviceChargeOn === "hall" || serviceChargeOn === "both") {
+        serviceCharge = Math.round(hallCharge * serviceChargePct / 100);
+      }
       return { rental: hallCharge, foodCost: 0, serviceCharge, total: hallCharge + serviceCharge };
     } else {
       // Hall + Food: use editable hall charge, combined hall charge, or default venue charge
@@ -631,9 +646,19 @@ function NewBooking({ onClose, onDone }: { onClose: () => void; onDone: () => vo
       }
       const perPlatePrice = f.perPlatePrice ? toCents(f.perPlatePrice) : (selectedVenues[0].per_plate_starting_price || 195000);
       const foodCost = perPlatePrice * guestCount;
-      const baseTotal = hallCharge + foodCost;
-      const serviceCharge = Math.round(baseTotal * (parseFloat(f.serviceChargePct) ?? 10) / 100);
-      return { rental: hallCharge, foodCost, serviceCharge, total: baseTotal + serviceCharge };
+
+      // Calculate service charge based on selection
+      let serviceCharge = 0;
+      if (serviceChargeOn === "hall") {
+        serviceCharge = Math.round(hallCharge * serviceChargePct / 100);
+      } else if (serviceChargeOn === "food") {
+        serviceCharge = Math.round(foodCost * serviceChargePct / 100);
+      } else {
+        // both
+        serviceCharge = Math.round((hallCharge + foodCost) * serviceChargePct / 100);
+      }
+
+      return { rental: hallCharge, foodCost, serviceCharge, total: hallCharge + foodCost + serviceCharge };
     }
   };
   
@@ -749,6 +774,13 @@ function NewBooking({ onClose, onDone }: { onClose: () => void; onDone: () => vo
             setF({ ...f, serviceChargePct: String(val) });
           }} />
         </Field>
+        <Field label="Service Charge On">
+          <select className="input" value={f.serviceChargeOn} onChange={(e) => setF({ ...f, serviceChargeOn: e.target.value })}>
+            <option value="both">Both Hall & Food</option>
+            <option value="hall">Hall Only</option>
+            <option value="food">Food Only</option>
+          </select>
+        </Field>
 
         <Field label="Expected guest count"><input className="input" value={f.guestCount} onChange={(e) => setF({ ...f, guestCount: e.target.value })} /></Field>
         <Field label="NOTES"><textarea className="input" value={f.items} onChange={(e) => setF({ ...f, items: e.target.value })} placeholder="Seating arrangement, AV equipment, decoration requests" rows={3} /></Field>
@@ -830,15 +862,9 @@ function NewBooking({ onClose, onDone }: { onClose: () => void; onDone: () => vo
           <input type="checkbox" checked={f.djRequired} onChange={(e) => setF({ ...f, djRequired: e.target.checked })} />
           DJ Required (included in charge)
         </label>
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <span className="label">ADVANCE PAYMENT (LKR)</span>
-            <input className="input" type="number" value={f.advancePayment} onChange={(e) => setF({ ...f, advancePayment: e.target.value })} placeholder="Optional" />
-          </div>
-          <div>
-            <span className="label">PROFIT MARGIN (LKR)</span>
-            <input className="input" type="number" value={f.profitMargin} onChange={(e) => setF({ ...f, profitMargin: e.target.value })} />
-          </div>
+        <div>
+          <span className="label">ADVANCE PAYMENT (LKR)</span>
+          <input className="input" type="number" value={f.advancePayment} onChange={(e) => setF({ ...f, advancePayment: e.target.value })} placeholder="Optional" />
         </div>
         {f.advancePayment && (
           <>
@@ -925,12 +951,9 @@ function NewBooking({ onClose, onDone }: { onClose: () => void; onDone: () => vo
         {pricing.serviceCharge > 0 && (
           <div className="flex justify-between"><span>Service Charge ({f.serviceChargePct}%)</span><span>{lkr(pricing.serviceCharge)}</span></div>
         )}
-        {parseInt(f.profitMargin) > 0 && (
-          <div className="flex justify-between"><span>Profit Margin</span><span>{lkr(toCents(f.profitMargin))}</span></div>
-        )}
         <div className="flex justify-between"><span>Base Total</span><span>{lkr(pricing.total)}</span></div>
         <div className="flex justify-between"><span>Additional Charges</span><span>{lkr(venueExtrasTotal)}</span></div>
-        <div className="flex justify-between font-bold border-t pt-2"><span>Total</span><span>{lkr(pricing.total + venueExtrasTotal + toCents(f.profitMargin))}</span></div>
+        <div className="flex justify-between font-bold border-t pt-2"><span>Total</span><span>{lkr(pricing.total + venueExtrasTotal)}</span></div>
         {parseInt(f.advancePayment) > 0 && (
           <div className="flex justify-between text-emerald-700"><span>Advance Payment</span><span>{lkr(toCents(f.advancePayment))}</span></div>
         )}
@@ -967,11 +990,11 @@ function NewBooking({ onClose, onDone }: { onClose: () => void; onDone: () => vo
             hall_charge_used: f.packageType === "hall_food" ? (f.hallCharge ? toCents(f.hallCharge) : (showCombinedHallCharge && f.combinedHallCharge ? toCents(f.combinedHallCharge) : (isBothVenuesSelected ? selectedVenues.reduce((sum, v) => sum + (v.hall_type === "luxury" ? (v.luxury_hall_charge ?? 4500000) : (v.basic_hall_charge ?? 4000000)), 0) : (selectedVenues[0].hall_type === "luxury" ? selectedVenues[0].luxury_hall_charge : selectedVenues[0].basic_hall_charge)))) : (f.packageType === "hall_only" ? (f.hallOnlyCharge ? toCents(f.hallOnlyCharge) : (selectedVenues.length === 1 ? (selectedVenues[0].hall_type === "luxury" ? (selectedVenues[0].luxury_hall_charge ?? 4500000) : (selectedVenues[0].basic_hall_charge ?? 4000000)) : selectedVenues.reduce((sum, v) => sum + (v.hall_type === "luxury" ? (v.luxury_hall_charge ?? 4500000) : (v.basic_hall_charge ?? 4000000)), 0))) : null),
             hall_only_per_person: null,
             service_charge_pct: parseInt(f.serviceChargePct) ?? 10,
+            service_charge_on: f.serviceChargeOn || "both",
             byod_selected: f.byodSelected,
             dj_required: f.djRequired,
             advance_payment: f.advancePayment ? toCents(f.advancePayment) : 0,
             advance_payment_method: f.splitPayment ? JSON.stringify(splitPaymentMethods) : f.advancePaymentMethod,
-            profit_margin: f.profitMargin ? toCents(f.profitMargin) : 0,
             venue_extras: venueExtras.filter((x) => (x.enabled || x.isCustom) && toCents(x.amount) > 0).map((x) => ({
               description: x.description,
               amount: toCents(x.amount),
@@ -995,13 +1018,107 @@ function NewBooking({ onClose, onDone }: { onClose: () => void; onDone: () => vo
   );
 }
 
-function BookingModal({ b, onClose }: { b: Booking; onClose: () => void }) {
+function BookingModal({ b, onClose, editMode: propEditMode, onEditModeChange }: { b: Booking; onClose: () => void; editMode?: boolean; onEditModeChange?: (mode: boolean) => void }) {
   const toast = useToast();
   const { can } = useAuth();
   const [error, setError] = useState("");
   const [payOpen, setPayOpen] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
-  const [state] = useState(b);
+  const [editMode, setEditMode] = useState(propEditMode || false);
+  const [state, setState] = useState(b);
+  const [editForm, setEditForm] = useState({
+    venue_id: String(b.venue.id),
+    date: b.date,
+    client_name: b.client_name,
+    client_phone: b.client_phone || "",
+    client_email: b.client_email || "",
+    event_type: b.event_type || "",
+    guest_count: String(b.guest_count),
+    seating: b.seating || "",
+    av_needs: b.av_needs || "",
+    decoration: b.decoration || "",
+    catering_by_hotel: b.catering_by_hotel,
+    package_type: (b as any).package_type || "",
+    per_plate_price: (b as any).per_plate_price ? centsToRupees((b as any).per_plate_price) : "",
+    hall_charge_used: (b as any).hall_charge_used ? centsToRupees((b as any).hall_charge_used) : "",
+    service_charge_pct: String((b as any).service_charge_pct || 10),
+    service_charge_on: (b as any).service_charge_on || "both",
+    byod_selected: (b as any).byod_selected || false,
+    dj_required: (b as any).dj_required || false,
+    notes: (b as any).notes || "",
+  });
+  const { data: venuesData } = useFetch<{ venues: Venue[] }>("/venues");
+  const venues = venuesData?.venues;
+
+  // Set initial venue_id to "both" if multiple venues are selected
+  useEffect(() => {
+    if ((b as any).venue_ids && Array.isArray((b as any).venue_ids) && (b as any).venue_ids.length > 1) {
+      setEditForm(prev => ({ ...prev, venue_id: "both" }));
+    }
+  }, [b.id]);
+  const [venueExtras, setVenueExtras] = useState<{ description: string; amount: string; charge_type: string; is_percentage: boolean; enabled: boolean; isCustom: boolean }[]>(
+    ((b as any).venue_extras || []).map((x: any) => ({
+      description: x.description,
+      amount: centsToRupees(x.amount),
+      charge_type: x.charge_type,
+      is_percentage: x.is_percentage,
+      enabled: true,
+      isCustom: false,
+    }))
+  );
+  const [customCharge, setCustomCharge] = useState({ description: "", amount: "" });
+
+  // Reset edit mode when booking changes
+  useEffect(() => {
+    setEditMode(propEditMode || false);
+    const existingExtras = (b as any).venue_extras || [];
+
+    // Default extras list
+    const defaultExtras = [
+      { description: "AC", amount: "12000", charge_type: "ac", is_percentage: false, enabled: false, isCustom: false },
+      { description: "Table", amount: "10000", charge_type: "table", is_percentage: false, enabled: false, isCustom: false },
+      { description: "Cleaning Staff", amount: "2500", charge_type: "cleaning_staff", is_percentage: false, enabled: false, isCustom: false },
+      { description: "Service Supply", amount: "6000", charge_type: "service_supply", is_percentage: false, enabled: false, isCustom: false },
+      { description: "Water", amount: "2000", charge_type: "water", is_percentage: false, enabled: false, isCustom: false },
+      { description: "Light", amount: "7500", charge_type: "light", is_percentage: false, enabled: false, isCustom: false },
+      { description: "DJ", amount: "11000", charge_type: "dj", is_percentage: false, enabled: false, isCustom: false },
+      { description: "Water (Cleaning)", amount: "6000", charge_type: "water_cleaning", is_percentage: false, enabled: false, isCustom: false },
+      { description: "Extra Kitchen", amount: "0", charge_type: "extra_kitchen", is_percentage: false, enabled: false, isCustom: false },
+      { description: "Other", amount: "1000", charge_type: "other", is_percentage: false, enabled: false, isCustom: false },
+    ];
+
+    if (existingExtras.length > 0) {
+      // Merge existing extras with defaults: enable the ones that exist, keep others disabled
+      const mergedExtras = defaultExtras.map((defaultExtra) => {
+        const existing = existingExtras.find((x: any) => x.charge_type === defaultExtra.charge_type);
+        if (existing) {
+          return {
+            ...defaultExtra,
+            amount: centsToRupees(existing.amount),
+            enabled: true,
+          };
+        }
+        return defaultExtra;
+      });
+
+      // Add any custom extras that aren't in the default list
+      const customExtras = existingExtras
+        .filter((x: any) => !defaultExtras.some((d) => d.charge_type === x.charge_type))
+        .map((x: any) => ({
+          description: x.description,
+          amount: centsToRupees(x.amount),
+          charge_type: x.charge_type,
+          is_percentage: x.is_percentage,
+          enabled: true,
+          isCustom: true,
+        }));
+
+      setVenueExtras([...mergedExtras, ...customExtras]);
+    } else {
+      // No existing extras, show all defaults as disabled
+      setVenueExtras(defaultExtras);
+    }
+  }, [b.id, propEditMode]);
 
   const act = (fn: () => Promise<unknown>, successMsg?: string) =>
     fn()
@@ -1011,42 +1128,240 @@ function BookingModal({ b, onClose }: { b: Booking; onClose: () => void }) {
       })
       .catch((e) => setError((e as Error).message));
 
+  const saveEdit = async () => {
+    setError("");
+    try {
+      const enabledExtras = venueExtras.filter((x) => x.enabled || x.isCustom).map((x) => ({
+        description: x.description,
+        amount: toCents(x.amount),
+        charge_type: x.charge_type,
+        is_percentage: x.is_percentage,
+      }));
+
+      await put(`/venues/bookings/${state.id}`, {
+        venue_id: editForm.venue_id === "both" ? null : Number(editForm.venue_id),
+        venue_ids: editForm.venue_id === "both" ? venues?.map((v) => v.id) : null,
+        date: editForm.date,
+        client_name: editForm.client_name,
+        client_phone: editForm.client_phone || null,
+        client_email: editForm.client_email || null,
+        event_type: editForm.event_type || null,
+        guest_count: Number(editForm.guest_count || 0),
+        seating: editForm.seating || null,
+        av_needs: editForm.av_needs || null,
+        decoration: editForm.decoration || null,
+        catering_by_hotel: editForm.catering_by_hotel,
+        package_type: editForm.package_type || null,
+        per_plate_price: editForm.per_plate_price ? toCents(editForm.per_plate_price) : null,
+        hall_charge_used: editForm.hall_charge_used ? toCents(editForm.hall_charge_used) : null,
+        service_charge_pct: Number(editForm.service_charge_pct || 0),
+        service_charge_on: editForm.service_charge_on || "both",
+        byod_selected: editForm.byod_selected,
+        dj_required: editForm.dj_required,
+        notes: editForm.notes || null,
+        venue_extras: enabledExtras,
+      });
+      toast.success("Venue booking updated");
+      setEditMode(false);
+      onEditModeChange?.(false);
+      onClose();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+
   return (
-    <Modal open onClose={onClose} title={`${state.code} — ${state.venue_name || state.venue.name}`} wide>
-      <div className="grid gap-2 text-sm sm:grid-cols-2">
-        <div><b>Client:</b> {state.client_name} {state.client_phone && `· ${state.client_phone}`}</div>
-        <div><b>Event:</b> {state.event_type ?? "—"} on {fmtDate(state.date)} {state.start_time && `(${state.start_time}–${state.end_time})`}</div>
-        <div><b>Guests:</b> {state.guest_count} / {state.venue.max_capacity}</div>
-        <div><b>Catering:</b> {state.catering_by_hotel ? "By hotel" : "Client's own chefs (rental only)"}</div>
-        {state.seating && <div><b>Seating:</b> {state.seating}</div>}
-        {state.av_needs && <div><b>AV:</b> {state.av_needs}</div>}
-        {state.decoration && <div><b>Decoration:</b> {state.decoration}</div>}
-        <div><b>Status:</b> <Badge color={statusColor(state.status.code.toUpperCase())}>{state.status.code.toUpperCase()}</Badge></div>
-      </div>
-      <div className="mt-3 space-y-1 rounded-xl bg-slate-50 p-3 text-sm">
-        <div className="flex justify-between font-bold"><span>Invoice total (separate VNU invoice type)</span><span>{lkr(state.total)}</span></div>
-        <div className="flex justify-between text-emerald-700"><span>Paid</span><span>{lkr(state.paid)}</span></div>
-        <div className="flex justify-between font-extrabold"><span>Balance</span><span>{lkr(state.balance)}</span></div>
-        <div className="text-xs text-slate-500">Required deposit: {lkr(state.deposit_due)}</div>
-      </div>
-      <ErrorText error={error} />
-      <div className="mt-4 flex flex-wrap gap-2">
-        {state.status.code === "inquiry" && can("hotel_venue_bookings.confirm") && (
-          <button className="btn-primary" onClick={() => act(() => post(`/venues/bookings/${state.id}/confirm`), "Venue booking confirmed")}>Confirm booking</button>
-        )}
-        {(state.status.code === "inquiry" || state.status.code === "confirmed") && state.folio && (
-          <>
-            {can("hotel_folios.payment") && <button className="btn-primary" onClick={() => setPayOpen(true)}>Take payment / deposit</button>}
-            {can("hotel_venue_bookings.complete") && <button className="btn-secondary" onClick={() => act(() => post(`/venues/bookings/${state.id}/complete`), "Event completed — invoice generated")}>Complete event → invoice</button>}
-            {can("hotel_venue_bookings.cancel") && <button className="btn-danger" onClick={() => setCancelOpen(true)}>Cancel</button>}
-          </>
-        )}
-        {state.folio && can("hotel_folios.invoice") && (
-          <button className="btn-secondary" onClick={() => printDocument(`/folios/${state.folio!.id}/invoice?format=a4`)}>
-            <Printer size={15} /> Invoice {state.folio.invoice_no ?? "(proforma)"}
-          </button>
-        )}
-      </div>
+    <>
+      <style>{`
+        .react-datepicker-wrapper {
+          width: 100% !important;
+        }
+        .react-datepicker__input-container input {
+          width: 100% !important;
+        }
+      `}</style>
+      <Modal open onClose={onClose} title={`${state.code} — ${state.venue_name || state.venue.name}`} wide>
+      {editMode ? (
+        <div className="space-y-3">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Venue">
+              <select className="input" value={editForm.venue_id} onChange={(e) => setEditForm({ ...editForm, venue_id: e.target.value })}>
+                <option value="">Select…</option>
+                {(venues ?? []).map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+                {(venues ?? []).length === 2 && <option value="both">Both Venues</option>}
+              </select>
+            </Field>
+            <Field label="Date">
+              <div className="w-full">
+                <ReactDatePicker
+                  selected={editForm.date ? new Date(editForm.date) : null}
+                  onChange={(date: Date | null) => setEditForm({ ...editForm, date: date ? format(date, 'yyyy-MM-dd') : '' })}
+                  dateFormat="dd/MM/yyyy"
+                  className="input w-full"
+                />
+              </div>
+            </Field>
+            <Field label="Client name"><input className="input" value={editForm.client_name} onChange={(e) => setEditForm({ ...editForm, client_name: e.target.value })} /></Field>
+            <Field label="Client phone"><input className="input" value={editForm.client_phone} onChange={(e) => setEditForm({ ...editForm, client_phone: e.target.value })} /></Field>
+            <Field label="Client email"><input className="input" type="email" value={editForm.client_email} onChange={(e) => setEditForm({ ...editForm, client_email: e.target.value })} /></Field>
+            <Field label="Event type"><input className="input" value={editForm.event_type} onChange={(e) => setEditForm({ ...editForm, event_type: e.target.value })} /></Field>
+            <Field label="Guest count"><input className="input" type="number" value={editForm.guest_count} onChange={(e) => setEditForm({ ...editForm, guest_count: e.target.value })} /></Field>
+            <Field label="Seating"><input className="input" value={editForm.seating} onChange={(e) => setEditForm({ ...editForm, seating: e.target.value })} /></Field>
+            <Field label="AV needs"><input className="input" value={editForm.av_needs} onChange={(e) => setEditForm({ ...editForm, av_needs: e.target.value })} /></Field>
+            <Field label="Decoration"><input className="input" value={editForm.decoration} onChange={(e) => setEditForm({ ...editForm, decoration: e.target.value })} /></Field>
+          </div>
+          <label className="flex items-center gap-2">
+            <input type="checkbox" checked={editForm.catering_by_hotel} onChange={(e) => setEditForm({ ...editForm, catering_by_hotel: e.target.checked })} />
+            Catering by hotel
+          </label>
+          <div className="mt-3">
+            <label className="label">Package Type</label>
+            <div className="flex gap-4">
+              <label className="flex items-center gap-2">
+                <input type="radio" name="editPackageType" value="hall_food" checked={editForm.package_type === "hall_food"} onChange={(e) => setEditForm({ ...editForm, package_type: e.target.value })} />
+                Hall + Food
+              </label>
+              <label className="flex items-center gap-2">
+                <input type="radio" name="editPackageType" value="hall_only" checked={editForm.package_type === "hall_only"} onChange={(e) => setEditForm({ ...editForm, package_type: e.target.value })} />
+                Hall Only
+              </label>
+            </div>
+          </div>
+          {editForm.package_type === "hall_food" && (
+            <Field label="Per Plate Price (LKR)">
+              <input className="input" type="number" value={editForm.per_plate_price} onChange={(e) => setEditForm({ ...editForm, per_plate_price: e.target.value })} />
+            </Field>
+          )}
+          <Field label="Hall Charge (LKR)">
+            <input className="input" type="number" value={editForm.hall_charge_used} onChange={(e) => setEditForm({ ...editForm, hall_charge_used: e.target.value })} />
+          </Field>
+          <Field label="Service Charge (%)">
+            <input className="input" type="number" min="0" max="100" value={editForm.service_charge_pct} onChange={(e) => setEditForm({ ...editForm, service_charge_pct: e.target.value })} />
+          </Field>
+          <Field label="Service Charge On">
+            <select className="input" value={editForm.service_charge_on} onChange={(e) => setEditForm({ ...editForm, service_charge_on: e.target.value })}>
+              <option value="both">Both Hall & Food</option>
+              <option value="hall">Hall Only</option>
+              <option value="food">Food Only</option>
+            </select>
+          </Field>
+          <div className="flex gap-4">
+            <label className="flex items-center gap-2">
+              <input type="checkbox" checked={editForm.byod_selected} onChange={(e) => setEditForm({ ...editForm, byod_selected: e.target.checked })} />
+              BYOD (Bring Your Own Drinks)
+            </label>
+            <label className="flex items-center gap-2">
+              <input type="checkbox" checked={editForm.dj_required} onChange={(e) => setEditForm({ ...editForm, dj_required: e.target.checked })} />
+              DJ Required
+            </label>
+          </div>
+
+          {/* Additional Charges */}
+          <div className="mt-3">
+            <div className="label">Additional Charges (check to enable)</div>
+            <div className="grid grid-cols-1 gap-2">
+              {venueExtras.map((x, i) => (
+                <div key={`${x.description}-${i}`} className="flex items-center gap-2 p-2 border rounded-lg">
+                  {!x.isCustom && (
+                    <input
+                      type="checkbox"
+                      checked={x.enabled}
+                      onChange={(e) => setVenueExtras(venueExtras.map((y, j) => (j === i ? { ...y, enabled: e.target.checked } : y)))}
+                    />
+                  )}
+                  <span className="text-sm flex-1">{x.description}</span>
+                  <input
+                    className="input !w-28 !py-1.5 text-sm"
+                    type="number"
+                    value={x.amount}
+                    onChange={(e) => setVenueExtras(venueExtras.map((y, j) => (j === i ? { ...y, amount: e.target.value } : y)))}
+                    disabled={!x.enabled && !x.isCustom}
+                  />
+                  {x.isCustom && (
+                    <button className="btn-ghost !px-2 text-red-500" onClick={() => setVenueExtras(venueExtras.filter((_, j) => j !== i))}>✕</button>
+                  )}
+                </div>
+              ))}
+            </div>
+            <div className="mt-2 pt-2 border-t">
+              <div className="label">Add Custom Charge</div>
+              <div className="flex gap-2">
+                <input
+                  className="input flex-1"
+                  placeholder="Description"
+                  value={customCharge.description}
+                  onChange={(e) => setCustomCharge({ ...customCharge, description: e.target.value })}
+                />
+                <input
+                  className="input !w-36 !py-1.5 text-sm"
+                  type="number"
+                  placeholder="LKR"
+                  value={customCharge.amount}
+                  onChange={(e) => setCustomCharge({ ...customCharge, amount: e.target.value })}
+                />
+                <button
+                  className="btn-secondary"
+                  onClick={() => {
+                    if (customCharge.description && customCharge.amount) {
+                      setVenueExtras([...venueExtras, { ...customCharge, enabled: true, charge_type: "other", is_percentage: false, isCustom: true }]);
+                      setCustomCharge({ description: "", amount: "" });
+                    }
+                  }}
+                >
+                  Add
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <Field label="Notes"><textarea className="input" rows={3} value={editForm.notes} onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })} /></Field>
+          <ErrorText error={error} />
+          <div className="flex gap-2">
+            <button className="btn-primary" onClick={saveEdit}>Save Changes</button>
+            <button className="btn-secondary" onClick={() => { setEditMode(false); onEditModeChange?.(false); }}>Cancel</button>
+          </div>
+        </div>
+      ) : (
+        <>
+          <div className="grid gap-2 text-sm sm:grid-cols-2">
+            <div><b>Client:</b> {state.client_name} {state.client_phone && `· ${state.client_phone}`}</div>
+            <div><b>Event:</b> {state.event_type ?? "—"} on {fmtDate(state.date)} {state.start_time && `(${state.start_time}–${state.end_time})`}</div>
+            <div><b>Guests:</b> {state.guest_count} / {state.venue.max_capacity}</div>
+            <div><b>Catering:</b> {state.catering_by_hotel ? "By hotel" : "Client's own chefs (rental only)"}</div>
+            {state.seating && <div><b>Seating:</b> {state.seating}</div>}
+            {state.av_needs && <div><b>AV:</b> {state.av_needs}</div>}
+            {state.decoration && <div><b>Decoration:</b> {state.decoration}</div>}
+            <div><b>Status:</b> <Badge color={statusColor(state.status.code.toUpperCase())}>{state.status.code.toUpperCase()}</Badge></div>
+          </div>
+          <div className="mt-3 space-y-1 rounded-xl bg-slate-50 p-3 text-sm">
+            <div className="flex justify-between font-bold"><span>Invoice total (separate VNU invoice type)</span><span>{lkr(state.total)}</span></div>
+            <div className="flex justify-between text-emerald-700"><span>Paid</span><span>{lkr(state.paid)}</span></div>
+            <div className="flex justify-between font-extrabold"><span>Balance</span><span>{lkr(state.balance)}</span></div>
+            <div className="text-xs text-slate-500">Required deposit: {lkr(state.deposit_due)}</div>
+          </div>
+          <ErrorText error={error} />
+          <div className="mt-4 flex flex-wrap gap-2">
+            {!editMode && can("hotel_venue_bookings.edit") && (
+              <button className="btn-secondary" onClick={() => setEditMode(true)}>Edit Details</button>
+            )}
+            {state.status.code === "inquiry" && can("hotel_venue_bookings.confirm") && (
+              <button className="btn-primary" onClick={() => act(() => post(`/venues/bookings/${state.id}/confirm`), "Venue booking confirmed")}>Confirm booking</button>
+            )}
+            {(state.status.code === "inquiry" || state.status.code === "confirmed") && state.folio && (
+              <>
+                {can("hotel_folios.payment") && <button className="btn-primary" onClick={() => setPayOpen(true)}>Take payment / deposit</button>}
+                {can("hotel_venue_bookings.complete") && <button className="btn-secondary" onClick={() => act(() => post(`/venues/bookings/${state.id}/complete`), "Event completed — invoice generated")}>Complete event → invoice</button>}
+                {can("hotel_venue_bookings.cancel") && <button className="btn-danger" onClick={() => setCancelOpen(true)}>Cancel</button>}
+              </>
+            )}
+            {state.folio && can("hotel_folios.invoice") && (
+              <button className="btn-secondary" onClick={() => printDocument(`/folios/${state.folio!.id}/invoice?format=a4`)}>
+                <Printer size={15} /> Invoice {state.folio.invoice_no ?? "(proforma)"}
+              </button>
+            )}
+          </div>
+        </>
+      )}
 
       {payOpen && state.folio && (
         <SplitPay
@@ -1059,7 +1374,7 @@ function BookingModal({ b, onClose }: { b: Booking; onClose: () => void }) {
                   method: p.method.toLowerCase(),
                   amount: p.amount,
                   reference: p.reference,
-                  kind: state.paid === 0 ? "deposit" : "payment",
+                  kind: Number(state.paid) === 0 ? "deposit" : "payment",
                   idempotency_key: crypto.randomUUID(),
                 });
               }
@@ -1088,7 +1403,8 @@ function BookingModal({ b, onClose }: { b: Booking; onClose: () => void }) {
           onClose={() => setCancelOpen(false)}
         />
       )}
-    </Modal>
+      </Modal>
+    </>
   );
 }
 
